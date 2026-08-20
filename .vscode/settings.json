@@ -1,0 +1,4 @@
+{
+  "oxc.enable.oxlint": true,
+  "workspaceKeybindings.autoFixAll.enabled": true
+}

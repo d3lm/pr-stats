@@ -1,0 +1,16 @@
+{
+  "name": "@d3lm/scripts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "lint": "oxlint src && eslint --cache src",
+    "lint:fix": "oxlint src --fix && eslint --cache --fix src"
+  },
+  "devDependencies": {
+    "@d3lm/lint-preset": "^1.1.6",
+    "eslint": "^10.8.1",
+    "oxlint": "^1.79.0",
+    "prettier": "^3.9.6"
+  }
+}
