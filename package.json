@@ -4,13 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "lint": "oxlint src && eslint --cache src",
-    "lint:fix": "oxlint src --fix && eslint --cache --fix src"
+    "lint": "oxlint packages/* && eslint --cache packages/*",
+    "lint:fix": "oxlint packages/* --fix && eslint --cache --fix packages/*"
   },
   "devDependencies": {
     "@d3lm/lint-preset": "^1.1.6",
     "eslint": "^10.8.1",
     "oxlint": "^1.79.0",
     "prettier": "^3.9.6"
+  },
+  "dependencies": {
+    "chalk": "^6.0.0"
   }
 }

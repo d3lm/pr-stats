@@ -1,0 +1,42 @@
+{
+  "name": "@d3lm/pr-stats",
+  "version": "0.1.0",
+  "description": "GitHub PR stats from the command line, via the gh CLI or an access token",
+  "type": "module",
+  "author": "Dominic Elm",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/d3lm/scripts.git",
+    "directory": "packages/pr-stats"
+  },
+  "keywords": [
+    "github",
+    "pull-request",
+    "review",
+    "stats",
+    "cli"
+  ],
+  "bin": {
+    "pr-stats": "./dist/index.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "esbuild index.mjs --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.mjs",
+    "prepublishOnly": "pnpm build"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "dependencies": {
+    "asciichart": "^1.5.25"
+  }
+}
