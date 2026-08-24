@@ -68,7 +68,7 @@ const OPTIONS = [
     name: 'charts',
     short: 'c',
     type: 'string',
-    default: 'histogram,strip,spark',
+    default: 'histogram,strip',
     placeholder: '<list>',
     help: 'Choose which size charts to print as a comma-separated list. Accepts `histogram` (size distribution bars), `strip` (a quantile strip per metric), and `spark` (a size line chart over time). All three print by default. Pass `none` to print no charts.',
   },
