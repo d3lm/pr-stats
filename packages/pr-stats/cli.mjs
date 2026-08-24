@@ -84,7 +84,7 @@ const OPTIONS = [
     type: 'string',
     default: '0-24',
     placeholder: '<v>',
-    help: 'Count only these working hours instead of full weekdays. Accepts one range like `9-17` or `8:30-16:30`, or several comma-separated ranges like `9-18,19:30-20:30`. Without this flag, every hour Mon-Fri counts.',
+    help: 'Count only these working hours instead of full weekdays. Accepts 24-hour ranges like `9-17` or `8:30-16:30`, 12-hour ranges like `9am-6pm` or `8:30am-4:30pm`, or several comma-separated ranges like `9-18,19:30-20:30`. Without this flag, every hour Mon-Fri counts.',
   },
   {
     name: 'wall-clock',
@@ -372,21 +372,55 @@ export function parseCharts(value) {
 }
 
 /**
- * Parses one or more comma-separated working windows, for example "9-17" or
- * "9-18,19:30-20:30". Returns the windows sorted by start time.
+ * Converts one side of a --work-hours range into minutes since midnight.
+ * Hours with an am or pm suffix follow the 12-hour clock, so 12am maps to
+ * midnight and 12pm maps to noon. Returns null when the hour or minute is
+ * out of range.
+ */
+function toMinutesOfDay(hourText, minuteText, meridiem) {
+  const minute = Number(minuteText ?? 0);
+
+  if (minute > 59) {
+    return null;
+  }
+
+  let hour = Number(hourText);
+
+  if (meridiem !== undefined) {
+    if (hour < 1 || hour > 12) {
+      return null;
+    }
+
+    hour %= 12;
+
+    if (meridiem.toLowerCase() === 'pm') {
+      hour += 12;
+    }
+  }
+
+  return hour * 60 + minute;
+}
+
+/**
+ * Parses one or more comma-separated working windows, for example "9-17",
+ * "9am-6pm", or "9-18,19:30-20:30". Returns the windows sorted by start
+ * time.
  */
 export function parseWorkHours(value) {
   const windows = value.split(',').map((range) => {
-    const match = /^(\d{1,2})(?::(\d{2}))?-(\d{1,2})(?::(\d{2}))?$/.exec(range.trim());
+    const match = /^(\d{1,2})(?::(\d{2}))?(am|pm)?-(\d{1,2})(?::(\d{2}))?(am|pm)?$/i.exec(range.trim());
 
     if (!match) {
-      fail(`invalid --work-hours range "${range}", use ranges like 9-17, 8:30-16:30, or 9-18,19:30-20:30`);
+      fail(`invalid --work-hours range "${range}", use ranges like 9-17, 9am-6pm, 8:30-16:30, or 9-18,19:30-20:30`);
     }
 
-    const startMin = Number(match[1]) * 60 + Number(match[2] ?? 0);
-    const endMin = Number(match[3]) * 60 + Number(match[4] ?? 0);
+    const startMin = toMinutesOfDay(match[1], match[2], match[3]);
+    const end = toMinutesOfDay(match[4], match[5], match[6]);
 
-    if (endMin <= startMin || endMin > 24 * 60 || Number(match[2] ?? 0) > 59 || Number(match[4] ?? 0) > 59) {
+    // midnight as an end means the end of the day, so 9pm-12am works
+    const endMin = end === 0 ? 24 * 60 : end;
+
+    if (startMin === null || endMin === null || endMin <= startMin || endMin > 24 * 60) {
       fail(`invalid --work-hours range "${range}"`);
     }
 
