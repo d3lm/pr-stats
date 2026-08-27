@@ -15,11 +15,13 @@ export type Line = Span[];
 
 /**
  * One chart block with a bold title, a muted subtitle on the same row, and
- * preformatted colored lines below.
+ * preformatted colored lines below. A subtitle given as spans can color
+ * legend glyphs to match the chart body, and spans without a color render
+ * muted like a plain string subtitle.
  */
 export interface Card {
   title: string;
-  subtitle: string;
+  subtitle: string | Line;
   lines: Line[];
 }
 
@@ -28,7 +30,9 @@ export function lineLength(line: Line): number {
 }
 
 export function cardWidth(card: Card): number {
-  return Math.max(card.title.length + 2 + card.subtitle.length, ...card.lines.map(lineLength));
+  const subtitleLength = typeof card.subtitle === 'string' ? card.subtitle.length : lineLength(card.subtitle);
+
+  return Math.max(card.title.length + 2 + subtitleLength, ...card.lines.map(lineLength));
 }
 
 /**

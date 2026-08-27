@@ -3,7 +3,7 @@ import { useTerminalDimensions } from '@opentui/react';
 import { useEffect, useRef } from 'react';
 import { overlayScrollbar, useScrollbarSettle } from '../hooks/scrollbar';
 import { theme } from '../theme';
-import type { PrList } from '../views/rows';
+import type { PrList, PrRow } from '../views/rows';
 
 /**
  * Selectable PR list for the two queue tabs, the awaiting-review queue
@@ -11,7 +11,8 @@ import type { PrList } from '../views/rows';
  * highlighted PR in the browser on Enter, so this only renders the rows
  * and keeps the cursor row visible while scrolling. The cursor counts
  * across every list in order, matching the rows the App navigates. The
- * PR references stay clickable terminal hyperlinks as well. The heading
+ * PR references stay clickable terminal hyperlinks as well, unless the
+ * copy-links setting routes clicks to the clipboard instead. The heading
  * names the opened repo scope when the data spans multiple repos, framed
  * by rules like the stats header, and stays away otherwise.
  */
@@ -21,15 +22,31 @@ export function QueuePanel({
   empty,
   lists,
   cursor,
+  onRefClick,
 }: {
   heading: string | null;
   warning: string | null;
   empty: string | null;
   lists: PrList[];
   cursor: number;
+  /**
+   * Receives the row whose PR reference was clicked while the copy-links
+   * setting is on, and is null while links open through the terminal.
+   * A handler also drops the terminal hyperlink from the references, so
+   * the terminal no longer opens them on its own modifier-click.
+   */
+  onRefClick: ((row: PrRow) => void) | null;
 }) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const { width } = useTerminalDimensions();
+
+  /**
+   * Holds the cell of the last left-button press, which makes a click
+   * detectable as a release on the same cell. The release alone cannot
+   * tell a click from the end of a text-selection drag, because the
+   * renderer marks both as dragging.
+   */
+  const lastDown = useRef<{ x: number; y: number } | null>(null);
 
   useScrollbarSettle(scrollRef, empty === null);
 
@@ -108,16 +125,59 @@ export function QueuePanel({
               const isSelected = index === cursor;
               const bg = isSelected ? theme.selectedBg : undefined;
 
+              /**
+               * The reference starts after the two-cell cursor marker,
+               * the lead, and the two-space gap, all single-cell ASCII,
+               * so the columns map one to one onto the characters.
+               */
+              const refStart = 2 + row.lead.length + 2;
+
               return (
-                <text key={row.url} id={`queue-row-${index}`} wrapMode="none">
+                <text
+                  key={row.url}
+                  id={`queue-row-${index}`}
+                  wrapMode="none"
+                  onMouseDown={
+                    onRefClick === null
+                      ? undefined
+                      : (event) => {
+                          lastDown.current = event.button === 0 ? { x: event.x, y: event.y } : null;
+                        }
+                  }
+                  onMouseUp={
+                    onRefClick === null
+                      ? undefined
+                      : (event) => {
+                          const down = lastDown.current;
+
+                          lastDown.current = null;
+
+                          if (event.button !== 0 || down?.x !== event.x || down.y !== event.y) {
+                            return;
+                          }
+
+                          const local = event.currentTarget === null ? -1 : event.x - event.currentTarget.x;
+
+                          if (local >= refStart && local < refStart + row.ref.length) {
+                            onRefClick(row);
+                          }
+                        }
+                  }
+                >
                   <span fg={theme.accent}>{isSelected ? '▸ ' : '  '}</span>
                   <span fg={theme.text} bg={bg}>
                     {row.lead}
                     {'  '}
                   </span>
-                  <a href={row.url} fg={theme.accent} bg={bg}>
-                    {row.ref}
-                  </a>
+                  {onRefClick === null ? (
+                    <a href={row.url} fg={theme.accent} bg={bg}>
+                      {row.ref}
+                    </a>
+                  ) : (
+                    <span fg={theme.accent} bg={bg}>
+                      {row.ref}
+                    </span>
+                  )}
                   <span fg={theme.text} bg={bg}>
                     {'  '}
                     {row.title}

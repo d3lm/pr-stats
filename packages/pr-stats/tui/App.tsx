@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
-import { useReducer, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { saveTheme } from '../settings';
 import { CliError } from '../utils';
 import { Footer } from './components/Footer';
@@ -27,6 +27,7 @@ import {
   type ThemeState,
 } from './theme';
 import { openInBrowser } from './utils/browser';
+import { copyToClipboard } from './utils/clipboard';
 import {
   buildCommentRepoOptions,
   buildOpenRepoOptions,
@@ -47,8 +48,10 @@ export function App({
   initial,
   initialSaved = null,
   initialNoCache = false,
+  initialCopyLinks = false,
   initialTheme = defaultThemeState(),
   openUrl = openInBrowser,
+  copyUrl = copyToClipboard,
   onQuit,
 }: {
   initial: OptionsState;
@@ -64,6 +67,13 @@ export function App({
    */
   initialNoCache?: boolean;
   /**
+   * Seeds the copy-links state from the saved setting. While it is on,
+   * enter and a click on a PR reference copy the PR's link to the
+   * clipboard instead of opening it. The settings dialog toggles it at
+   * runtime.
+   */
+  initialCopyLinks?: boolean;
+  /**
    * Seeds the theme state with what bootstrap parsed from settings.json
    * and already applied. The settings dialog changes it at runtime.
    */
@@ -74,6 +84,12 @@ export function App({
    * spawns a real browser.
    */
   openUrl?: (url: string, onError: (message: string) => void) => void;
+  /**
+   * Copies a PR's link to the clipboard and reports a failure through
+   * the second argument. Tests inject a recorder here so activating a
+   * PR never touches the real clipboard.
+   */
+  copyUrl?: (url: string, onError: (message: string) => void) => void;
   onQuit: () => void;
 }) {
   const { width } = useTerminalDimensions();
@@ -83,7 +99,40 @@ export function App({
   const [options, setOptions] = useState(initial);
   const [saved, setSaved] = useState(initialSaved);
   const [noCache, setNoCache] = useState(initialNoCache);
+  const [copyLinks, setCopyLinks] = useState(initialCopyLinks);
   const [themeState, setThemeState] = useState(initialTheme);
+
+  /**
+   * Copies the PR's link to the clipboard and reports the copy in the
+   * footer notice slot right away. A failing copy command reports
+   * asynchronously and takes the slot over from the notice.
+   */
+  const copyRow = (row: { ref: string; url: string }) => {
+    copyUrl(row.url, (message) => {
+      dispatchUi({ type: 'openErrorReported', message });
+    });
+
+    dispatchUi({ type: 'copyReported', message: `copied ${row.ref} to the clipboard` });
+  };
+
+  /**
+   * Expires the copied-link notice after a short dwell, so it clears on
+   * its own without a keypress. Every copy stores a fresh notice object,
+   * which restarts the timer even when the same PR gets copied again.
+   */
+  useEffect(() => {
+    if (ui.copyNotice === null) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      dispatchUi({ type: 'copyNoticeExpired' });
+    }, 2500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [ui.copyNotice]);
 
   const reviewScrollRef = useRef<ScrollBoxRenderable>(null);
   const sizeScrollRef = useRef<ScrollBoxRenderable>(null);
@@ -183,6 +232,7 @@ export function App({
       ui,
       browse,
       noCache,
+      copyLinks,
       themeState,
       options,
       views,
@@ -191,10 +241,12 @@ export function App({
       setOptions,
       setSaved,
       setNoCache,
+      setCopyLinks,
       setThemeState,
       quit: onQuit,
       reload,
       openUrl,
+      copyRow,
       beginEdit: (value) => {
         draftRef.current = value;
         dispatchUi({ type: 'editStarted' });
@@ -226,6 +278,7 @@ export function App({
         error={error}
         loading={loading}
         load={load}
+        onRefClick={copyLinks ? copyRow : null}
       />
 
       <Footer
@@ -234,7 +287,9 @@ export function App({
         editing={ui.editing}
         tab={browse.tab}
         views={views}
+        copyLinks={copyLinks}
         openError={ui.openError}
+        copyNotice={ui.copyNotice === null ? null : ui.copyNotice.text}
         stale={stale}
       />
 
@@ -256,6 +311,7 @@ export function App({
           selected={ui.selectedSetting}
           cacheAction={ui.cacheAction}
           noCache={noCache}
+          copyLinks={copyLinks}
           preset={themeState.preset}
         />
       )}

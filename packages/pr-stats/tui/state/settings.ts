@@ -30,6 +30,12 @@ export const SETTINGS: SettingSpec[] = [
     hint: 'deletes the cached PR data at this path, so the next reload refetches everything',
   },
   {
+    key: 'copyLinks',
+    section: 'Links',
+    label: 'Copy instead of open',
+    hint: 'enter and a click on a PR reference copy its link to the clipboard instead of opening the browser',
+  },
+  {
     key: 'themePreset',
     section: 'Theme',
     label: 'Theme',
@@ -70,6 +76,7 @@ export const THEME_COLORS: ThemeColorSpec[] = [
   { key: 'inputFocusedBg', hint: 'background of the focused text input' },
   { key: 'warn', hint: 'notices like the reload reminder and confirm prompts' },
   { key: 'error', hint: 'error messages and failed loads' },
+  { key: 'success', hint: 'the checkmark on the copied-link notice' },
   { key: 'chartBar', hint: 'histogram and volume bars' },
   { key: 'chartLine', hint: 'trend lines and the scatter dots' },
   { key: 'chartDim', hint: 'de-emphasized chart parts like the over-target share' },

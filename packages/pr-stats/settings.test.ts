@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configureCache } from './cache';
 import { parseCliArgs } from './flags';
-import { applySettings, loadSettings, resetSettings, saveNoCache, saveTheme } from './settings';
+import { applySettings, loadSettings, resetSettings, saveCopyLinks, saveNoCache, saveTheme } from './settings';
 import {
   applyTheme,
   applyThemeState,
@@ -69,6 +69,28 @@ test('saveNoCache persists the toggle and keeps hand-written keys', () => {
   expect((JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { noCache: boolean }).noCache).toBe(true);
 });
 
+test('saveCopyLinks persists the toggle and keeps hand-written keys', () => {
+  writeSettingsFile({ theme: { accent: '#89b4f0' }, noCache: true });
+  loadSettings();
+
+  expect(saveCopyLinks(true)).toBe(true);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+    theme: { accent: '#89b4f0' },
+    noCache: true,
+    copyLinks: true,
+  });
+
+  expect(loadSettings().copyLinks).toBe(true);
+
+  // a disabled cache stores nothing, the way debug runs stay isolated
+  configureCache(false);
+
+  expect(saveCopyLinks(false)).toBe(false);
+
+  expect((JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { copyLinks: boolean }).copyLinks).toBe(true);
+});
+
 test('resetSettings deletes the file only while the cache is enabled', () => {
   writeSettingsFile({ theme: { accent: '#89b4f0' }, noCache: true });
   loadSettings();
@@ -126,6 +148,10 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
   expect(() => loadSettings()).toThrow(CliError);
 
   writeSettingsFile({ noCache: 'yes' });
+
+  expect(() => loadSettings()).toThrow(CliError);
+
+  writeSettingsFile({ copyLinks: 'yes' });
 
   expect(() => loadSettings()).toThrow(CliError);
 });

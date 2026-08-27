@@ -8,8 +8,9 @@ const SPREAD_STRIP_WIDTH = 32;
 /**
  * Builds a spread card, one quantile strip per metric. Each strip spans
  * that metric's min to max on a log scale, the shaded box covers p25 to
- * p75, and the accent block marks the median. Log1p handles metrics whose
- * minimum is zero.
+ * p75, and the accent block marks the median. Values map into the strip
+ * interior so the end caps stay visible even when a quantile sits on the
+ * min or the max. Log1p handles metrics whose minimum is zero.
  */
 export function buildSpreadCard(
   title: string,
@@ -24,10 +25,10 @@ export function buildSpreadCard(
 
     const pos = (value: number) => {
       if (span === 0) {
-        return 0;
+        return 1;
       }
 
-      return Math.round(((Math.log1p(value) - Math.log1p(min)) / span) * (SPREAD_STRIP_WIDTH - 1));
+      return 1 + Math.round(((Math.log1p(value) - Math.log1p(min)) / span) * (SPREAD_STRIP_WIDTH - 3));
     };
 
     const cells = blankCells(SPREAD_STRIP_WIDTH);
@@ -60,5 +61,12 @@ export function buildSpreadCard(
     ];
   });
 
-  return { title, subtitle: '▒ p25-p75, █ p50, log scale', lines };
+  const subtitle: Line = [
+    { text: '▒', fg: theme.chartBar },
+    { text: ' p25-p75, ', fg: theme.muted },
+    { text: '█', fg: theme.accent },
+    { text: ' p50, log scale', fg: theme.muted },
+  ];
+
+  return { title, subtitle, lines };
 }

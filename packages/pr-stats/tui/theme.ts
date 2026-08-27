@@ -17,6 +17,7 @@ const BASE = {
   inputFocusedBg: '#303030',
   warn: '#f0b689',
   error: '#ff8080',
+  success: '#89f0ab',
   chartBar: '#b98d63',
   chartLine: '#c99a6f',
   chartDim: '#6e563f',
@@ -40,7 +41,8 @@ export const theme: Palette = { ...BASE, heat: [...BASE.heat] };
  * the hue-carrying colors of the default palette and rotates their hue to
  * one target while keeping saturation and lightness, so each preset keeps
  * the default's contrast relationships. The neutral text and background
- * colors and the error red stay shared across all presets.
+ * colors, the error red, and the success green stay shared across all
+ * presets.
  */
 export const PRESETS = {
   default: {},

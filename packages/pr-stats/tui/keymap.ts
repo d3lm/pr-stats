@@ -1,7 +1,7 @@
 import type { KeyEvent } from '@opentui/core';
 import type { Dispatch, SetStateAction } from 'react';
 import { clearCache } from '../cache';
-import { resetSettings, saveNoCache, saveTheme } from '../settings';
+import { resetSettings, saveCopyLinks, saveNoCache, saveTheme } from '../settings';
 import type { AppViews } from './hooks/useViewModel';
 import type { BrowseAction, BrowseState, QueueTabKey, StatsTabKey } from './state/browse';
 import { FIELDS, writeSavedOptions, type OptionsState } from './state/options';
@@ -21,6 +21,7 @@ export interface KeymapContext {
   ui: UiState;
   browse: BrowseState;
   noCache: boolean;
+  copyLinks: boolean;
   themeState: ThemeState;
   options: OptionsState;
   views: AppViews | null;
@@ -30,10 +31,17 @@ export interface KeymapContext {
   setOptions: Dispatch<SetStateAction<OptionsState>>;
   setSaved: Dispatch<SetStateAction<OptionsState | null>>;
   setNoCache: Dispatch<SetStateAction<boolean>>;
+  setCopyLinks: Dispatch<SetStateAction<boolean>>;
   setThemeState: Dispatch<SetStateAction<ThemeState>>;
   quit: () => void;
   reload: (bypassCache: boolean) => void;
   openUrl: (url: string, onError: (message: string) => void) => void;
+
+  /**
+   * Copies the PR's link to the clipboard and reports the copy in the
+   * footer, used in place of openUrl while the copy-links setting is on.
+   */
+  copyRow: (row: { ref: string; url: string }) => void;
 
   /**
    * Seeds the edit draft with the given value and switches the open
@@ -151,6 +159,18 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
           } else {
             context.dispatchUi({ type: 'cacheActionReported', action: 'confirm' });
           }
+
+          break;
+        }
+        case 'copyLinks': {
+          /**
+           * The toggle flips the session state and persists it right
+           * away, like the cache toggle above.
+           */
+          const next = !context.copyLinks;
+
+          context.setCopyLinks(next);
+          context.dispatchUi({ type: 'cacheActionReported', action: saveCopyLinks(next) ? 'saved' : 'notSaved' });
 
           break;
         }
@@ -338,10 +358,15 @@ function handleQueueKey(key: KeyEvent, context: KeymapContext): void {
     }
     case 'return': {
       const cursor = context.browse.rowCursors[tab];
+      const row = rows[Math.min(cursor, rows.length - 1)];
 
-      context.openUrl(rows[Math.min(cursor, rows.length - 1)].url, (message) => {
-        context.dispatchUi({ type: 'openErrorReported', message });
-      });
+      if (context.copyLinks) {
+        context.copyRow(row);
+      } else {
+        context.openUrl(row.url, (message) => {
+          context.dispatchUi({ type: 'openErrorReported', message });
+        });
+      }
 
       break;
     }
@@ -421,11 +446,12 @@ function handleStatsKey(key: KeyEvent, context: KeymapContext): void {
  */
 export function handleAppKey(key: KeyEvent, context: KeymapContext): void {
   /**
-   * Any keypress dismisses a pending browser-open failure. The enter
-   * press that opens a PR also lands here, which is fine because a
-   * new failure reports asynchronously after this handler runs.
+   * Any keypress dismisses a pending browser-open failure and a
+   * copied-link notice. The enter press that opens or copies a PR also
+   * lands here, which is fine because a failure reports asynchronously
+   * and a fresh copy notice dispatches after the dismissal.
    */
-  context.dispatchUi({ type: 'openErrorDismissed' });
+  context.dispatchUi({ type: 'noticesDismissed' });
 
   if (context.ui.editing) {
     if (key.name === 'escape') {

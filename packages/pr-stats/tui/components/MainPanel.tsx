@@ -5,6 +5,7 @@ import type { AppViews } from '../hooks/useViewModel';
 import type { BrowseState, PanelScope } from '../state/browse';
 import { queueRows, type QueueView } from '../views/queue';
 import type { RepoOption } from '../views/repos';
+import type { PrRow } from '../views/rows';
 import type { StatsView } from '../views/stats';
 import { ChartsPanel } from './ChartsPanel';
 import { Placeholder } from './Placeholder';
@@ -25,6 +26,7 @@ function QueueTab({
   rowCursor,
   grouped,
   warning,
+  onRefClick,
 }: {
   prompt: string;
   repos: RepoOption[];
@@ -34,6 +36,7 @@ function QueueTab({
   rowCursor: number;
   grouped: boolean;
   warning: string | null;
+  onRefClick: ((row: PrRow) => void) | null;
 }) {
   if (scope.view === 'list') {
     return <RepoList prompt={prompt} options={repos} cursor={Math.min(repoCursor, repos.length - 1)} />;
@@ -50,6 +53,7 @@ function QueueTab({
       empty={view.empty}
       lists={view.lists}
       cursor={Math.min(rowCursor, queueRows(view).length - 1)}
+      onRefClick={onRefClick}
     />
   );
 }
@@ -109,6 +113,7 @@ export function MainPanel({
   error,
   loading,
   load,
+  onRefClick,
 }: {
   views: AppViews | null;
   browse: BrowseState;
@@ -126,6 +131,12 @@ export function MainPanel({
   error: string | null;
   loading: boolean;
   load: LoadPhase | null;
+  /**
+   * Receives the queue row whose PR reference was clicked while the
+   * copy-links setting is on, and is null while links open through the
+   * terminal.
+   */
+  onRefClick: ((row: PrRow) => void) | null;
 }) {
   return (
     <box flexGrow={1} flexDirection="column" marginTop={1}>
@@ -141,6 +152,7 @@ export function MainPanel({
           rowCursor={browse.rowCursors.pending}
           grouped={browse.grouped.pending}
           warning={warning}
+          onRefClick={onRefClick}
         />
       ) : browse.tab === 1 ? (
         <QueueTab
@@ -152,6 +164,7 @@ export function MainPanel({
           rowCursor={browse.rowCursors.open}
           grouped={browse.grouped.open}
           warning={warning}
+          onRefClick={onRefClick}
         />
       ) : browse.tab === 2 ? (
         <StatsTab

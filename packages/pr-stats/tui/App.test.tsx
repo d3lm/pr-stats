@@ -4,6 +4,7 @@ import { expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { act } from 'react';
 import { configureCache } from '../cache';
 import { configureAuth } from '../github';
 import { loadSettings } from '../settings';
@@ -35,6 +36,46 @@ interface Setup {
   renderOnce: () => Promise<void>;
   captureCharFrame: () => string;
   mockInput: { pressEnter: () => void };
+}
+
+type AppSetup = Awaited<ReturnType<typeof testRender>>;
+
+/**
+ * Toggles React's act environment flag, which controls whether React
+ * warns about state updates that commit outside act.
+ */
+function setActEnvironment(on: boolean): void {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = on;
+}
+
+/**
+ * Renders the App through testRender and turns the act environment off
+ * for the test body. These tests deliberately poll real frames while
+ * timers and child processes drive the updates, which is the setup the
+ * act warning exists to flag, so leaving the flag on would bury the test
+ * output under one warning block per spinner tick.
+ */
+async function renderApp(...args: Parameters<typeof testRender>): Promise<AppSetup> {
+  const setup = await testRender(...args);
+
+  setActEnvironment(false);
+
+  return setup;
+}
+
+/**
+ * Destroys the renderer with the act environment back on and the whole
+ * teardown inside act. The React root cleans itself up from the
+ * renderer's destroy event outside the act call testRender wraps around
+ * the unmount, so only an act around the destroy itself covers that
+ * update without a warning.
+ */
+function destroyApp(setup: AppSetup): void {
+  setActEnvironment(true);
+
+  act(() => {
+    setup.renderer.destroy();
+  });
 }
 
 /**
@@ -95,7 +136,7 @@ async function pressEnterToOpen(setup: Setup, opened: string[]): Promise<string>
 }
 
 test('loads canned data and renders both tabs, the options modal, and the settings and theme dialogs', async () => {
-  const setup = await testRender(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
 
   try {
     /**
@@ -442,10 +483,15 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await waitForText(setup, 'nothing to clear');
 
+    // the copy-links toggle sits between the cache rows and the theme rows
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'clipboard');
+
     /**
-     * The theme rows sit between the cache rows and the reset action.
-     * Left and right cycle the built-in themes and apply them right
-     * away, and the debug run cannot persist the choice.
+     * The theme rows sit between the copy-links toggle and the reset
+     * action. Left and right cycle the built-in themes and apply them
+     * right away, and the debug run cannot persist the choice.
      */
     setup.mockInput.pressArrow('down');
 
@@ -522,7 +568,7 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(setup.captureCharFrame()).not.toContain('Clear cache');
   } finally {
-    setup.renderer.destroy();
+    destroyApp(setup);
     applyThemeState(defaultThemeState());
   }
 }, 30_000);
@@ -547,7 +593,7 @@ test('labels the save state in the options modal and saves with s', async () => 
   writeFileSync(join(dir, 'settings.json'), JSON.stringify({ theme: { accent: '#89b4f0' } }));
   loadSettings();
 
-  const setup = await testRender(
+  const setup = await renderApp(
     <App
       initial={initial}
       initialSaved={initial}
@@ -623,6 +669,10 @@ test('labels the save state in the options modal and saves with s', async () => 
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'deletes the cached PR data');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'clipboard');
 
     setup.mockInput.pressArrow('down');
 
@@ -777,7 +827,7 @@ test('labels the save state in the options modal and saves with s', async () => 
 
     expect(existsSync(join(dir, 'settings.json'))).toBe(false);
   } finally {
-    setup.renderer.destroy();
+    destroyApp(setup);
     applyThemeState(defaultThemeState());
     configureCache(false);
     delete process.env.PR_STATS_CACHE_DIR;
@@ -788,7 +838,7 @@ test('labels the save state in the options modal and saves with s', async () => 
 test('drives the queue tabs through the repo picker, the grouping toggle, and the browser opener', async () => {
   const opened: string[] = [];
 
-  const setup = await testRender(
+  const setup = await renderApp(
     <App
       initial={initial}
       onQuit={() => {}}
@@ -942,12 +992,149 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
 
     expect(setup.captureCharFrame()).toContain('▸ acme/api');
   } finally {
-    setup.renderer.destroy();
+    destroyApp(setup);
+  }
+}, 30_000);
+
+test('copies the PR link instead of opening it while the copy-links setting is on', async () => {
+  const opened: string[] = [];
+  const copied: string[] = [];
+
+  const setup = await renderApp(
+    <App
+      initial={initial}
+      onQuit={() => {}}
+      openUrl={(url) => {
+        opened.push(url);
+      }}
+      copyUrl={(url) => {
+        copied.push(url);
+      }}
+    />,
+    { width: 110, height: 44 },
+  );
+
+  try {
+    /**
+     * The awaiting-review tab opens on its repo picker, and enter on All
+     * repos opens the aggregate queue, whose hint names the open action
+     * while the setting is off.
+     */
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Open and awaiting your review (n=2)');
+
+    expect(setup.captureCharFrame()).toContain('enter open');
+
+    /**
+     * While the setting is off, a click on a PR reference stays with the
+     * terminal hyperlink and never reaches the app.
+     */
+    const offFrame = setup.captureCharFrame();
+    const offLines = offFrame.split('\n');
+    const offRow = offLines.findIndex((line) => line.includes('acme/api#7'));
+
+    await setup.mockMouse.click(offLines[offRow].indexOf('acme/api#7'), offRow);
+    await setup.renderOnce();
+
+    expect(copied).toEqual([]);
+
+    /**
+     * The copy-links toggle sits below the cache rows in the settings
+     * dialog. Toggling it flips the value right away, and the debug run
+     * cannot persist it, which the message slot reports.
+     */
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'Disable cache');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'deletes the cached PR data');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'clipboard');
+
+    expect(setup.captureCharFrame()).toContain('Copy instead of open');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'setting not saved');
+
+    expect(setup.captureCharFrame()).toContain('‹ yes ›');
+
+    // closing the dialog brings back the queue hint, now naming the copy
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'enter copy link');
+
+    /**
+     * Enter copies the highlighted PR's link through the injected copier
+     * instead of opening anything, and the footer reports the copy with
+     * the checkmark. The notice keeps its full width next to the long
+     * queue hint, which truncates with an ellipsis instead of colliding.
+     */
+    expect(await pressEnterToOpen(setup, copied)).toBe('https://github.com/acme/api/pull/7');
+
+    await waitForText(setup, '✔ copied acme/api#7 to the clipboard');
+
+    expect(setup.captureCharFrame()).toContain('…');
+    expect(opened).toEqual([]);
+
+    /**
+     * The next keypress dismisses the notice. Grouping the list commits
+     * a visible frame change, so the check waits on that instead of a
+     * frame that looks the same either way.
+     */
+    setup.mockInput.pressKey('g');
+
+    await waitForText(setup, 'All repos · grouped by repo');
+
+    expect(setup.captureCharFrame()).not.toContain('copied acme/api#7');
+
+    setup.mockInput.pressKey('g');
+
+    await waitForText(setup, 'Open and awaiting your review (n=2)');
+
+    /**
+     * A click on a PR reference copies that PR's link, without moving
+     * the cursor onto its row first.
+     */
+    const frame = setup.captureCharFrame();
+    const lines = frame.split('\n');
+    const rowIndex = lines.findIndex((line) => line.includes('acme/web#3'));
+
+    await setup.mockMouse.click(lines[rowIndex].indexOf('acme/web#3'), rowIndex);
+
+    await waitForText(setup, '✔ copied acme/web#3 to the clipboard');
+
+    expect(copied).toEqual(['https://github.com/acme/api/pull/7', 'https://github.com/acme/web/pull/3']);
+    expect(opened).toEqual([]);
+
+    /**
+     * The notice expires on its own after a short dwell, so it clears
+     * without any keypress and the full hints come back.
+     */
+    const expiry = Date.now();
+
+    while (Date.now() - expiry < 10_000 && setup.captureCharFrame().includes('copied acme/web#3')) {
+      await setup.renderOnce();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    expect(setup.captureCharFrame()).not.toContain('copied acme/web#3');
+    expect(setup.captureCharFrame()).not.toContain('…');
+  } finally {
+    destroyApp(setup);
   }
 }, 30_000);
 
 test('surfaces a failed browser open in the footer and clears it on the next keypress', async () => {
-  const setup = await testRender(
+  const setup = await renderApp(
     <App
       initial={initial}
       onQuit={() => {}}
@@ -988,12 +1175,12 @@ test('surfaces a failed browser open in the footer and clears it on the next key
 
     expect(setup.captureCharFrame()).not.toContain('could not open the browser');
   } finally {
-    setup.renderer.destroy();
+    destroyApp(setup);
   }
 }, 30_000);
 
 test('lays the review charts out in two columns on wide terminals', async () => {
-  const setup = await testRender(<App initial={initial} onQuit={() => {}} />, { width: 150, height: 52 });
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 150, height: 52 });
 
   try {
     await waitForText(setup, '2 PRs awaiting your review');
@@ -1042,7 +1229,7 @@ test('lays the review charts out in two columns on wide terminals', async () => 
     expect(sizeFrame).toContain('Files touched');
     expect(sizeFrame).toContain('PRs opened per week');
   } finally {
-    setup.renderer.destroy();
+    destroyApp(setup);
   }
 }, 30_000);
 
@@ -1066,7 +1253,7 @@ function barSeen(frame: string): boolean {
 }
 
 test('shows the scrollbar promptly and keeps the stats line still while the charts mount', async () => {
-  const setup = await testRender(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
 
   try {
     await waitForText(setup, '2 PRs awaiting your review');
@@ -1114,12 +1301,12 @@ test('shows the scrollbar promptly and keeps the stats line still while the char
     expect(barFrame).toBeGreaterThanOrEqual(0);
     expect(barFrame).toBeLessThanOrEqual(2);
   } finally {
-    setup.renderer.destroy();
+    destroyApp(setup);
   }
 }, 30_000);
 
 test('never flashes the scrollbar when a list fits the viewport', async () => {
-  const setup = await testRender(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
 
   try {
     await waitForText(setup, '2 PRs awaiting your review');
@@ -1158,6 +1345,6 @@ test('never flashes the scrollbar when a list fits the viewport', async () => {
 
     expect(framesAfterSwitch).toBe(8);
   } finally {
-    setup.renderer.destroy();
+    destroyApp(setup);
   }
 }, 30_000);

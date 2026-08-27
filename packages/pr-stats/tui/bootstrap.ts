@@ -21,6 +21,12 @@ export interface BootstrapResult {
    */
   noCache: boolean;
   /**
+   * Mirrors the copy-links setting from settings.json. While it is set,
+   * enter and a click on a PR reference copy the PR's link to the
+   * clipboard instead of opening it in the browser.
+   */
+  copyLinks: boolean;
+  /**
    * Holds the theme parsed from settings.json and already applied, so
    * the settings dialog starts from the saved active theme and the saved
    * custom colors.
@@ -79,7 +85,7 @@ export function bootstrap(): BootstrapResult {
       }
     }
 
-    return { initial, saved, noCache: values['no-cache'], theme };
+    return { initial, saved, noCache: values['no-cache'], copyLinks: settings.copyLinks === true, theme };
   } catch (error) {
     if (error instanceof CliError) {
       fail(error.message);

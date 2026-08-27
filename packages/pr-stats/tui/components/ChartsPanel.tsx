@@ -230,11 +230,18 @@ function ChartLine({ line }: { line: Line }) {
 }
 
 function ChartCard({ card }: { card: Card }) {
+  const subtitle: Line = typeof card.subtitle === 'string' ? [{ text: card.subtitle, fg: theme.muted }] : card.subtitle;
+
   return (
     <box flexDirection="column">
       <text wrapMode="none">
         <b fg={theme.text}>{card.title}</b>
-        <span fg={theme.muted}>{`  ${card.subtitle}`}</span>
+        <span fg={theme.muted}>{'  '}</span>
+        {keyed(subtitle, spanKey).map(({ key, item }) => (
+          <span key={key} fg={item.fg ?? theme.muted}>
+            {item.text}
+          </span>
+        ))}
       </text>
       <box flexDirection="column" marginTop={1}>
         {keyed(card.lines, lineKey).map(({ key, item }) => (

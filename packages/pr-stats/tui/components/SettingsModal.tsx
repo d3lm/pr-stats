@@ -30,11 +30,13 @@ export function SettingsModal({
   selected,
   cacheAction,
   noCache,
+  copyLinks,
   preset,
 }: {
   selected: number;
   cacheAction: CacheAction | null;
   noCache: boolean;
+  copyLinks: boolean;
   preset: ThemeName;
 }) {
   const message = cacheAction === null ? null : CACHE_MESSAGES[cacheAction];
@@ -56,6 +58,7 @@ export function SettingsModal({
                   isSelected={isSelected}
                   cacheAction={cacheAction}
                   noCache={noCache}
+                  copyLinks={copyLinks}
                   preset={preset}
                 />
               </ModalRow>
@@ -71,24 +74,27 @@ export function SettingsModal({
 }
 
 /**
- * Renders the value slot of one setting row. The disable-cache and theme
- * rows show a toggle value with arrows on the selected row, like the
- * toggles in the options modal. The edit-colors row previews the current
- * accent family as a swatch strip. The clear-cache and reset-settings
- * rows show the path they delete with the home directory abbreviated,
- * and flip to a confirm prompt after the first enter.
+ * Renders the value slot of one setting row. The disable-cache,
+ * copy-links, and theme rows show a toggle value with arrows on the
+ * selected row, like the toggles in the options modal. The edit-colors
+ * row previews the current accent family as a swatch strip. The
+ * clear-cache and reset-settings rows show the path they delete with the
+ * home directory abbreviated, and flip to a confirm prompt after the
+ * first enter.
  */
 function SettingValue({
   setting,
   isSelected,
   cacheAction,
   noCache,
+  copyLinks,
   preset,
 }: {
   setting: SettingSpec;
   isSelected: boolean;
   cacheAction: CacheAction | null;
   noCache: boolean;
+  copyLinks: boolean;
   preset: ThemeName;
 }) {
   switch (setting.key) {
@@ -97,6 +103,9 @@ function SettingValue({
     }
     case 'clearCache': {
       return <PathValue path={cacheDir()} confirming={cacheAction === 'confirm'} isSelected={isSelected} />;
+    }
+    case 'copyLinks': {
+      return <ToggleValue value={copyLinks ? 'yes' : 'no'} isSelected={isSelected} />;
     }
     case 'themePreset': {
       return <ToggleValue value={preset} isSelected={isSelected} />;

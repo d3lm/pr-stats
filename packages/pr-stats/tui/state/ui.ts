@@ -13,10 +13,10 @@ export type Modal = 'options' | 'settings' | 'theme' | null;
 /**
  * Everything that tracks the dialogs and their feedback, the open modal,
  * the edit mode, the selected row of each dialog, the validation errors,
- * the settings-action message, and the browser-open failure. One reducer
- * owns it all because these values move together, like a selection move
- * clearing the row's error or an escape closing the dialog and its
- * feedback at once.
+ * the settings-action message, the browser-open failure, and the
+ * copied-link notice. One reducer owns it all because these values move
+ * together, like a selection move clearing the row's error or an escape
+ * closing the dialog and its feedback at once.
  */
 export interface UiState {
   modal: Modal;
@@ -28,6 +28,12 @@ export interface UiState {
   themeColorError: string | null;
   cacheAction: CacheAction | null;
   openError: string | null;
+  /**
+   * Holds the copied-link confirmation the footer shows. Every copy
+   * stores a fresh object even when the text repeats, which restarts the
+   * App's expiry timer through the changed identity.
+   */
+  copyNotice: { text: string } | null;
 }
 
 export const initialUiState: UiState = {
@@ -40,11 +46,14 @@ export const initialUiState: UiState = {
   themeColorError: null,
   cacheAction: null,
   openError: null,
+  copyNotice: null,
 };
 
 export type UiAction =
-  | { type: 'openErrorDismissed' }
+  | { type: 'noticesDismissed' }
   | { type: 'openErrorReported'; message: string }
+  | { type: 'copyReported'; message: string }
+  | { type: 'copyNoticeExpired' }
   | { type: 'modalOpened'; modal: 'options' | 'settings' | 'theme' }
   | { type: 'optionsModalClosed' }
   | { type: 'settingsModalEscaped' }
@@ -70,12 +79,22 @@ function cycled(previous: number, delta: 1 | -1, count: number): number {
 
 export function uiReducer(state: UiState, action: UiAction): UiState {
   switch (action.type) {
-    case 'openErrorDismissed': {
+    case 'noticesDismissed': {
       // returning the same state skips the re-render, and every keypress dispatches this
-      return state.openError === null ? state : { ...state, openError: null };
+      if (state.openError === null && state.copyNotice === null) {
+        return state;
+      }
+
+      return { ...state, openError: null, copyNotice: null };
     }
     case 'openErrorReported': {
       return { ...state, openError: action.message };
+    }
+    case 'copyReported': {
+      return { ...state, openError: null, copyNotice: { text: action.message } };
+    }
+    case 'copyNoticeExpired': {
+      return { ...state, copyNotice: null };
     }
     case 'modalOpened': {
       return { ...state, modal: action.modal, fieldError: null, themeColorError: null, cacheAction: null };

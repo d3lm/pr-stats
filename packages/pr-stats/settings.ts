@@ -17,6 +17,11 @@ export interface Settings {
    */
   noCache?: boolean;
   /**
+   * Makes enter and a click on a PR reference copy the PR's link to the
+   * clipboard instead of opening it in the browser.
+   */
+  copyLinks?: boolean;
+  /**
    * Holds the theme, the active preset (a built-in name or custom) plus
    * the colors that form the custom theme. The theme module validates
    * and applies it.
@@ -78,6 +83,10 @@ export function loadSettings(): Settings {
     throw new CliError(`"noCache" in ${settingsFile()} must be true or false`);
   }
 
+  if (settings.copyLinks !== undefined && typeof settings.copyLinks !== 'boolean') {
+    throw new CliError(`"copyLinks" in ${settingsFile()} must be true or false`);
+  }
+
   current = settings;
 
   return current;
@@ -91,6 +100,23 @@ export function loadSettings(): Settings {
  */
 export function saveNoCache(on: boolean): boolean {
   current = { ...current, noCache: on };
+
+  if (!cacheEnabled()) {
+    return false;
+  }
+
+  writeFileAtomic(settingsFile(), `${JSON.stringify(current, null, 2)}\n`);
+
+  return true;
+}
+
+/**
+ * Persists the copy-links setting to settings.json, keeping every other
+ * key the file holds. Returns false without writing while the cache is
+ * disabled, which keeps debug runs from writing settings.
+ */
+export function saveCopyLinks(on: boolean): boolean {
+  current = { ...current, copyLinks: on };
 
   if (!cacheEnabled()) {
     return false;

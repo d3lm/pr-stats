@@ -76,7 +76,7 @@ The custom theme joins the Theme row cycle as a sixth entry and persists across 
 }
 ```
 
-The `preset` key names the active theme, one of `default`, `green`, `blue`, `purple`, `yellow`, and `custom`. The `base` key names the built-in theme the custom colors start from and defaults to `default`, and every other key sets one custom color on top of that base. The color keys are `bg`, `border`, `text`, `muted`, `dim`, `accent`, `selectedBg`, `inputBg`, `inputFocusedBg`, `warn`, `error`, `chartBar`, `chartLine`, `chartDim`, and `heat`. The `heat` key colors the weekly heatmap and takes four colors from cool to hot. A file that sets colors without a `preset` activates the custom theme they define, and a `custom` preset without any colors falls back to its `base` theme. A typo in a key or a color fails the start with a message naming the mistake, so a broken theme never renders.
+The `preset` key names the active theme, one of `default`, `green`, `blue`, `purple`, `yellow`, and `custom`. The `base` key names the built-in theme the custom colors start from and defaults to `default`, and every other key sets one custom color on top of that base. The color keys are `bg`, `border`, `text`, `muted`, `dim`, `accent`, `selectedBg`, `inputBg`, `inputFocusedBg`, `warn`, `error`, `success`, `chartBar`, `chartLine`, `chartDim`, and `heat`. The `heat` key colors the weekly heatmap and takes four colors from cool to hot. A file that sets colors without a `preset` activates the custom theme they define, and a `custom` preset without any colors falls back to its `base` theme. A typo in a key or a color fails the start with a message naming the mistake, so a broken theme never renders.
 
 ## Development
 

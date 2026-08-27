@@ -3,7 +3,7 @@ import { createRoot } from '@opentui/react';
 import { App } from './App';
 import { bootstrap } from './bootstrap';
 
-const { initial, saved, noCache, theme } = bootstrap();
+const { initial, saved, noCache, copyLinks, theme } = bootstrap();
 
 const renderer = await createCliRenderer({ exitOnCtrlC: true });
 
@@ -19,6 +19,7 @@ createRoot(renderer).render(
     initial={initial}
     initialSaved={saved}
     initialNoCache={noCache}
+    initialCopyLinks={copyLinks}
     initialTheme={theme}
     onQuit={() => {
       renderer.destroy();
