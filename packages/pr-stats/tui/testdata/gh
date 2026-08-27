@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the fake gh through an explicit .mjs file, because an extensionless
+# node script refuses to load inside a "type": "module" package context.
+exec node "$(dirname "$0")/gh.mjs" "$@"

@@ -1,7 +1,7 @@
 {
   "name": "@d3lm/pr-stats",
-  "version": "0.1.2",
-  "description": "GitHub PR stats from the command line, via the gh CLI or an access token",
+  "version": "0.2.0",
+  "description": "GitHub PR stats in an interactive terminal UI, via the gh CLI or an access token",
   "type": "module",
   "author": "Dominic Elm",
   "license": "MIT",
@@ -15,10 +15,11 @@
     "pull-request",
     "review",
     "stats",
-    "cli"
+    "tui",
+    "terminal"
   ],
   "bin": {
-    "pr-stats": "./dist/index.mjs"
+    "pr-stats": "./dist/tui.mjs"
   },
   "files": [
     "dist"
@@ -30,13 +31,28 @@
     "access": "public"
   },
   "scripts": {
-    "build": "esbuild index.mjs --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.mjs",
+    "build": "pnpm build:app && pnpm build:bin",
+    "build:app": "esbuild tui/main.tsx --bundle --platform=node --format=esm --target=esnext --jsx=automatic --jsx-import-source=@opentui/react --external:@opentui/core --external:@opentui/react --external:react --outfile=dist/tui-app.mjs",
+    "build:bin": "esbuild tui/launch.ts --platform=node --format=esm --target=node20 --outfile=dist/tui.mjs",
+    "tui": "bun tui/main.tsx",
+    "tui:node": "pnpm build && node dist/tui.mjs",
+    "check": "tsc --noEmit",
+    "lint": "oxlint . && eslint --cache .",
+    "test": "bun test",
     "prepublishOnly": "pnpm build"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "@types/asciichart": "^1.5.8",
+    "@types/bun": "^1.4.0",
+    "@types/node": "^26.3.0",
+    "@types/react": "^19.2.18",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
-    "asciichart": "^1.5.25"
+    "@opentui/core": "^0.5.8",
+    "@opentui/react": "^0.5.8",
+    "asciichart": "^1.5.25",
+    "react": "^19.2.8"
   }
 }

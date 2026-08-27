@@ -1,2 +1,8 @@
 packages:
   - packages/*
+
+# bun-ffi-structs (via @opentui/core) declares typescript@^5 as a peer, but it
+# only uses TypeScript for its bundled .d.ts files, so newer majors are fine
+peerDependencyRules:
+  allowedVersions:
+    'bun-ffi-structs>typescript': '>=5'

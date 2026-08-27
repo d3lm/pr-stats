@@ -1,0 +1,1163 @@
+import { KeyCodes } from '@opentui/core/testing';
+import { testRender } from '@opentui/react/test-utils';
+import { expect, test } from 'bun:test';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { configureCache } from '../cache';
+import { configureAuth } from '../github';
+import { loadSettings } from '../settings';
+import { App } from './App';
+import { readSavedOptions, type OptionsState } from './state/options';
+import { applyThemeState, defaultThemeState } from './theme';
+
+/**
+ * The fake gh in testdata serves canned search results and GraphQL
+ * responses, so the whole pipeline runs without network access. The debug
+ * path routes every gh call through it and ignores any ambient tokens,
+ * exactly like passing --debug on the command line.
+ */
+configureAuth(undefined, `${import.meta.dir}/testdata`);
+
+const initial: OptionsState = {
+  since: '2026-06-01',
+  repos: '',
+  user: '',
+  target: '1d',
+  sizeTarget: '400l,20f',
+  workHours: '0-24',
+  tz: 'Europe/Berlin',
+  wallClock: false,
+  includeDrafts: false,
+};
+
+interface Setup {
+  renderOnce: () => Promise<void>;
+  captureCharFrame: () => string;
+  mockInput: { pressEnter: () => void };
+}
+
+/**
+ * Polls the frame until the text appears. The data load runs through child
+ * processes, which the render scheduler knows nothing about, so this waits
+ * on wall-clock time instead of scheduler passes. Keypresses reach the
+ * handler with the latest committed state, so a single press before this
+ * wait is always enough.
+ */
+async function waitForText(setup: Setup, text: string, timeoutMs = 15_000): Promise<void> {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    await setup.renderOnce();
+
+    if (setup.captureCharFrame().includes(text)) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(`timed out waiting for ${JSON.stringify(text)}, last frame:\n${setup.captureCharFrame()}`);
+}
+
+/**
+ * Backspaces over every character of the given text, clearing an input
+ * that currently holds it before a fresh value gets typed.
+ */
+function clearInput(mockInput: { pressBackspace: () => void }, text: string): void {
+  for (let remaining = text.length; remaining > 0; remaining -= 1) {
+    mockInput.pressBackspace();
+  }
+}
+
+/**
+ * Presses enter once and returns the URL the injected opener recorded
+ * for it, polling render passes until the record lands.
+ */
+async function pressEnterToOpen(setup: Setup, opened: string[]): Promise<string> {
+  const before = opened.length;
+  const start = Date.now();
+
+  setup.mockInput.pressEnter();
+
+  while (Date.now() - start < 15_000) {
+    const recorded = opened.at(-1);
+
+    if (recorded !== undefined && opened.length > before) {
+      return recorded;
+    }
+
+    await setup.renderOnce();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(`enter never opened a PR, last frame:\n${setup.captureCharFrame()}`);
+}
+
+test('loads canned data and renders both tabs, the options modal, and the settings and theme dialogs', async () => {
+  const setup = await testRender(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+
+  try {
+    /**
+     * The app opens on the awaiting-review tab, whose queue spans two
+     * repos in the canned data, so the load is done once its repo picker
+     * renders. The review tab opens on its own picker the same way.
+     */
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    setup.mockInput.pressKey('3');
+
+    await waitForText(setup, '3 reviewed, 2 pending');
+
+    const listFrame = setup.captureCharFrame();
+
+    expect(listFrame).toContain('All repos');
+    expect(listFrame).toContain('acme/api');
+    expect(listFrame).toContain('acme/web');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Time to review');
+
+    const reviewFrame = setup.captureCharFrame();
+
+    expect(reviewFrame).toContain('▸ All repos');
+    expect(reviewFrame).toContain('@testuser');
+
+    /**
+     * The pinned strip above the charts summarizes how the PRs classified,
+     * and the scope row carries the headline percentiles.
+     */
+    expect(reviewFrame).toContain('3 reviewed on request');
+    expect(reviewFrame).toContain('2 awaiting you');
+    expect(reviewFrame).toContain('1 closed unreviewed');
+    expect(reviewFrame).toContain('1 reviewed unasked (excluded)');
+    expect(reviewFrame).toContain('p50 6h');
+    expect(reviewFrame).toContain('3 of 3 reviews');
+
+    /**
+     * The scroll area opens with the full-width distribution strip, and
+     * the chart cards follow. The pending queue lives on its own tab, so
+     * the review tab never repeats it as a list. The terminal is too
+     * narrow for two chart columns here, so the cards stack and the
+     * histogram marks the bucket that holds the median.
+     */
+    expect(reviewFrame).toContain('Review time distribution');
+    expect(reviewFrame).toContain('mean 10.1h');
+    expect(reviewFrame).not.toContain('Open and awaiting your review');
+    expect(reviewFrame).toContain('← p50 6h');
+    expect(reviewFrame).toContain('When you review');
+
+    /**
+     * The remaining charts sit below the fold, so scroll the review pane
+     * to the end before asserting on them.
+     */
+    setup.mockInput.pressKey(KeyCodes.END);
+
+    await waitForText(setup, 'inside 1d');
+
+    const reviewEndFrame = setup.captureCharFrame();
+
+    expect(reviewEndFrame).toContain('reviews in that hour');
+    expect(reviewEndFrame).toContain('Review time trend');
+    expect(reviewEndFrame).toContain('Reviews completed per week');
+    expect(reviewEndFrame).toContain('3 weeks · 3 total');
+
+    /**
+     * The pending review on acme/web has waited past the one-day target,
+     * so the service-level gauge counts it as a guaranteed miss next to
+     * the completed reviews.
+     */
+    expect(reviewEndFrame).toContain('awaiting and already over');
+
+    /**
+     * Escape returns to the picker, and the row below All repos drills
+     * into acme/api alone.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'Select a repository');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, '▸  acme/api');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, '2 of 3 reviews');
+
+    /**
+     * The scope header above the charts names the opened repo, so it stays
+     * clear which repo the stats cover.
+     */
+    expect(setup.captureCharFrame()).toContain('▸ acme/api');
+    expect(setup.captureCharFrame()).toContain('2 reviewed on request');
+
+    setup.mockInput.pressKey('4');
+
+    await waitForText(setup, '5 authored PRs');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'PR size distribution');
+
+    const sizeFrame = setup.captureCharFrame();
+
+    /**
+     * The size tab mirrors the review tab layout, with its own pinned
+     * strip, headline percentiles, over-target list, distribution strip,
+     * and the lines-total histogram marking the median bucket.
+     */
+    expect(sizeFrame).toContain('▸ All repos');
+    expect(sizeFrame).toContain('5 PRs analyzed');
+    expect(sizeFrame).toContain('1 open');
+    expect(sizeFrame).toContain('4 merged or closed');
+    expect(sizeFrame).toContain('0 inaccessible (excluded)');
+    expect(sizeFrame).toContain('p50 400 lines');
+    expect(sizeFrame).toContain('5 of 5 PRs');
+    expect(sizeFrame).toContain('mean 899');
+    expect(sizeFrame).toContain('Authored PRs over the size target');
+    expect(sizeFrame).toContain('← p50 400');
+
+    /**
+     * The remaining size charts sit below the fold, so scroll the pane to
+     * the end before asserting on them.
+     */
+    setup.mockInput.pressKey(KeyCodes.END);
+
+    await waitForText(setup, 'inside target');
+
+    const sizeEndFrame = setup.captureCharFrame();
+
+    expect(sizeEndFrame).toContain('PR size trend');
+    expect(sizeEndFrame).toContain('PRs opened per week');
+    expect(sizeEndFrame).toContain('9 weeks · 5 total');
+    expect(sizeEndFrame).toContain('Size spread');
+    expect(sizeEndFrame).toContain('Size target');
+    expect(sizeEndFrame).toContain('authored within <= 400 lines, <= 20 files');
+
+    /**
+     * The size picker keeps its own cursor, so it starts back at All
+     * repos and two moves land on acme/web.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, '2 authored PRs');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, '▸  acme/api');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, '▸  acme/web');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, '2 of 5 PRs');
+
+    expect(setup.captureCharFrame()).toContain('▸ acme/web');
+    expect(setup.captureCharFrame()).toContain('p50 45 lines');
+
+    /**
+     * The comments tab opens on its own picker, whose details count the
+     * comments per repo, most commented first.
+     */
+    setup.mockInput.pressKey('5');
+
+    await waitForText(setup, '30 comments on 5 PRs');
+
+    const commentListFrame = setup.captureCharFrame();
+
+    expect(commentListFrame).toContain('22 comments on 3 PRs');
+    expect(commentListFrame).toContain('8 comments on 2 PRs');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Comments per PR distribution');
+
+    const commentFrame = setup.captureCharFrame();
+
+    /**
+     * The comments tab mirrors the stats tab layout, with its own pinned
+     * strip, headline percentiles, most-commented list, distribution
+     * strip, the comments histogram marking the median bucket, and the
+     * scatter of comments against PR size.
+     */
+    expect(commentFrame).toContain('▸ All repos');
+    expect(commentFrame).toContain('5 PRs analyzed');
+    expect(commentFrame).toContain('30 comments received');
+    expect(commentFrame).toContain('1 without comments');
+    expect(commentFrame).toContain('0 inaccessible (excluded)');
+    expect(commentFrame).toContain('p50 3 comments');
+    expect(commentFrame).toContain('p90 16 comments');
+    expect(commentFrame).toContain('mean 6');
+    expect(commentFrame).toContain('Most commented PRs');
+    expect(commentFrame).toContain('16 comments (4 discussion, 12 review)');
+    expect(commentFrame).toContain('← p50 3');
+    expect(commentFrame).toContain('Comments vs size');
+
+    /**
+     * The remaining comment charts sit below the fold, so scroll the pane
+     * to the end before asserting on them. The volume chart sums the
+     * comment counts per week instead of counting PRs, so its total says
+     * 30 over the same nine weeks the size tab spans.
+     */
+    setup.mockInput.pressKey(KeyCodes.END);
+
+    await waitForText(setup, 'Feedback rate');
+
+    const commentEndFrame = setup.captureCharFrame();
+
+    expect(commentEndFrame).toContain('Comment trend');
+    expect(commentEndFrame).toContain('Comments received per week');
+    expect(commentEndFrame).toContain('9 weeks · 30 total');
+    expect(commentEndFrame).toContain('Comment spread');
+    expect(commentEndFrame).toContain('no comments');
+
+    setup.mockInput.pressKey('o');
+
+    await waitForText(setup, 'Repositories');
+
+    const optionsFrame = setup.captureCharFrame();
+
+    expect(optionsFrame).toContain('Options');
+    expect(optionsFrame).toContain('Since');
+    expect(optionsFrame).toContain('2026-06-01');
+    expect(optionsFrame).toContain('Work hours');
+    expect(optionsFrame).not.toContain('Clear cache');
+    expect(optionsFrame).not.toContain('applies on reload');
+
+    // nothing is saved, so the save-state line offers the save
+    expect(optionsFrame).toContain('press s to save these options for future runs');
+
+    /**
+     * Debug runs keep the cache disabled, so saving from the modal stores
+     * nothing and says so in the error slot. The next navigation clears
+     * the message again.
+     */
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'cache is disabled for this session · options not saved');
+
+    /**
+     * Toggle wall clock with space. Moving up from the first field wraps
+     * to the wall clock toggle at the bottom, and the toggle flips the
+     * time-mode label in the header. Wall clock is an analysis option, so
+     * the reload notice stays away.
+     */
+    setup.mockInput.pressArrow('up');
+
+    await waitForText(setup, 'measure raw elapsed time including weekends');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'wall-clock time');
+
+    expect(setup.captureCharFrame()).not.toContain('options changed');
+
+    /**
+     * Toggling a data option marks the loaded data stale, which lights up
+     * the reload notice in the app footer. The waits between the key
+     * presses let React commit each selection change first.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'ISO date or a relative value');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'comma-separated owner/name');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'GitHub login');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'include PRs that are currently drafts');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'options changed · press r to reload');
+
+    /**
+     * Escape closes the modal, which brings back the stats hints and
+     * removes the option fields from the frame.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'esc back');
+
+    expect(setup.captureCharFrame()).not.toContain('Work hours');
+
+    /**
+     * The settings dialog opens with s, with the disable-cache toggle
+     * selected first. Toggling it flips the value right away, and the
+     * debug run cannot persist it, which the message slot reports.
+     */
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'Disable cache');
+
+    const settingsFrame = setup.captureCharFrame();
+
+    expect(settingsFrame).toContain('Settings');
+    expect(settingsFrame).toContain('Clear cache');
+    expect(settingsFrame).toContain('refetch everything on every load');
+    expect(settingsFrame).toContain('‹ no ›');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'setting not saved');
+
+    expect(setup.captureCharFrame()).toContain('‹ yes ›');
+
+    /**
+     * The clear-cache action sits below the toggle. The first enter arms
+     * the confirmation, escape backs out without closing the dialog, and
+     * a confirmed clear reports that the cache is disabled, because debug
+     * runs never touch it.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'deletes the cached PR data');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'press enter again to clear the cache');
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'deletes the cached PR data');
+
+    expect(setup.captureCharFrame()).not.toContain('press enter again');
+    expect(setup.captureCharFrame()).toContain('Settings');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'press enter again to clear the cache');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'nothing to clear');
+
+    /**
+     * The theme rows sit between the cache rows and the reset action.
+     * Left and right cycle the built-in themes and apply them right
+     * away, and the debug run cannot persist the choice.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'built-in color theme');
+
+    expect(setup.captureCharFrame()).toContain('‹ default ›');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ green ›');
+
+    expect(setup.captureCharFrame()).toContain('setting not saved');
+
+    setup.mockInput.pressArrow('left');
+
+    await waitForText(setup, '‹ default ›');
+
+    /**
+     * The edit-colors row opens the theme dialog, which lists every
+     * theme color with its hex value. A bad value keeps the edit open
+     * and shows the error, and escape backs out to the settings dialog.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'opens the color list');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Theme colors');
+
+    const themeFrame = setup.captureCharFrame();
+
+    expect(themeFrame).toContain('accent');
+    expect(themeFrame).toContain('#f0b689');
+    expect(themeFrame).toContain('background of the screen');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'enter apply · esc cancel');
+
+    await setup.mockInput.typeText('zz');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'must be a hex color');
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'background of the screen');
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'Disable cache');
+
+    /**
+     * The reset-settings action mirrors the clear-cache confirm flow,
+     * and the debug run has no settings file to delete.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'deletes the settings file');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'press enter again to delete settings.json');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'nothing to reset');
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'esc back');
+
+    expect(setup.captureCharFrame()).not.toContain('Clear cache');
+  } finally {
+    setup.renderer.destroy();
+    applyThemeState(defaultThemeState());
+  }
+}, 30_000);
+
+test('labels the save state in the options modal and saves with s', async () => {
+  /**
+   * Saving needs an enabled cache, so this test points the cache at a
+   * temp directory, unlike the other tests, which keep it disabled the
+   * way every debug run does.
+   */
+  const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
+
+  process.env.PR_STATS_CACHE_DIR = dir;
+  configureCache(true);
+
+  /**
+   * A hand-written settings file with a theme stands in for a user's
+   * customization, loaded the way bootstrap loads it. The disable-cache
+   * toggle later rewrites the file and must keep the theme, and the App
+   * gets the parsed theme state the way bootstrap would seed it.
+   */
+  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ theme: { accent: '#89b4f0' } }));
+  loadSettings();
+
+  const setup = await testRender(
+    <App
+      initial={initial}
+      initialSaved={initial}
+      initialTheme={{ preset: 'custom', base: 'default', overrides: { accent: '#89b4f0' } }}
+      onQuit={() => {}}
+    />,
+    {
+      width: 110,
+      height: 44,
+    },
+  );
+
+  try {
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    /**
+     * The live options equal the saved ones at startup, which is exactly
+     * the pulled-from-save case the modal labels.
+     */
+    setup.mockInput.pressKey('o');
+
+    await waitForText(setup, 'using saved options · command-line flags override them');
+
+    /**
+     * Moving up from the first field wraps to the wall clock toggle, and
+     * flipping it drifts the live options away from the save.
+     */
+    setup.mockInput.pressArrow('up');
+
+    await waitForText(setup, 'measure raw elapsed time including weekends');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'differs from saved options · press s to update');
+
+    // saving writes the live options to disk and the label flips back
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'using saved options · command-line flags override them');
+
+    expect(readSavedOptions()?.wallClock).toBe(true);
+
+    /**
+     * With an enabled cache, toggling disable cache in the settings
+     * dialog persists to settings.json right away and keeps the theme
+     * the file already held.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'enter open · ←/→ tabs');
+
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'Disable cache');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'saved to settings.json');
+
+    expect(setup.captureCharFrame()).toContain('‹ yes ›');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      theme: { accent: '#89b4f0' },
+      noCache: true,
+    });
+
+    /**
+     * The hand-written accent forms a custom theme, which the Theme row
+     * shows as the active choice. Cycling right wraps from custom to the
+     * built-ins, and the file keeps the custom colors next to the new
+     * preset, so switching themes never wipes them.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'deletes the cached PR data');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'built-in color theme');
+
+    expect(setup.captureCharFrame()).toContain('‹ custom ›');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ default ›');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ green ›');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      theme: { preset: 'green', accent: '#89b4f0' },
+      noCache: true,
+    });
+
+    /**
+     * The theme dialog edits one color at a time. The active green theme
+     * renders pure, so the accent row shows the preset's own color
+     * without a custom marker, and a committed value seeds a fresh
+     * custom theme from green and switches to it.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'opens the color list');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Theme colors');
+
+    for (const hint of ['borders, rules', 'primary text', 'secondary text', 'faint text', 'highlights like medians']) {
+      setup.mockInput.pressArrow('down');
+
+      await waitForText(setup, hint);
+    }
+
+    expect(setup.captureCharFrame()).toContain('#89f0ab');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'enter apply · esc cancel');
+
+    clearInput(setup.mockInput, '#89f0ab');
+
+    await setup.mockInput.typeText('#a0c8ff');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'saved to settings.json');
+
+    expect(setup.captureCharFrame()).toContain('#a0c8ff');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      theme: { preset: 'custom', base: 'green', accent: '#a0c8ff' },
+      noCache: true,
+    });
+
+    // the fresh custom marker shows once the selection moves again
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'background of the selected row');
+
+    setup.mockInput.pressArrow('up');
+
+    await waitForText(setup, 'custom color');
+
+    /**
+     * The Theme row now sits on custom. Cycling left lands on yellow,
+     * which renders pure while the file keeps the custom theme, and
+     * cycling back to custom restores the edited accent.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'opens the color list');
+
+    setup.mockInput.pressArrow('up');
+
+    await waitForText(setup, 'built-in color theme');
+
+    expect(setup.captureCharFrame()).toContain('‹ custom ›');
+
+    setup.mockInput.pressArrow('left');
+
+    await waitForText(setup, '‹ yellow ›');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      theme: { preset: 'yellow', base: 'green', accent: '#a0c8ff' },
+      noCache: true,
+    });
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ custom ›');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      theme: { preset: 'custom', base: 'green', accent: '#a0c8ff' },
+      noCache: true,
+    });
+
+    /**
+     * Clearing the custom accent drops the last custom color, which
+     * dissolves the custom theme back into the green base it started
+     * from.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'opens the color list');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Theme colors');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'enter apply · esc cancel');
+
+    clearInput(setup.mockInput, '#a0c8ff');
+
+    setup.mockInput.pressEnter();
+
+    // the cleared accent falls back to the green base's accent
+    await waitForText(setup, '#89f0ab');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      theme: { preset: 'green' },
+      noCache: true,
+    });
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'Disable cache');
+
+    /**
+     * Resetting the settings deletes the file after a confirmation, so
+     * the toggle and the theme are gone for future runs.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'deletes the settings file');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'press enter again to delete settings.json');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'settings.json deleted');
+
+    expect(existsSync(join(dir, 'settings.json'))).toBe(false);
+  } finally {
+    setup.renderer.destroy();
+    applyThemeState(defaultThemeState());
+    configureCache(false);
+    delete process.env.PR_STATS_CACHE_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test('drives the queue tabs through the repo picker, the grouping toggle, and the browser opener', async () => {
+  const opened: string[] = [];
+
+  const setup = await testRender(
+    <App
+      initial={initial}
+      onQuit={() => {}}
+      openUrl={(url) => {
+        opened.push(url);
+      }}
+    />,
+    { width: 110, height: 44 },
+  );
+
+  try {
+    /**
+     * The canned pending queue spans two repos, so the awaiting-review
+     * tab opens on its repo picker, whose details count the waiting PRs
+     * per repo.
+     */
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    const pickerFrame = setup.captureCharFrame();
+
+    expect(pickerFrame).toContain('▸  All repos');
+    expect(pickerFrame).toContain('acme/api');
+    expect(pickerFrame).toContain('acme/web');
+    expect(pickerFrame).toContain('1 PR awaiting your review');
+    expect(pickerFrame).not.toContain('Open and awaiting your review');
+
+    /**
+     * Enter on All repos opens the aggregate queue, longest wait first,
+     * with the scope header naming it.
+     */
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Open and awaiting your review (n=2)');
+
+    const pendingFrame = setup.captureCharFrame();
+
+    expect(pendingFrame).toContain('▸ All repos');
+    expect(pendingFrame).toContain('acme/api#7');
+    expect(pendingFrame).toContain('Refactor the billing worker');
+    expect(pendingFrame).toContain('acme/web#3');
+    expect(pendingFrame).toContain('Add pagination to the list view');
+    expect(pendingFrame).not.toContain('Review time distribution');
+
+    /**
+     * The g key splits the aggregate queue into one titled list per repo
+     * and marks the grouped state in the header, and a second press
+     * restores the flat list.
+     */
+    setup.mockInput.pressKey('g');
+
+    await waitForText(setup, 'All repos · grouped by repo');
+
+    const groupedFrame = setup.captureCharFrame();
+
+    expect(groupedFrame).toContain('acme/api (n=1)');
+    expect(groupedFrame).toContain('acme/web (n=1)');
+    expect(groupedFrame).not.toContain('Open and awaiting your review');
+
+    setup.mockInput.pressKey('g');
+
+    await waitForText(setup, 'Open and awaiting your review (n=2)');
+
+    /**
+     * Enter opens the highlighted PR through the injected opener instead
+     * of a real browser. The cursor sits on the longest-waiting PR, the
+     * request on acme/api#7.
+     */
+    expect(await pressEnterToOpen(setup, opened)).toBe('https://github.com/acme/api/pull/7');
+
+    /**
+     * Escape returns to the picker, and the last row drills into the
+     * acme/web queue alone.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'Select a repository');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, '▸  acme/api');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, '▸  acme/web');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Open and awaiting your review (n=1)');
+
+    const webFrame = setup.captureCharFrame();
+
+    expect(webFrame).toContain('▸ acme/web');
+    expect(webFrame).toContain('acme/web#3');
+    expect(webFrame).not.toContain('acme/api#7');
+
+    /**
+     * The open-PRs tab lists every repo with an analyzed authored PR,
+     * like the size tab, and its details count the still-open PRs per
+     * repo, which can be zero.
+     */
+    setup.mockInput.pressKey('2');
+
+    await waitForText(setup, 'list its open PRs');
+
+    const openPickerFrame = setup.captureCharFrame();
+
+    expect(openPickerFrame).toContain('1 open PR');
+    expect(openPickerFrame).toContain('0 open PRs');
+
+    /**
+     * Enter on All repos opens the aggregate list, which holds
+     * acme/web#13 alone, with its age and size in the lead column.
+     */
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Your open authored PRs (n=1)');
+
+    const openFrame = setup.captureCharFrame();
+
+    expect(openFrame).toContain('▸ All repos');
+    expect(openFrame).toContain('acme/web#13');
+    expect(openFrame).toContain('Redesign the dashboard');
+    expect(openFrame).toContain('+2500/-400, 48 files');
+    expect(openFrame).not.toContain('acme/api#10');
+
+    /**
+     * The open-PRs tab keeps its own cursor, and enter opens its
+     * highlighted PR the same way.
+     */
+    expect(await pressEnterToOpen(setup, opened)).toBe('https://github.com/acme/web/pull/13');
+
+    /**
+     * A repo without open PRs can still be opened from the picker and
+     * shows the empty message under its scope header.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'list its open PRs');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, '▸  acme/web');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, '▸  acme/api');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'No open authored PRs found.');
+
+    expect(setup.captureCharFrame()).toContain('▸ acme/api');
+  } finally {
+    setup.renderer.destroy();
+  }
+}, 30_000);
+
+test('surfaces a failed browser open in the footer and clears it on the next keypress', async () => {
+  const setup = await testRender(
+    <App
+      initial={initial}
+      onQuit={() => {}}
+      openUrl={(_url, onError) => {
+        onError('could not open the browser (spawn open ENOENT)');
+      }}
+    />,
+    { width: 110, height: 44 },
+  );
+
+  try {
+    /**
+     * The awaiting-review tab opens on its repo picker, and enter on All
+     * repos opens the aggregate queue.
+     */
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Open and awaiting your review (n=2)');
+
+    /**
+     * Enter runs the injected opener, which reports a failure instead of
+     * opening anything, and the footer shows the message.
+     */
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'could not open the browser');
+
+    /**
+     * The next keypress dismisses the notice. The tab switch commits in
+     * the same render as the clear, so the new frame is already free of
+     * the message.
+     */
+    setup.mockInput.pressKey('2');
+
+    await waitForText(setup, 'list its open PRs');
+
+    expect(setup.captureCharFrame()).not.toContain('could not open the browser');
+  } finally {
+    setup.renderer.destroy();
+  }
+}, 30_000);
+
+test('lays the review charts out in two columns on wide terminals', async () => {
+  const setup = await testRender(<App initial={initial} onQuit={() => {}} />, { width: 150, height: 52 });
+
+  try {
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    setup.mockInput.pressKey('3');
+
+    await waitForText(setup, '3 reviewed, 2 pending');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Time to review');
+
+    /**
+     * The two card columns fit side by side at this width, so the first
+     * card titles of both columns share a frame line, and the right
+     * column's remaining cards render alongside the left column.
+     */
+    const frame = setup.captureCharFrame();
+    const lines = frame.split('\n');
+
+    expect(lines.some((line) => line.includes('Time to review') && line.includes('Review time trend'))).toBe(true);
+    expect(frame).toContain('When you review');
+    expect(frame).toContain('Reviews completed per week');
+    expect(frame).toContain('Service level');
+
+    /**
+     * The size tab gets the same two-column treatment. The left column's
+     * histogram subtitle and the right column's trend title share the
+     * first grid row.
+     */
+    setup.mockInput.pressKey('4');
+
+    await waitForText(setup, '5 authored PRs');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'PR size distribution');
+
+    const sizeFrame = setup.captureCharFrame();
+    const sizeLines = sizeFrame.split('\n');
+
+    expect(
+      sizeLines.some((line) => line.includes('total lines changed per authored PR') && line.includes('PR size trend')),
+    ).toBe(true);
+
+    expect(sizeFrame).toContain('Files touched');
+    expect(sizeFrame).toContain('PRs opened per week');
+  } finally {
+    setup.renderer.destroy();
+  }
+}, 30_000);
+
+/**
+ * Returns the column where the needle starts on its frame line, or -1
+ * when no line contains it.
+ */
+function columnOf(frame: string, needle: string): number {
+  const line = frame.split('\n').find((row) => row.includes(needle));
+
+  return line === undefined ? -1 : line.indexOf(needle);
+}
+
+/**
+ * Reports whether the frame draws the overlaid scrollbar. Only the
+ * full-width section rules and the scrollbar reach the outermost column,
+ * so any glyph there besides a rule cell is the scrollbar thumb or track.
+ */
+function barSeen(frame: string): boolean {
+  return frame.split('\n').some((row) => row.length >= 110 && row[109] !== ' ' && row[109] !== '─');
+}
+
+test('shows the scrollbar promptly and keeps the stats line still while the charts mount', async () => {
+  const setup = await testRender(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+
+  try {
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    setup.mockInput.pressKey('3');
+
+    await waitForText(setup, '3 reviewed, 2 pending');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'mean 10.1h');
+
+    /**
+     * The pinned headline and the distribution stats share the same right
+     * padding, so their right-aligned ends land on the same column.
+     */
+    const first = setup.captureCharFrame();
+    const statsColumn = columnOf(first, 'mean 10.1h');
+
+    expect(statsColumn).toBeGreaterThan(0);
+    expect(statsColumn + 'mean 10.1h'.length).toBe(columnOf(first, '3 of 3 reviews') + '3 of 3 reviews'.length);
+
+    /**
+     * The stats line must hold its column while the mount settles, and
+     * the scrollbar must arrive within the first frames rather than after
+     * a settle timer. The frames below span well past the old 100ms
+     * window, where the arriving scrollbar used to push the line one
+     * column left.
+     */
+    let barFrame = -1;
+
+    for (let frame = 0; frame < 8; frame++) {
+      const captured = setup.captureCharFrame();
+
+      expect(columnOf(captured, 'mean 10.1h')).toBe(statsColumn);
+
+      if (barFrame < 0 && barSeen(captured)) {
+        barFrame = frame;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await setup.renderOnce();
+    }
+
+    expect(barFrame).toBeGreaterThanOrEqual(0);
+    expect(barFrame).toBeLessThanOrEqual(2);
+  } finally {
+    setup.renderer.destroy();
+  }
+}, 30_000);
+
+test('never flashes the scrollbar when a list fits the viewport', async () => {
+  const setup = await testRender(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+
+  try {
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    /**
+     * Switching tabs mounts the open-PRs picker, and enter on All repos
+     * mounts a fresh queue panel. Its single row fits the viewport with
+     * room to spare, so the scrollbar must stay hidden on every frame,
+     * including the very frame that first paints the list. The mount
+     * layout measures the content at twice the viewport height, which
+     * used to flash the scrollbar on that frame before the corrected
+     * pass hid it again. The loop samples each frame right after it
+     * renders so that flash frame cannot slip through.
+     */
+    setup.mockInput.pressKey('2');
+
+    await waitForText(setup, 'list its open PRs');
+
+    setup.mockInput.pressEnter();
+
+    let framesAfterSwitch = 0;
+
+    for (let frame = 0; frame < 80 && framesAfterSwitch < 8; frame++) {
+      await setup.renderOnce();
+
+      const captured = setup.captureCharFrame();
+
+      expect(barSeen(captured)).toBe(false);
+
+      if (captured.includes('Your open authored PRs (n=1)')) {
+        framesAfterSwitch += 1;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+
+    expect(framesAfterSwitch).toBe(8);
+  } finally {
+    setup.renderer.destroy();
+  }
+}, 30_000);

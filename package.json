@@ -8,12 +8,17 @@
     "lint:fix": "oxlint packages/* --fix && eslint --cache --fix packages/*"
   },
   "devDependencies": {
-    "@d3lm/lint-preset": "^1.1.6",
+    "@d3lm/lint-preset": "^1.1.7",
     "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "oxlint": "^1.79.0",
-    "prettier": "^3.9.6"
+    "prettier": "^3.9.6",
+    "typescript": "~6.0.3"
   },
   "dependencies": {
     "chalk": "^6.0.0"
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

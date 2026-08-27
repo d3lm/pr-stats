@@ -1,11 +1,42 @@
 import chalk from 'chalk';
 import { parseArgs } from 'node:util';
-import { timeMode } from './time.mjs';
-import { fail, formatMinutesOfDay } from './utils.mjs';
+import { timeMode, type WorkWindow } from './time';
+import { CliError, formatMinutesOfDay } from './utils';
 
 const flag = chalk.green;
 const value = chalk.cyan;
 const dim = chalk.dim;
+
+interface OptionSpec {
+  name: string;
+  short?: string;
+  type: 'string' | 'boolean';
+  multiple?: boolean;
+  default?: string | boolean | string[];
+  placeholder?: string;
+  help: string;
+}
+
+export interface CliValues {
+  since: string;
+  repo: string[];
+  user?: string;
+  token?: string;
+  target?: string;
+  'size-target'?: string;
+  tz?: string;
+  'work-hours': string;
+  'wall-clock': boolean;
+  'include-drafts': boolean;
+  'no-cache': boolean;
+  debug?: string;
+  help: boolean;
+}
+
+export interface SizeTarget {
+  lines?: number;
+  files?: number;
+}
 
 /**
  * Declares every flag once. Each entry feeds both the parseArgs config and
@@ -13,7 +44,7 @@ const dim = chalk.dim;
  * help text is plain prose with a light markup that colorizeHelp expands,
  * and renderHelp handles the column alignment and line wrapping.
  */
-const OPTIONS = [
+const OPTIONS: OptionSpec[] = [
   {
     name: 'since',
     short: 's',
@@ -45,13 +76,6 @@ const OPTIONS = [
     help: 'GitHub access token. When set, the tool calls the GitHub API directly instead of going through the gh CLI. The `GITHUB_TOKEN` and `GH_TOKEN` environment variables work as well.',
   },
   {
-    name: 'reports',
-    type: 'string',
-    default: 'review-time,size',
-    placeholder: '<list>',
-    help: 'Choose which reports to print as a comma-separated list. Accepts `review-time` (how fast you finish review requests) and `size` (how large your authored PRs are). Both print by default.',
-  },
-  {
     name: 'target',
     short: 't',
     type: 'string',
@@ -63,14 +87,6 @@ const OPTIONS = [
     type: 'string',
     placeholder: '<v>',
     help: 'Report how many authored PRs fit within this size. Accepts a line budget (`400` or `400l`), a file budget (`20f`), or both (`400l,20f`). Lines count additions plus deletions.',
-  },
-  {
-    name: 'charts',
-    short: 'c',
-    type: 'string',
-    default: 'histogram,strip',
-    placeholder: '<list>',
-    help: 'Choose which size charts to print as a comma-separated list. Accepts `histogram` (size distribution bars), `strip` (a quantile strip per metric), and `spark` (a size line chart over time). All three print by default. Pass `none` to print no charts.',
   },
   {
     name: 'tz',
@@ -99,6 +115,18 @@ const OPTIONS = [
     help: 'Include PRs that are currently drafts. Excluded by default.',
   },
   {
+    name: 'no-cache',
+    type: 'boolean',
+    default: false,
+    help: 'Refetch every PR instead of reading the local disk cache. Closed PRs are normally served from a per-PR cache because their timelines and sizes no longer change. Fresh results still update the cache. The TUI settings dialog can save this behavior for every run, and the flag wins over the saved setting.',
+  },
+  {
+    name: 'debug',
+    type: 'string',
+    placeholder: '<path>',
+    help: 'Serve canned data from a fake gh binary instead of fetching from GitHub. Accepts a path to a testdata directory that contains a `gh` executable, for example `tui/testdata`, or a path to the executable itself. Tokens are ignored while this flag is set. This is useful for testing and local development.',
+  },
+  {
     name: 'help',
     short: 'h',
     type: 'boolean',
@@ -109,19 +137,20 @@ const OPTIONS = [
 
 /**
  * Keeps every rendered help line within the terminal width. The fallback of
- * 80 columns applies when the width is unknown, for example when the output
- * is piped, and the cap of 120 keeps lines readable on very wide terminals.
+ * 80 columns applies when stdout is not a terminal, for example when the
+ * output is piped, and the cap of 120 keeps lines readable on very wide
+ * terminals.
  */
-const HELP_WIDTH = Math.min(process.stdout.columns ?? 80, 120);
+const HELP_WIDTH = Math.min(process.stdout.isTTY ? process.stdout.columns : 80, 120);
 
 /**
  * Expands the help markup into colors. Backtick spans print cyan because
  * they are literal values you can type, double-quoted spans print yellow,
  * and flag references like --work-hours print green.
  */
-function colorizeHelp(text) {
+function colorizeHelp(text: string): string {
   return text
-    .replaceAll(/`([^`]+)`/g, (match, span) => value(span))
+    .replaceAll(/`([^`]+)`/g, (match, span: string) => value(span))
     .replaceAll(/"[^"]*"/g, (span) => chalk.yellow(span))
     .replaceAll(/--[a-z][a-z-]*/g, (span) => flag(span));
 }
@@ -131,8 +160,8 @@ function colorizeHelp(text) {
  * the given width. Backtick markers vanish when the text renders, so they
  * do not count toward the width.
  */
-function wrapMarkup(text, width) {
-  const lines = [];
+function wrapMarkup(text: string, width: number): string[] {
+  const lines: string[] = [];
 
   let line = '';
 
@@ -158,7 +187,7 @@ function wrapMarkup(text, width) {
  * Renders the full help page from OPTIONS. The description column sits two
  * spaces past the widest flag label, so alignment never needs hand-tuning.
  */
-function renderHelp() {
+function renderHelp(): string {
   const labels = OPTIONS.map((option) => {
     const short = option.short ? `-${option.short}, ` : '';
     const long = option.placeholder ? `--${option.name} ${option.placeholder}` : `--${option.name}`;
@@ -191,8 +220,24 @@ function renderHelp() {
 
 export const HELP = renderHelp();
 
-export function parseCliArgs() {
-  const options = {};
+export interface ParsedArgs {
+  values: CliValues;
+  /**
+   * Holds the names of the flags that were actually given on the command
+   * line, as opposed to filled in from the defaults. Saved options only
+   * replace defaulted values, so the merge needs the distinction.
+   */
+  explicit: Set<string>;
+}
+
+/**
+ * Parses the command line into CliValues plus the set of flags that were
+ * explicitly given. The parse runs without the defaults so a present key
+ * means the flag was on the command line, and the defaults get filled in
+ * afterwards. The args parameter overrides process.argv for tests.
+ */
+export function parseCliArgs(args?: string[]): ParsedArgs {
+  const options: Record<string, { type: 'string' | 'boolean'; short?: string; multiple?: boolean }> = {};
 
   for (const option of OPTIONS) {
     options[option.name] = { type: option.type };
@@ -204,19 +249,28 @@ export function parseCliArgs() {
     if (option.multiple) {
       options[option.name].multiple = true;
     }
+  }
 
-    if (option.default !== undefined) {
-      options[option.name].default = option.default;
+  const { values } = parseArgs({ options, args });
+
+  const explicit = new Set(Object.keys(values));
+
+  for (const option of OPTIONS) {
+    if (option.default !== undefined && values[option.name] === undefined) {
+      values[option.name] = option.default;
     }
   }
 
-  const { values } = parseArgs({ options });
-
-  return values;
+  /**
+   * The config is built dynamically, so parseArgs cannot infer the value
+   * types and returns a loose index signature. CliValues restates what the
+   * OPTIONS table guarantees.
+   */
+  return { values: values as unknown as CliValues, explicit };
 }
 
-export function parseSince(value) {
-  const relative = /^(\d+)([dwmy])$/.exec(value);
+export function parseSince(input: string): Date {
+  const relative = /^(\d+)([dwmy])$/.exec(input);
 
   if (relative) {
     const amount = Number(relative[1]);
@@ -241,10 +295,10 @@ export function parseSince(value) {
     return date;
   }
 
-  const date = new Date(value);
+  const date = new Date(input);
 
   if (Number.isNaN(date.getTime())) {
-    fail(`invalid --since value "${value}", use an ISO date or 30d/8w/6m/1y`);
+    throw new CliError(`invalid --since value "${input}", use an ISO date or 30d/8w/6m/1y`);
   }
 
   return date;
@@ -254,11 +308,11 @@ export function parseSince(value) {
  * Parses a --target value into counted hours. A day suffix scales with the
  * working-day length, so call this only after the time mode is configured.
  */
-export function parseTarget(value) {
-  const match = /^(\d+(?:\.\d+)?)([hdm]?)$/.exec(value);
+export function parseTarget(input: string): number {
+  const match = /^(\d+(?:\.\d+)?)([hdm]?)$/.exec(input);
 
   if (!match) {
-    fail(`invalid --target value "${value}", use 24h, 2d, or 90m`);
+    throw new CliError(`invalid --target value "${input}", use 24h, 2d, or 90m`);
   }
 
   const amount = Number(match[1]);
@@ -279,20 +333,20 @@ export function parseTarget(value) {
  * A bare number or an l suffix sets the line budget, which counts additions
  * plus deletions. An f suffix sets the file budget.
  */
-export function parseSizeTarget(value) {
-  const target = {};
+export function parseSizeTarget(input: string): SizeTarget {
+  const target: SizeTarget = {};
 
-  for (const part of value.split(',')) {
+  for (const part of input.split(',')) {
     const match = /^(\d+)([lf]?)$/.exec(part.trim());
 
     if (!match) {
-      fail(`invalid --size-target value "${value}", use 400, 400l, 20f, or 400l,20f`);
+      throw new CliError(`invalid --size-target value "${input}", use 400, 400l, 20f, or 400l,20f`);
     }
 
     const key = match[2] === 'f' ? 'files' : 'lines';
 
     if (target[key] !== undefined) {
-      fail(`--size-target sets the ${key} budget twice`);
+      throw new CliError(`--size-target sets the ${key} budget twice`);
     }
 
     target[key] = Number(match[1]);
@@ -302,82 +356,12 @@ export function parseSizeTarget(value) {
 }
 
 /**
- * Parses the --reports value into a Set of report names. Accepts a
- * comma-separated list of review-time and size. At least one report must
- * remain, because running none of them would print nothing.
- */
-export function parseReports(value) {
-  const names = new Set(['review-time', 'size']);
-
-  const parts = value
-    .split(',')
-    .map((part) => part.trim())
-    .filter((part) => part !== '');
-
-  const reports = new Set();
-
-  for (const part of parts) {
-    if (!names.has(part)) {
-      fail(
-        `invalid ${flag('--reports')} value "${part}", use a comma-separated list of ${value('review-time')} and ${value('size')}`,
-      );
-    }
-
-    reports.add(part);
-  }
-
-  if (reports.size === 0) {
-    fail(`--reports needs at least one of ${value('review-time')} and ${value('size')}`);
-  }
-
-  return reports;
-}
-
-/**
- * Parses the --charts value into a Set of chart names. Accepts a
- * comma-separated list of histogram, strip, and spark, or none to disable
- * every chart.
- */
-export function parseCharts(value) {
-  const aliases = {
-    histogram: 'histogram',
-    hist: 'histogram',
-    strip: 'strip',
-    spark: 'spark',
-    sparkline: 'spark',
-  };
-
-  const parts = value
-    .split(',')
-    .map((part) => part.trim().toLowerCase())
-    .filter((part) => part !== '');
-
-  if (parts.length === 1 && parts[0] === 'none') {
-    return new Set();
-  }
-
-  const charts = new Set();
-
-  for (const part of parts) {
-    const name = aliases[part];
-
-    if (name === undefined) {
-      fail(`invalid --charts value "${part}", use a comma-separated list of histogram, strip, spark, or none`);
-    }
-
-    charts.add(name);
-  }
-
-  return charts;
-}
-
-/**
  * Converts one side of a --work-hours range into minutes since midnight.
  * Hours with an am or pm suffix follow the 12-hour clock, so 12am maps to
  * midnight and 12pm maps to noon. Returns null when the hour or minute is
  * out of range.
  */
-function toMinutesOfDay(hourText, minuteText, meridiem) {
+function toMinutesOfDay(hourText: string, minuteText: string | undefined, meridiem: string | undefined): number | null {
   const minute = Number(minuteText ?? 0);
 
   if (minute > 59) {
@@ -406,12 +390,14 @@ function toMinutesOfDay(hourText, minuteText, meridiem) {
  * "9am-6pm", or "9-18,19:30-20:30". Returns the windows sorted by start
  * time.
  */
-export function parseWorkHours(value) {
-  const windows = value.split(',').map((range) => {
+export function parseWorkHours(input: string): WorkWindow[] {
+  const windows = input.split(',').map((range) => {
     const match = /^(\d{1,2})(?::(\d{2}))?(am|pm)?-(\d{1,2})(?::(\d{2}))?(am|pm)?$/i.exec(range.trim());
 
     if (!match) {
-      fail(`invalid --work-hours range "${range}", use ranges like 9-17, 9am-6pm, 8:30-16:30, or 9-18,19:30-20:30`);
+      throw new CliError(
+        `invalid --work-hours range "${range}", use ranges like 9-17, 9am-6pm, 8:30-16:30, or 9-18,19:30-20:30`,
+      );
     }
 
     const startMin = toMinutesOfDay(match[1], match[2], match[3]);
@@ -421,7 +407,7 @@ export function parseWorkHours(value) {
     const endMin = end === 0 ? 24 * 60 : end;
 
     if (startMin === null || endMin === null || endMin <= startMin || endMin > 24 * 60) {
-      fail(`invalid --work-hours range "${range}"`);
+      throw new CliError(`invalid --work-hours range "${range}"`);
     }
 
     return { startMin, endMin };
@@ -431,7 +417,7 @@ export function parseWorkHours(value) {
 
   for (let i = 1; i < windows.length; i++) {
     if (windows[i].startMin < windows[i - 1].endMin) {
-      fail(`--work-hours ranges overlap around ${formatMinutesOfDay(windows[i].startMin)}`);
+      throw new CliError(`--work-hours ranges overlap around ${formatMinutesOfDay(windows[i].startMin)}`);
     }
   }
 
@@ -442,13 +428,13 @@ export function parseWorkHours(value) {
  * Resolves the --tz value, falling back to the system timezone, and rejects
  * zones that Intl does not recognize.
  */
-export function resolveTimezone(value) {
-  const tz = value ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+export function resolveTimezone(input?: string): string {
+  const tz = input ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: tz });
   } catch {
-    fail(`invalid --tz value "${tz}", use an IANA zone like Europe/Berlin`);
+    throw new CliError(`invalid --tz value "${tz}", use an IANA zone like Europe/Berlin`);
   }
 
   return tz;

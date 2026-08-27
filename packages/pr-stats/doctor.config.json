@@ -1,0 +1,11 @@
+{
+  "$schema": "https://react.doctor/schema/config.json",
+  "ignore": {
+    "overrides": [
+      {
+        "files": ["tui/**"],
+        "rules": ["react-doctor/no-unknown-property"]
+      }
+    ]
+  }
+}

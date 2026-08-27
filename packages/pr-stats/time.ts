@@ -1,26 +1,21 @@
-/**
- * Holds how durations are measured. configureTimeMode() fills this in from
- * the flags before any duration is computed.
- */
-export const timeMode = {
-  business: true,
-  workWindows: [{ startMin: 0, endMin: 24 * 60 }],
-  dayHours: 24,
-  formatter: undefined,
-};
+export interface WorkWindow {
+  startMin: number;
+  endMin: number;
+}
+
+export interface TimeMode {
+  business: boolean;
+  workWindows: WorkWindow[];
+  dayHours: number;
+  formatter: Intl.DateTimeFormat;
+}
 
 /**
- * Applies the flag values to the time mode. Working hours only matter in
- * business mode, so wall-clock mode keeps the 24-hour day.
+ * Builds the formatter that wallParts() uses to read wall-clock parts of an
+ * instant in the given timezone.
  */
-export function configureTimeMode({ business, workWindows, tz }) {
-  const workMinutesPerDay = workWindows.reduce((sum, window) => sum + (window.endMin - window.startMin), 0);
-
-  timeMode.business = business;
-  timeMode.workWindows = workWindows;
-  timeMode.dayHours = business ? workMinutesPerDay / 60 : 24;
-
-  timeMode.formatter = new Intl.DateTimeFormat('en-US', {
+function wallFormatter(tz: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
     hourCycle: 'h23',
     year: 'numeric',
@@ -33,18 +28,61 @@ export function configureTimeMode({ business, workWindows, tz }) {
 }
 
 /**
+ * Holds how durations are measured. configureTimeMode() fills this in from
+ * the flags before any duration is computed. The defaults measure wall-clock
+ * weekday hours in UTC.
+ */
+export const timeMode: TimeMode = {
+  business: true,
+  workWindows: [{ startMin: 0, endMin: 24 * 60 }],
+  dayHours: 24,
+  formatter: wallFormatter('UTC'),
+};
+
+/**
+ * Applies the flag values to the time mode. Working hours only matter in
+ * business mode, so wall-clock mode keeps the 24-hour day.
+ */
+export function configureTimeMode({
+  business,
+  workWindows,
+  tz,
+}: {
+  business: boolean;
+  workWindows: WorkWindow[];
+  tz: string;
+}): void {
+  const workMinutesPerDay = workWindows.reduce((sum, window) => sum + (window.endMin - window.startMin), 0);
+
+  timeMode.business = business;
+  timeMode.workWindows = workWindows;
+  timeMode.dayHours = business ? workMinutesPerDay / 60 : 24;
+
+  timeMode.formatter = wallFormatter(tz);
+}
+
+/**
  * Reports whether every hour of a weekday counts, which is the default.
  * When the user sets --work-hours, only the given windows count.
  */
-export function isFullDayMode() {
+export function isFullDayMode(): boolean {
   return timeMode.business && timeMode.dayHours === 24;
+}
+
+interface WallParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
 }
 
 /**
  * Returns the wall-clock date and time parts of an instant in the
  * configured timezone.
  */
-function wallParts(instantMs) {
+function wallParts(instantMs: number): WallParts {
   const parts = Object.fromEntries(timeMode.formatter.formatToParts(instantMs).map((part) => [part.type, part.value]));
 
   return {
@@ -58,12 +96,26 @@ function wallParts(instantMs) {
 }
 
 /**
+ * Returns the local calendar day of an instant in the configured timezone,
+ * encoded as a UTC timestamp, together with the local weekday and hour.
+ * The encoded day's UTC weekday matches the local weekday, so day and week
+ * arithmetic on it stays exact across DST changes.
+ */
+export function zonedStamp(date: Date): { dayUtcMs: number; weekday: number; hour: number } {
+  const parts = wallParts(date.getTime());
+
+  const dayUtcMs = Date.UTC(parts.year, parts.month - 1, parts.day);
+
+  return { dayUtcMs, weekday: new Date(dayUtcMs).getUTCDay(), hour: parts.hour };
+}
+
+/**
  * Finds the UTC instant whose wall-clock time in the configured timezone
  * equals the given target. The target encodes a wall-clock time as a Date.UTC
  * value. Two refinement rounds are enough to converge, including across DST
  * changes.
  */
-function utcFromWall(wallTargetMs) {
+function utcFromWall(wallTargetMs: number): number {
   let guess = wallTargetMs;
 
   for (let i = 0; i < 2; i++) {
@@ -83,7 +135,7 @@ function utcFromWall(wallTargetMs) {
  * calendar day at a time and adds the overlap with each of that day's
  * working windows.
  */
-function businessMsBetween(start, end) {
+function businessMsBetween(start: Date, end: Date): number {
   const startMs = start.getTime();
   const endMs = end.getTime();
 
@@ -123,9 +175,9 @@ function businessMsBetween(start, end) {
   return total;
 }
 
-export function durationHours(start, end) {
+export function durationHours(start: Date, end: Date): number {
   if (!timeMode.business) {
-    return (end - start) / 36e5;
+    return (end.getTime() - start.getTime()) / 36e5;
   }
 
   return businessMsBetween(start, end) / 36e5;
