@@ -2,6 +2,8 @@
 
 An interactive terminal UI, built with [OpenTUI](https://github.com/anomalyco/opentui) and React, that shows statistics for a GitHub user, e.g., time to review, size of authored PRs, or comments received on them. It works with any repository your GitHub login can see. It has queue tabs for the open PRs awaiting your review and your own open PRs, chart tabs for the review-time, size, and comments reports, and a live options modal.
 
+![pr-stats](./assets/screenshot.png)
+
 ## Requirements
 
 The TUI renders through native FFI, so it needs either Node 26.4 or newer, or [Bun](https://bun.sh) 1.3 or newer. You also need one of two ways to authenticate:
