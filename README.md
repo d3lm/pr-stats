@@ -11,7 +11,7 @@ The TUI renders through native FFI, so it needs either Node 26.4 or newer, or [B
 
 ## Install
 
-```sh
+```bash
 npm install -g @d3lm/pr-stats
 ```
 
@@ -19,7 +19,7 @@ You can also run it without installing through `npx @d3lm/pr-stats`. The bunx eq
 
 ## Usage
 
-```sh
+```bash
 pr-stats
 ```
 
@@ -29,7 +29,7 @@ Node gates the FFI that OpenTUI renders through behind the `--experimental-ffi` 
 
 All flags pre-seed the options modal:
 
-```sh
+```bash
 # Limit the search to one repository and a start date
 pr-stats --repo owner/name --since 2026-01-01
 
