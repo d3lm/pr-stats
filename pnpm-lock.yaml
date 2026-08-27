@@ -8,13 +8,21 @@ importers:
 
   .:
     dependencies:
-      chalk:
-        specifier: ^6.0.0
-        version: 6.0.0
-    devDependencies:
       '@d3lm/lint-preset':
         specifier: ^1.1.7
         version: 1.1.7(@stylistic/eslint-plugin@5.10.0(eslint@10.8.1))(@typescript-eslint/eslint-plugin@8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1)(typescript@6.0.3))(eslint@10.8.1)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint-plugin-jsdoc@64.2.1(eslint@10.8.1))(eslint-plugin-oxlint@1.79.0(oxlint@1.79.0(oxlint-tsgolint@7.0.2001)))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint@10.8.1)(prettier@3.9.6))(eslint-plugin-react-hooks@7.1.1(eslint@10.8.1))(eslint-plugin-unicorn@73.0.0(eslint@10.8.1))(eslint@10.8.1)(oxlint-tsgolint@7.0.2001)(oxlint@1.79.0(oxlint-tsgolint@7.0.2001))(typescript-eslint@8.67.0(eslint@10.8.1)(typescript@6.0.3))
+      '@opentui/core':
+        specifier: ^0.5.8
+        version: 0.5.8(typescript@6.0.3)(web-tree-sitter@0.25.10)
+      '@opentui/react':
+        specifier: ^0.5.8
+        version: 0.5.8(react-devtools-core@7.0.1)(react@19.2.8)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.21.3)
+      asciichart:
+        specifier: ^1.5.25
+        version: 1.5.25
+      chalk:
+        specifier: ^6.0.0
+        version: 6.0.0
       eslint:
         specifier: ^10.8.1
         version: 10.8.1
@@ -27,24 +35,12 @@ importers:
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
-      typescript:
-        specifier: ~6.0.3
-        version: 6.0.3
-
-  packages/pr-stats:
-    dependencies:
-      '@opentui/core':
-        specifier: ^0.5.8
-        version: 0.5.8(typescript@6.0.3)(web-tree-sitter@0.25.10)
-      '@opentui/react':
-        specifier: ^0.5.8
-        version: 0.5.8(react-devtools-core@7.0.1)(react@19.2.8)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.21.3)
-      asciichart:
-        specifier: ^1.5.25
-        version: 1.5.25
       react:
         specifier: ^19.2.8
         version: 19.2.8
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
     devDependencies:
       '@types/asciichart':
         specifier: ^1.5.8
@@ -61,9 +57,6 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
 
 packages:
 

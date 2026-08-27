@@ -11,5 +11,5 @@
     "noEmit": true,
     "types": ["node", "bun"]
   },
-  "include": ["tui/**/*", "*.ts"]
+  "include": ["src/**/*"]
 }
