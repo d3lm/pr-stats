@@ -57,6 +57,9 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
+      oxlint-tsgolint:
+        specifier: ^7.0.2001
+        version: 7.0.2001
 
 packages:
 
