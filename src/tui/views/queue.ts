@@ -1,7 +1,19 @@
-import { computeReviewStats, type PendingEntry } from '../../compute';
+import { computeReviewStats, type PendingEntry, type ReviewingEntry } from '../../compute';
 import { durationHours } from '../../time';
 import type { RawData, SizeEntry } from '../data/load';
 import { durationLead, toPrRows, type PrList, type PrRow } from './rows';
+
+/**
+ * One titled section of a queue tab. The flat view renders the rows
+ * right under the section title, and the grouped view renders one
+ * indented sub-list per repo instead, so exactly one of rows and lists
+ * carries the section's content.
+ */
+export interface QueueSection {
+  title: string;
+  rows: PrRow[];
+  lists: PrList[];
+}
 
 /**
  * A tab that renders nothing but PR lists, used by the awaiting-review
@@ -9,15 +21,15 @@ import { durationLead, toPrRows, type PrList, type PrRow } from './rows';
  */
 export interface QueueView {
   empty: string | null;
-  lists: PrList[];
+  sections: QueueSection[];
 }
 
 /**
- * Flattens a queue view's lists into the row sequence its cursor moves
- * over, in render order.
+ * Flattens a queue view's sections into the row sequence its cursor
+ * moves over, in render order.
  */
 export function queueRows(view: QueueView): PrRow[] {
-  return view.lists.flatMap((list) => list.rows);
+  return view.sections.flatMap((section) => [...section.rows, ...section.lists.flatMap((list) => list.rows)]);
 }
 
 /**
@@ -43,38 +55,47 @@ function groupedLists<T extends { pr: { repo: string } }>(entries: T[], rowsOf: 
 }
 
 /**
- * Builds the awaiting-review tab, the queue of open PRs where a review
- * from you is still pending, longest wait first. Call this after the time
- * mode is configured, because the waiting durations depend on it. Passing
- * a repo narrows the queue to that repo, and the grouped flag splits the
- * aggregate queue into one list per repo instead.
+ * Builds the awaiting-review tab, the two queues of open PRs on your
+ * plate, one section each. The awaiting section holds the PRs where a
+ * review from you is still pending, longest wait first. The reviewing
+ * section holds the PRs you already reviewed that are still open without
+ * a new request, longest since your review first, so a PR you commented
+ * on stays visible until it merges or closes. Call this after the time
+ * mode is configured, because the durations depend on it. Passing a repo
+ * narrows both sections to that repo, and the grouped flag splits each
+ * section into one indented sub-list per repo instead.
  */
 export function buildPendingReviewView(raw: RawData, repo: string | null = null, grouped = false): QueueView {
-  const { pending } = computeReviewStats(raw.reviewResults, { now: raw.fetchedAt });
-  const entries = repo === null ? pending : pending.filter((entry) => entry.pr.repo === repo);
+  const stats = computeReviewStats(raw.reviewResults, { now: raw.fetchedAt });
+  const awaiting = repo === null ? stats.pending : stats.pending.filter((entry) => entry.pr.repo === repo);
+  const reviewing = repo === null ? stats.reviewing : stats.reviewing.filter((entry) => entry.pr.repo === repo);
 
-  if (entries.length === 0) {
-    return { empty: 'No PRs are awaiting your review.', lists: [] };
+  if (awaiting.length === 0 && reviewing.length === 0) {
+    return { empty: 'No PRs are awaiting your review, and none you reviewed are still open.', sections: [] };
   }
 
-  if (repo === null && grouped) {
-    return { empty: null, lists: groupedLists(entries, rowsOf) };
-  }
+  const split = repo === null && grouped;
+
+  const sectionOf = (title: string, entries: (PendingEntry | ReviewingEntry)[]): QueueSection =>
+    split ? { title, rows: [], lists: groupedLists(entries, rowsOf) } : { title, rows: rowsOf(entries), lists: [] };
 
   return {
     empty: null,
-    lists: [{ title: `Open and awaiting your review (n=${entries.length})`, rows: rowsOf(entries) }],
+    sections: [
+      ...(awaiting.length === 0 ? [] : [sectionOf(`Awaiting your review (n=${awaiting.length})`, awaiting)]),
+      ...(reviewing.length === 0 ? [] : [sectionOf(`Reviewing (n=${reviewing.length})`, reviewing)]),
+    ],
   };
 }
 
 /**
  * Builds the open-PRs tab, the list of your authored PRs that are still
- * open, oldest first. Each row leads with the age since the PR was created
- * and its size. Call this after the time mode is configured, because the
- * ages depend on it. Passing a repo narrows the list to that repo, and the
- * grouped flag splits the aggregate list into one list per repo instead.
- * Inaccessible authored PRs never make it into the size entries, so they
- * stay off this list too.
+ * open, oldest first, as one section. Each row leads with the age since
+ * the PR was created and its size. Call this after the time mode is
+ * configured, because the ages depend on it. Passing a repo narrows the
+ * list to that repo, and the grouped flag splits the section into one
+ * indented sub-list per repo instead. Inaccessible authored PRs never
+ * make it into the size entries, so they stay off this list too.
  */
 export function buildOpenAuthoredView(raw: RawData, repo: string | null = null, grouped = false): QueueView {
   const open = raw.sizes
@@ -82,7 +103,7 @@ export function buildOpenAuthoredView(raw: RawData, repo: string | null = null, 
     .toSorted((a, b) => a.pr.createdAt.getTime() - b.pr.createdAt.getTime());
 
   if (open.length === 0) {
-    return { empty: 'No open authored PRs found.', lists: [] };
+    return { empty: 'No open authored PRs found.', sections: [] };
   }
 
   const rowsOf = (group: SizeEntry[]) => {
@@ -97,17 +118,16 @@ export function buildOpenAuthoredView(raw: RawData, repo: string | null = null, 
     );
   };
 
+  const title = `Your open authored PRs (n=${open.length})`;
+
   if (repo === null && grouped) {
-    return { empty: null, lists: groupedLists(open, rowsOf) };
+    return { empty: null, sections: [{ title, rows: [], lists: groupedLists(open, rowsOf) }] };
   }
 
-  return {
-    empty: null,
-    lists: [{ title: `Your open authored PRs (n=${open.length})`, rows: rowsOf(open) }],
-  };
+  return { empty: null, sections: [{ title, rows: rowsOf(open), lists: [] }] };
 }
 
-function rowsOf(group: PendingEntry[]) {
+function rowsOf(group: (PendingEntry | ReviewingEntry)[]) {
   return toPrRows(
     group,
     group.map((entry) => durationLead(entry)),

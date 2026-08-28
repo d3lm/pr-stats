@@ -1,5 +1,12 @@
 # bun-ffi-structs (via @opentui/core) declares typescript@^5 as a peer, but it
-# only uses TypeScript for its bundled .d.ts files, so newer majors are fine
+# only uses TypeScript for its bundled .d.ts files, so newer majors are fine.
 peerDependencyRules:
   allowedVersions:
     'bun-ffi-structs>typescript': '>=5'
+
+# Supply-chain hardening. Wait 7 days before installing a freshly published
+# version, so malware that gets caught and unpublished within hours never
+# reaches this machine, and refuse packages whose provenance or signature
+# trust weakens between updates.
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade

@@ -6,10 +6,8 @@ import { CliError } from '../utils';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { MainPanel } from './components/MainPanel';
-import { OptionsModal } from './components/OptionsModal';
-import { SettingsModal } from './components/SettingsModal';
+import { Modals } from './components/Modals';
 import { TabBar } from './components/TabBar';
-import { ThemeModal } from './components/ThemeModal';
 import { useDeferredLoading } from './hooks/useDeferredLoading';
 import { useLoader } from './hooks/useLoader';
 import { useViewModel } from './hooks/useViewModel';
@@ -37,24 +35,7 @@ import {
   buildSizeRepoOptions,
 } from './views/repos';
 
-/**
- * Composes the TUI. The data lifecycle lives in useLoader, the derived tab
- * content in useViewModel, the key bindings in the keymap module, and the
- * sections in their own components, with MainPanel rendering the active
- * tab. The browse reducer owns where the user is, the ui reducer owns the
- * dialogs and their feedback, and this component wires the pieces
- * together around the remaining independent state.
- */
-export function App({
-  initial,
-  initialSaved = null,
-  initialNoCache = false,
-  initialCopyLinks = false,
-  initialTheme = defaultThemeState(),
-  openUrl = openInBrowser,
-  copyUrl,
-  onQuit,
-}: {
+interface AppProps {
   initial: OptionsState;
   /**
    * Holds the options saved in the cache directory at startup, or null
@@ -93,7 +74,27 @@ export function App({
    */
   copyUrl?: (url: string, onError: (message: string) => void) => void;
   onQuit: () => void;
-}) {
+}
+
+/**
+ * Composes the TUI. The data lifecycle lives in useLoader, the derived tab
+ * content in useViewModel, the key bindings in the keymap module, and the
+ * sections in their own components, with MainPanel rendering the active
+ * tab and Modals the open dialog. The browse reducer owns where the user
+ * is, the ui reducer owns the dialogs and their feedback, and this
+ * component wires the pieces together around the remaining independent
+ * state.
+ */
+export function App({
+  initial,
+  initialSaved = null,
+  initialNoCache = false,
+  initialCopyLinks = false,
+  initialTheme = defaultThemeState(),
+  openUrl = openInBrowser,
+  copyUrl,
+  onQuit,
+}: AppProps) {
   const { width } = useTerminalDimensions();
 
   /**
@@ -320,41 +321,19 @@ export function App({
         stale={stale}
       />
 
-      {ui.modal === 'options' && (
-        <OptionsModal
-          options={options}
-          saved={saved}
-          selected={ui.selectedField}
-          editing={ui.editing}
-          fieldError={ui.fieldError}
-          onDraft={(value) => {
-            draftRef.current = value;
-          }}
-          onSubmit={commitField}
-        />
-      )}
-      {ui.modal === 'settings' && (
-        <SettingsModal
-          selected={ui.selectedSetting}
-          cacheAction={ui.cacheAction}
-          noCache={noCache}
-          copyLinks={copyLinks}
-          preset={themeState.preset}
-        />
-      )}
-      {ui.modal === 'theme' && (
-        <ThemeModal
-          selected={ui.selectedThemeColor}
-          editing={ui.editing}
-          error={ui.themeColorError}
-          cacheAction={ui.cacheAction}
-          overrides={themeState.preset === 'custom' ? themeState.overrides : {}}
-          onDraft={(value) => {
-            draftRef.current = value;
-          }}
-          onSubmit={commitThemeColor}
-        />
-      )}
+      <Modals
+        ui={ui}
+        options={options}
+        saved={saved}
+        noCache={noCache}
+        copyLinks={copyLinks}
+        themeState={themeState}
+        onDraft={(value) => {
+          draftRef.current = value;
+        }}
+        onSubmitField={commitField}
+        onSubmitThemeColor={commitThemeColor}
+      />
     </box>
   );
 }

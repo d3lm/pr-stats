@@ -1,3 +1,4 @@
+import { computeReviewStats } from '../../compute';
 import type { RawData } from '../data/load';
 
 export interface RepoOption {
@@ -96,38 +97,65 @@ export function buildSizeRepoOptions(raw: RawData): RepoOption[] {
 /**
  * Formats the picker detail for one repo on the awaiting-review tab.
  */
-function pendingDetail(count: number): string {
-  return `${count} ${count === 1 ? 'PR' : 'PRs'} awaiting your review`;
+function pendingDetail(counts: { awaiting: number; reviewing: number }): string {
+  const awaiting = `${counts.awaiting} ${counts.awaiting === 1 ? 'PR' : 'PRs'} awaiting your review`;
+
+  return awaiting + (counts.reviewing > 0 ? `, ${counts.reviewing} reviewing` : '');
 }
 
 /**
  * Builds the entries for the repo picker on the awaiting-review tab. The
  * repos mirror the review tab's picker, every repo with review activity,
- * so this tab shows its picker whenever that tab does, and the details
- * count the open PRs still awaiting a review, which can be zero. Returns
- * an empty array when the data spans at most one repo, in which case the
- * tab skips the picker and renders the queue directly.
+ * so this tab shows its picker whenever that tab does. The details count
+ * the open PRs still awaiting a review, which can be zero, next to the
+ * open PRs you already reviewed. Returns an empty array when the data
+ * spans at most one repo, in which case the tab skips the picker and
+ * renders the queue directly.
  */
 export function buildPendingRepoOptions(raw: RawData): RepoOption[] {
-  const countByRepo = new Map<string, number>();
+  const countsByRepo = new Map<string, { awaiting: number; reviewing: number }>();
+
+  const countsOf = (repo: string) => {
+    const counts = countsByRepo.get(repo) ?? { awaiting: 0, reviewing: 0 };
+
+    countsByRepo.set(repo, counts);
+
+    return counts;
+  };
 
   for (const result of raw.reviewResults) {
-    const pending = result.kind === 'pending' && result.pr.state === 'open' ? 1 : 0;
-
-    countByRepo.set(result.pr.repo, (countByRepo.get(result.pr.repo) ?? 0) + pending);
+    countsOf(result.pr.repo);
   }
 
-  if (countByRepo.size < 2) {
+  if (countsByRepo.size < 2) {
     return [];
   }
 
-  const entries = [...countByRepo.entries()].toSorted((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const total = entries.reduce((sum, [, count]) => sum + count, 0);
+  const stats = computeReviewStats(raw.reviewResults, { now: raw.fetchedAt });
+
+  for (const entry of stats.pending) {
+    countsOf(entry.pr.repo).awaiting += 1;
+  }
+
+  for (const entry of stats.reviewing) {
+    countsOf(entry.pr.repo).reviewing += 1;
+  }
+
+  const entries = [...countsByRepo.entries()].toSorted(
+    (a, b) => b[1].awaiting - a[1].awaiting || b[1].reviewing - a[1].reviewing || a[0].localeCompare(b[0]),
+  );
+
+  const totals = { awaiting: 0, reviewing: 0 };
+
+  for (const [, counts] of entries) {
+    totals.awaiting += counts.awaiting;
+    totals.reviewing += counts.reviewing;
+  }
 
   return [
-    { repo: null, label: 'All repos', detail: pendingDetail(total) },
-    ...entries.map(([repo, count]) => {
-      return { repo, label: repo, detail: pendingDetail(count) };
+    { repo: null, label: 'All repos', detail: pendingDetail(totals) },
+    ...entries.map(([repo, counts]) => {
+      return { repo, label: repo, detail: pendingDetail(counts) };
     }),
   ];
 }

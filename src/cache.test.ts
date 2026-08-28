@@ -312,6 +312,7 @@ const SNAPSHOT_DATA: RawData = {
         state: 'closed',
         createdAt: new Date('2026-07-03T10:00:00Z'),
       },
+      reviewedAt: new Date('2026-07-05T12:00:00Z'),
     },
   ],
   sizes: [
@@ -350,6 +351,24 @@ test('snapshot round-trips with revived dates for the same options', () => {
   expect(loadSnapshot({ ...SNAPSHOT_OPTIONS, includeDrafts: true })).toBeNull();
 
   configureCache(false);
+
+  expect(loadSnapshot(SNAPSHOT_OPTIONS)).toBeNull();
+});
+
+test('a snapshot whose unrequested results lack a review time never gets served', () => {
+  /**
+   * Snapshots written before unrequested results carried the review time
+   * would show broken durations in the reviewing queue, so the loader
+   * drops them and waits for the background refresh.
+   */
+  const legacy = {
+    ...SNAPSHOT_DATA,
+    reviewResults: SNAPSHOT_DATA.reviewResults.map((result) =>
+      result.kind === 'unrequested' ? { kind: 'unrequested', pr: result.pr } : result,
+    ),
+  } as RawData;
+
+  saveSnapshot(SNAPSHOT_OPTIONS, legacy);
 
   expect(loadSnapshot(SNAPSHOT_OPTIONS)).toBeNull();
 });

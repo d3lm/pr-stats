@@ -1,8 +1,8 @@
 /**
  * Fake gh CLI for regression-testing pr-stats without network access.
  * It serves canned search results and GraphQL responses so the pr-stats
- * output is deterministic across runs, except for pending review
- * durations, which depend on the current time.
+ * output is deterministic across runs, except for the pending and
+ * reviewing durations, which depend on the current time.
  */
 
 const args = process.argv.slice(2);
@@ -35,6 +35,10 @@ const REVIEW_TIMELINES = {
   'acme/api#7': {
     requests: [{ at: '2026-08-20T09:00:00Z', login: 'testuser' }],
     reviews: [],
+  },
+  'acme/api#8': {
+    requests: [],
+    reviews: [{ login: 'testuser', at: '2026-08-24T09:00:00Z', state: 'COMMENTED' }],
   },
 };
 
@@ -109,6 +113,7 @@ const SEARCHES = {
     searchItem('acme/api', 2, 'Introduce request signing', '2026-07-02T10:00:00Z', 'closed'),
     searchItem('acme/api', 5, 'Tighten input validation', '2026-07-03T10:00:00Z', 'closed'),
     searchItem('acme/web', 6, 'Fix typo in settings page', '2026-07-15T13:00:00Z', 'closed'),
+    searchItem('acme/api', 8, 'Add caching to the sessions store', '2026-08-21T10:00:00Z', 'open'),
   ],
   '--author': [
     searchItem('acme/api', 10, 'Add health check endpoint', '2026-06-05T10:00:00Z', 'closed'),

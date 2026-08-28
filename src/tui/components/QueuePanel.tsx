@@ -3,31 +3,34 @@ import { useTerminalDimensions } from '@opentui/react';
 import { useEffect, useRef } from 'react';
 import { overlayScrollbar, useScrollbarSettle } from '../hooks/scrollbar';
 import { theme } from '../theme';
-import type { PrList, PrRow } from '../views/rows';
+import type { QueueSection } from '../views/queue';
+import type { PrRow } from '../views/rows';
 
 /**
- * Selectable PR list for the two queue tabs, the awaiting-review queue
- * and the open authored PRs. The App owns the cursor and opens the
- * highlighted PR in the browser on Enter, so this only renders the rows
- * and keeps the cursor row visible while scrolling. The cursor counts
- * across every list in order, matching the rows the App navigates. The
- * PR references stay clickable terminal hyperlinks as well, unless the
- * copy-links setting routes clicks to the clipboard instead. The heading
- * names the opened repo scope when the data spans multiple repos, framed
- * by rules like the stats header, and stays away otherwise.
+ * Selectable PR list for the two queue tabs, the awaiting-review
+ * queue and the open authored PRs. The App owns the cursor and opens
+ * the highlighted PR in the browser on Enter, so this only renders the
+ * sections and keeps the cursor row visible while scrolling. Each section
+ * renders its rows right under its title, or one indented sub-list per
+ * repo when the view is grouped. The cursor counts across every row in
+ * render order, matching the rows the App navigates. The PR references
+ * stay clickable terminal hyperlinks as well, unless the copy-links
+ * setting routes clicks to the clipboard instead. The heading names
+ * the opened repo scope when the data spans multiple repos, framed by
+ * rules like the stats header, and stays away otherwise.
  */
 export function QueuePanel({
   heading,
   warning,
   empty,
-  lists,
+  sections,
   cursor,
   onRefClick,
 }: {
   heading: string | null;
   warning: string | null;
   empty: string | null;
-  lists: PrList[];
+  sections: QueueSection[];
   cursor: number;
   /**
    * Receives the row whose PR reference was clicked while the copy-links
@@ -88,17 +91,93 @@ export function QueuePanel({
   }
 
   /**
-   * Offsets translate a row's position inside its list into the flat
-   * cursor index across all lists.
+   * Offsets translate a row's position inside its section or sub-list
+   * into the flat cursor index across the whole view.
    */
-  const offsets: number[] = [];
+  const offsets: { rows: number; lists: number[] }[] = [];
 
   let total = 0;
 
-  for (const list of lists) {
-    offsets.push(total);
-    total += list.rows.length;
+  for (const section of sections) {
+    const entry = { rows: total, lists: [] as number[] };
+
+    total += section.rows.length;
+
+    for (const list of section.lists) {
+      entry.lists.push(total);
+      total += list.rows.length;
+    }
+
+    offsets.push(entry);
   }
+
+  const renderRow = (row: PrRow, index: number, indent: string) => {
+    const isSelected = index === cursor;
+    const bg = isSelected ? theme.selectedBg : undefined;
+
+    /**
+     * The reference starts after the indent, the two-cell cursor marker,
+     * the lead, and the two-space gap, all single-cell ASCII, so the
+     * columns map one to one onto the characters.
+     */
+    const refStart = indent.length + 2 + row.lead.length + 2;
+
+    return (
+      <text
+        key={row.url}
+        id={`queue-row-${index}`}
+        wrapMode="none"
+        onMouseDown={
+          onRefClick === null
+            ? undefined
+            : (event) => {
+                lastDown.current = event.button === 0 ? { x: event.x, y: event.y } : null;
+              }
+        }
+        onMouseUp={
+          onRefClick === null
+            ? undefined
+            : (event) => {
+                const down = lastDown.current;
+
+                lastDown.current = null;
+
+                if (event.button !== 0 || down?.x !== event.x || down.y !== event.y) {
+                  return;
+                }
+
+                const local = event.currentTarget === null ? -1 : event.x - event.currentTarget.x;
+
+                if (local >= refStart && local < refStart + row.ref.length) {
+                  onRefClick(row);
+                }
+              }
+        }
+      >
+        <span fg={theme.accent}>
+          {indent}
+          {isSelected ? '▸ ' : '  '}
+        </span>
+        <span fg={theme.text} bg={bg}>
+          {row.lead}
+          {'  '}
+        </span>
+        {onRefClick === null ? (
+          <a href={row.url} fg={theme.accent} bg={bg}>
+            {row.ref}
+          </a>
+        ) : (
+          <span fg={theme.accent} bg={bg}>
+            {row.ref}
+          </span>
+        )}
+        <span fg={theme.text} bg={bg}>
+          {'  '}
+          {row.title}
+        </span>
+      </text>
+    );
+  };
 
   return (
     <box flexGrow={1} flexDirection="column">
@@ -115,76 +194,23 @@ export function QueuePanel({
             {warning}
           </text>
         )}
-        {lists.map((list, listIndex) => (
-          <box key={list.title} flexDirection="column" marginTop={1}>
+        {sections.map((section, sectionIndex) => (
+          <box key={section.title} flexDirection="column" marginTop={1}>
             <text wrapMode="none" fg={theme.accent}>
-              {list.title}
+              {section.title}
             </text>
-            {list.rows.map((row, rowIndex) => {
-              const index = offsets[listIndex] + rowIndex;
-              const isSelected = index === cursor;
-              const bg = isSelected ? theme.selectedBg : undefined;
-
-              /**
-               * The reference starts after the two-cell cursor marker,
-               * the lead, and the two-space gap, all single-cell ASCII,
-               * so the columns map one to one onto the characters.
-               */
-              const refStart = 2 + row.lead.length + 2;
-
-              return (
-                <text
-                  key={row.url}
-                  id={`queue-row-${index}`}
-                  wrapMode="none"
-                  onMouseDown={
-                    onRefClick === null
-                      ? undefined
-                      : (event) => {
-                          lastDown.current = event.button === 0 ? { x: event.x, y: event.y } : null;
-                        }
-                  }
-                  onMouseUp={
-                    onRefClick === null
-                      ? undefined
-                      : (event) => {
-                          const down = lastDown.current;
-
-                          lastDown.current = null;
-
-                          if (event.button !== 0 || down?.x !== event.x || down.y !== event.y) {
-                            return;
-                          }
-
-                          const local = event.currentTarget === null ? -1 : event.x - event.currentTarget.x;
-
-                          if (local >= refStart && local < refStart + row.ref.length) {
-                            onRefClick(row);
-                          }
-                        }
-                  }
-                >
-                  <span fg={theme.accent}>{isSelected ? '▸ ' : '  '}</span>
-                  <span fg={theme.text} bg={bg}>
-                    {row.lead}
-                    {'  '}
-                  </span>
-                  {onRefClick === null ? (
-                    <a href={row.url} fg={theme.accent} bg={bg}>
-                      {row.ref}
-                    </a>
-                  ) : (
-                    <span fg={theme.accent} bg={bg}>
-                      {row.ref}
-                    </span>
-                  )}
-                  <span fg={theme.text} bg={bg}>
-                    {'  '}
-                    {row.title}
-                  </span>
+            {section.rows.map((row, rowIndex) => renderRow(row, offsets[sectionIndex].rows + rowIndex, ''))}
+            {section.lists.map((list, listIndex) => (
+              <box key={list.title} flexDirection="column" marginTop={listIndex > 0 ? 1 : 0}>
+                <text wrapMode="none" fg={theme.accent}>
+                  {'  '}
+                  {list.title}
                 </text>
-              );
-            })}
+                {list.rows.map((row, rowIndex) =>
+                  renderRow(row, offsets[sectionIndex].lists[listIndex] + rowIndex, '  '),
+                )}
+              </box>
+            ))}
           </box>
         ))}
       </scrollbox>

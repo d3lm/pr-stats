@@ -3,7 +3,7 @@
   "ignore": {
     "overrides": [
       {
-        "files": ["tui/**"],
+        "files": ["src/tui/**"],
         "rules": ["react-doctor/no-unknown-property"]
       }
     ]

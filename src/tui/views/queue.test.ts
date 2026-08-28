@@ -26,6 +26,27 @@ function pendingResult(repo: string, number: number, requestedAt: string, state 
 }
 
 /**
+ * Builds a reviewed result, a completed request-review cycle answered at
+ * the given time, on an open PR unless a state overrides it.
+ */
+function reviewedResult(repo: string, number: number, reviewedAt: string, state = 'open'): ReviewResult {
+  return {
+    kind: 'reviewed',
+    pr: pr(repo, number, state),
+    requestedAt: new Date('2026-06-15T00:00:00Z'),
+    reviewedAt: new Date(reviewedAt),
+  };
+}
+
+/**
+ * Builds an unrequested result, a review you gave at the given time
+ * without a personal request, on an open PR unless a state overrides it.
+ */
+function unrequestedResult(repo: string, number: number, reviewedAt: string, state = 'open'): ReviewResult {
+  return { kind: 'unrequested', pr: pr(repo, number, state), reviewedAt: new Date(reviewedAt) };
+}
+
+/**
  * Builds a size entry with a fixed size, so the tests only vary the repo,
  * the state, and the creation date.
  */
@@ -67,24 +88,21 @@ test('the pending picker lists every repo with review activity and skips the pic
       pendingResult('acme/api', 2, '2026-07-02T00:00:00Z'),
       pendingResult('acme/api', 3, '2026-07-03T00:00:00Z'),
       /**
-       * A closed pending request and a reviewed PR stay out of the queue
-       * counts, but their repos stay on the list, so the picker matches
-       * the review tab's.
+       * A closed pending request and a closed reviewed PR stay out of
+       * the queue counts, but their repos stay on the list, so the
+       * picker matches the review tab's.
        */
       pendingResult('acme/zulu', 4, '2026-07-04T00:00:00Z', 'closed'),
-      {
-        kind: 'reviewed',
-        pr: pr('acme/zulu', 5, 'closed'),
-        requestedAt: new Date('2026-07-01T00:00:00Z'),
-        reviewedAt: new Date('2026-07-02T00:00:00Z'),
-      },
+      reviewedResult('acme/zulu', 5, '2026-07-02T00:00:00Z', 'closed'),
+      // an open reviewed PR counts into the repo's reviewing detail
+      reviewedResult('acme/web', 6, '2026-07-05T00:00:00Z'),
     ],
   });
 
   expect(buildPendingRepoOptions(raw)).toEqual([
-    { repo: null, label: 'All repos', detail: '3 PRs awaiting your review' },
+    { repo: null, label: 'All repos', detail: '3 PRs awaiting your review, 1 reviewing' },
     { repo: 'acme/api', label: 'acme/api', detail: '2 PRs awaiting your review' },
-    { repo: 'acme/web', label: 'acme/web', detail: '1 PR awaiting your review' },
+    { repo: 'acme/web', label: 'acme/web', detail: '1 PR awaiting your review, 1 reviewing' },
     { repo: 'acme/zulu', label: 'acme/zulu', detail: '0 PRs awaiting your review' },
   ]);
 
@@ -130,27 +148,107 @@ test('the pending view narrows to a repo and groups the aggregate by repo', () =
 
   const flat = buildPendingReviewView(raw);
 
-  expect(flat.lists.map((list) => list.title)).toEqual(['Open and awaiting your review (n=3)']);
+  expect(flat.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)']);
+  expect(flat.sections[0].lists).toEqual([]);
   expect(queueRows(flat).map((row) => row.ref)).toEqual(['acme/api#2', 'acme/web#1', 'acme/api#3']);
 
   const narrowed = buildPendingReviewView(raw, 'acme/api');
 
-  expect(narrowed.lists.map((list) => list.title)).toEqual(['Open and awaiting your review (n=2)']);
+  expect(narrowed.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=2)']);
   expect(queueRows(narrowed).map((row) => row.ref)).toEqual(['acme/api#2', 'acme/api#3']);
 
   /**
-   * Grouping splits the aggregate into one list per repo, largest first,
-   * and each group keeps the longest wait on top. A repo scope ignores
-   * the flag, because a single repo has nothing to group.
+   * Grouping keeps the section and splits its rows into one sub-list per
+   * repo, largest repo first, each keeping the longest wait on top. A
+   * repo scope ignores the flag, because a single repo has nothing to
+   * group.
    */
   const grouped = buildPendingReviewView(raw, null, true);
 
-  expect(grouped.lists.map((list) => list.title)).toEqual(['acme/api (n=2)', 'acme/web (n=1)']);
+  expect(grouped.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)']);
+  expect(grouped.sections[0].rows).toEqual([]);
+  expect(grouped.sections[0].lists.map((list) => list.title)).toEqual(['acme/api (n=2)', 'acme/web (n=1)']);
   expect(queueRows(grouped).map((row) => row.ref)).toEqual(['acme/api#2', 'acme/api#3', 'acme/web#1']);
 
   expect(buildPendingReviewView(raw, 'acme/api', true)).toEqual(narrowed);
 
-  expect(buildPendingReviewView(rawData({}), null, true).empty).toBe('No PRs are awaiting your review.');
+  expect(buildPendingReviewView(rawData({}), null, true).empty).toBe(
+    'No PRs are awaiting your review, and none you reviewed are still open.',
+  );
+});
+
+test('the pending view lists PRs you reviewed that are still open in the reviewing queue', () => {
+  const raw = rawData({
+    reviewResults: [
+      pendingResult('acme/api', 1, '2026-07-01T00:00:00Z'),
+      /**
+       * Two completed cycles on the same open PR collapse into one
+       * reviewing row, which carries the latest review time and sorts
+       * by it, oldest first.
+       */
+      reviewedResult('acme/api', 2, '2026-07-02T00:00:00Z'),
+      reviewedResult('acme/api', 2, '2026-07-06T00:00:00Z'),
+      // a review without a personal request counts into the queue too
+      unrequestedResult('acme/web', 3, '2026-07-04T00:00:00Z'),
+      /**
+       * A reviewed PR with a fresh re-request sits in the awaiting queue
+       * alone, and closed PRs never enter either queue.
+       */
+      reviewedResult('acme/web', 4, '2026-07-01T00:00:00Z'),
+      pendingResult('acme/web', 4, '2026-07-10T00:00:00Z'),
+      reviewedResult('acme/api', 5, '2026-07-05T00:00:00Z', 'merged'),
+      unrequestedResult('acme/web', 6, '2026-07-05T00:00:00Z', 'closed'),
+      pendingResult('acme/zulu', 7, '2026-07-08T00:00:00Z'),
+    ],
+  });
+
+  const flat = buildPendingReviewView(raw);
+
+  expect(flat.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)', 'Reviewing (n=2)']);
+
+  expect(queueRows(flat).map((row) => row.ref)).toEqual([
+    'acme/api#1',
+    'acme/zulu#7',
+    'acme/web#4',
+    'acme/web#3',
+    'acme/api#2',
+  ]);
+
+  // narrowing to a repo filters both queues
+  const narrowed = buildPendingReviewView(raw, 'acme/api');
+
+  expect(narrowed.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=1)', 'Reviewing (n=1)']);
+  expect(queueRows(narrowed).map((row) => row.ref)).toEqual(['acme/api#1', 'acme/api#2']);
+
+  // a scope without reviewing PRs skips that section
+  expect(buildPendingReviewView(raw, 'acme/zulu').sections.map((section) => section.title)).toEqual([
+    'Awaiting your review (n=1)',
+  ]);
+
+  /**
+   * Grouping keeps the two sections in order and splits each one into
+   * per-repo sub-lists, ordered largest repo first with ties broken by
+   * name, so both sections can list the same repo.
+   */
+  const grouped = buildPendingReviewView(raw, null, true);
+
+  expect(grouped.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)', 'Reviewing (n=2)']);
+
+  expect(grouped.sections[0].lists.map((list) => list.title)).toEqual([
+    'acme/api (n=1)',
+    'acme/web (n=1)',
+    'acme/zulu (n=1)',
+  ]);
+
+  expect(grouped.sections[1].lists.map((list) => list.title)).toEqual(['acme/api (n=1)', 'acme/web (n=1)']);
+
+  expect(queueRows(grouped).map((row) => row.ref)).toEqual([
+    'acme/api#1',
+    'acme/web#4',
+    'acme/zulu#7',
+    'acme/api#2',
+    'acme/web#3',
+  ]);
 });
 
 test('the open view narrows to a repo and groups the aggregate by repo', () => {
@@ -165,22 +263,25 @@ test('the open view narrows to a repo and groups the aggregate by repo', () => {
 
   const flat = buildOpenAuthoredView(raw);
 
-  expect(flat.lists.map((list) => list.title)).toEqual(['Your open authored PRs (n=3)']);
+  expect(flat.sections.map((section) => section.title)).toEqual(['Your open authored PRs (n=3)']);
+  expect(flat.sections[0].lists).toEqual([]);
   expect(queueRows(flat).map((row) => row.ref)).toEqual(['acme/api#2', 'acme/web#1', 'acme/web#3']);
 
   const narrowed = buildOpenAuthoredView(raw, 'acme/web');
 
-  expect(narrowed.lists.map((list) => list.title)).toEqual(['Your open authored PRs (n=2)']);
+  expect(narrowed.sections.map((section) => section.title)).toEqual(['Your open authored PRs (n=2)']);
   expect(queueRows(narrowed).map((row) => row.ref)).toEqual(['acme/web#1', 'acme/web#3']);
 
   /**
-   * Grouping splits the aggregate into one list per repo, largest first,
-   * and each group stays oldest first. A repo scope ignores the flag,
-   * because a single repo has nothing to group.
+   * Grouping keeps the section and splits its rows into one sub-list per
+   * repo, largest first, each staying oldest first. A repo scope ignores
+   * the flag, because a single repo has nothing to group.
    */
   const grouped = buildOpenAuthoredView(raw, null, true);
 
-  expect(grouped.lists.map((list) => list.title)).toEqual(['acme/web (n=2)', 'acme/api (n=1)']);
+  expect(grouped.sections.map((section) => section.title)).toEqual(['Your open authored PRs (n=3)']);
+  expect(grouped.sections[0].rows).toEqual([]);
+  expect(grouped.sections[0].lists.map((list) => list.title)).toEqual(['acme/web (n=2)', 'acme/api (n=1)']);
   expect(queueRows(grouped).map((row) => row.ref)).toEqual(['acme/web#1', 'acme/web#3', 'acme/api#2']);
 
   expect(buildOpenAuthoredView(raw, 'acme/web', true)).toEqual(narrowed);

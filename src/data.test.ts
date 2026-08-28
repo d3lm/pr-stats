@@ -110,8 +110,10 @@ test('a review before the first request never answers it', () => {
   ]);
 });
 
-test('reviews without any personal request classify as unrequested', () => {
-  expect(classifyPr(pr, details([], ['2026-07-01T15:00:00Z']), 'me')).toEqual([{ kind: 'unrequested', pr }]);
+test('reviews without any personal request classify as unrequested with the latest review time', () => {
+  expect(classifyPr(pr, details([], ['2026-07-03T09:00:00Z', '2026-07-01T15:00:00Z']), 'me')).toEqual([
+    { kind: 'unrequested', pr, reviewedAt: new Date('2026-07-03T09:00:00Z') },
+  ]);
 });
 
 test('other people on the timeline never count toward your cycles', () => {

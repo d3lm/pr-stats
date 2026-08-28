@@ -102,6 +102,29 @@ async function waitForText(setup: Setup, text: string, timeoutMs = 15_000): Prom
 }
 
 /**
+ * Polls the frame until the text disappears, the inverse of waitForText,
+ * for transitions that remove content, like ungrouping a queue whose
+ * flat frame shows no text of its own.
+ */
+async function waitForTextGone(setup: Setup, text: string, timeoutMs = 15_000): Promise<void> {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    await setup.renderOnce();
+
+    if (!setup.captureCharFrame().includes(text)) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(
+    `timed out waiting for ${JSON.stringify(text)} to disappear, last frame:\n${setup.captureCharFrame()}`,
+  );
+}
+
+/**
  * Backspaces over every character of the given text, clearing an input
  * that currently holds it before a fresh value gets typed.
  */
@@ -172,7 +195,7 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(reviewFrame).toContain('3 reviewed on request');
     expect(reviewFrame).toContain('2 awaiting you');
     expect(reviewFrame).toContain('1 closed unreviewed');
-    expect(reviewFrame).toContain('1 reviewed unasked (excluded)');
+    expect(reviewFrame).toContain('2 reviewed unasked (excluded)');
     expect(reviewFrame).toContain('p50 6h');
     expect(reviewFrame).toContain('3 of 3 reviews');
 
@@ -185,7 +208,7 @@ test('loads canned data and renders both tabs, the options modal, and the settin
      */
     expect(reviewFrame).toContain('Review time distribution');
     expect(reviewFrame).toContain('mean 10.1h');
-    expect(reviewFrame).not.toContain('Open and awaiting your review');
+    expect(reviewFrame).not.toContain('Awaiting your review (n=');
     expect(reviewFrame).toContain('← p50 6h');
     expect(reviewFrame).toContain('When you review');
 
@@ -862,16 +885,17 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(pickerFrame).toContain('▸  All repos');
     expect(pickerFrame).toContain('acme/api');
     expect(pickerFrame).toContain('acme/web');
-    expect(pickerFrame).toContain('1 PR awaiting your review');
-    expect(pickerFrame).not.toContain('Open and awaiting your review');
+    expect(pickerFrame).toContain('1 PR awaiting your review, 1 reviewing');
+    expect(pickerFrame).not.toContain('Awaiting your review (n=');
 
     /**
-     * Enter on All repos opens the aggregate queue, longest wait first,
-     * with the scope header naming it.
+     * Enter on All repos opens the aggregate view, the awaiting queue
+     * longest wait first and the reviewing queue with the open PR you
+     * already reviewed, with the scope header naming it.
      */
     setup.mockInput.pressEnter();
 
-    await waitForText(setup, 'Open and awaiting your review (n=2)');
+    await waitForText(setup, 'Awaiting your review (n=2)');
 
     const pendingFrame = setup.captureCharFrame();
 
@@ -880,12 +904,16 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(pendingFrame).toContain('Refactor the billing worker');
     expect(pendingFrame).toContain('acme/web#3');
     expect(pendingFrame).toContain('Add pagination to the list view');
+    expect(pendingFrame).toContain('Reviewing (n=1)');
+    expect(pendingFrame).toContain('acme/api#8');
+    expect(pendingFrame).toContain('Add caching to the sessions store');
     expect(pendingFrame).not.toContain('Review time distribution');
 
     /**
-     * The g key splits the aggregate queue into one titled list per repo
-     * and marks the grouped state in the header, and a second press
-     * restores the flat list.
+     * The g key splits each section into indented per-repo sub-lists
+     * under its title and marks the grouped state in the header. A
+     * second press restores the flat lists, which only the vanished
+     * sub-list headers tell apart, because the section titles stay.
      */
     setup.mockInput.pressKey('g');
 
@@ -893,13 +921,14 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
 
     const groupedFrame = setup.captureCharFrame();
 
+    expect(groupedFrame).toContain('Awaiting your review (n=2)');
     expect(groupedFrame).toContain('acme/api (n=1)');
     expect(groupedFrame).toContain('acme/web (n=1)');
-    expect(groupedFrame).not.toContain('Open and awaiting your review');
+    expect(groupedFrame).toContain('Reviewing (n=1)');
 
     setup.mockInput.pressKey('g');
 
-    await waitForText(setup, 'Open and awaiting your review (n=2)');
+    await waitForTextGone(setup, 'acme/api (n=1)');
 
     /**
      * Enter opens the highlighted PR through the injected opener instead
@@ -926,13 +955,14 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
 
     setup.mockInput.pressEnter();
 
-    await waitForText(setup, 'Open and awaiting your review (n=1)');
+    await waitForText(setup, 'Awaiting your review (n=1)');
 
     const webFrame = setup.captureCharFrame();
 
     expect(webFrame).toContain('▸ acme/web');
     expect(webFrame).toContain('acme/web#3');
     expect(webFrame).not.toContain('acme/api#7');
+    expect(webFrame).not.toContain('acme/api#8');
 
     /**
      * The open-PRs tab lists every repo with an analyzed authored PR,
@@ -1129,7 +1159,7 @@ test('copies the PR link instead of opening it while the copy-links setting is o
 
     setup.mockInput.pressEnter();
 
-    await waitForText(setup, 'Open and awaiting your review (n=2)');
+    await waitForText(setup, 'Awaiting your review (n=2)');
 
     expect(setup.captureCharFrame()).toContain('enter open');
 
@@ -1203,7 +1233,7 @@ test('copies the PR link instead of opening it while the copy-links setting is o
 
     setup.mockInput.pressKey('g');
 
-    await waitForText(setup, 'Open and awaiting your review (n=2)');
+    await waitForTextGone(setup, 'acme/api (n=1)');
 
     /**
      * A click on a PR reference copies that PR's link, without moving
@@ -1259,7 +1289,7 @@ test('surfaces a failed browser open in the footer and clears it on the next key
 
     setup.mockInput.pressEnter();
 
-    await waitForText(setup, 'Open and awaiting your review (n=2)');
+    await waitForText(setup, 'Awaiting your review (n=2)');
 
     /**
      * Enter runs the injected opener, which reports a failure instead of

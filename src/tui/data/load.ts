@@ -64,6 +64,10 @@ function reviveRawData(data: RawData): RawData {
         return { ...result, pr, requestedAt: new Date(result.requestedAt), reviewedAt: new Date(result.reviewedAt) };
       }
 
+      if (result.kind === 'unrequested') {
+        return { ...result, pr, reviewedAt: new Date(result.reviewedAt) };
+      }
+
       return { ...result, pr };
     }),
     sizes: data.sizes.map((entry) => {
@@ -111,6 +115,15 @@ export function loadSnapshot(options: FetchParams): RawData | null {
   }
 
   const data = reviveRawData(stored.data);
+
+  /**
+   * Snapshots written before unrequested results carried a review time
+   * would show broken durations in the reviewing queue, so they never
+   * get served and the background load replaces them.
+   */
+  if (data.reviewResults.some((result) => result.kind === 'unrequested' && Number.isNaN(result.reviewedAt.getTime()))) {
+    return null;
+  }
 
   if (sinceIso === data.sinceIso) {
     return data;

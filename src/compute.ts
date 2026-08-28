@@ -15,9 +15,22 @@ export interface PendingEntry {
   hours: number;
 }
 
+export interface ReviewingEntry {
+  pr: ReviewPr;
+  reviewedAt: Date;
+  hours: number;
+}
+
 export interface ReviewStats {
   reviewed: ReviewedEntry[];
   pending: PendingEntry[];
+  /**
+   * Holds the open PRs you already reviewed that have no unanswered
+   * re-request, one entry per PR with your latest review time, longest
+   * since that review first. A re-requested PR sits in the pending queue
+   * instead, so the two queues never share a PR.
+   */
+  reviewing: ReviewingEntry[];
   expired: ReviewResult[];
   unrequested: ReviewResult[];
   allHours: number[];
@@ -30,8 +43,8 @@ export interface ReviewStats {
  * pure computation over data already in memory, so the caller can rerun it
  * with a different time mode or target without refetching. Configure the
  * time mode before calling, because durations depend on it. The options
- * carry the target hours for the miss list and the clock for pending
- * durations.
+ * carry the target hours for the miss list and the clock for the pending
+ * and reviewing durations.
  */
 export function computeReviewStats(
   results: ReviewResult[],
@@ -55,6 +68,39 @@ export function computeReviewStats(
 
   pending.sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
 
+  /**
+   * The reviewing queue collapses the per-cycle results back into one
+   * entry per open PR, keeping the latest review time. Unrequested
+   * results count too, because a review without a personal request still
+   * puts the PR on your plate until it closes.
+   */
+  const pendingKeys = new Set(pending.map((entry) => `${entry.pr.repo}#${entry.pr.number}`));
+  const latestReviews = new Map<string, { pr: ReviewPr; reviewedAt: Date }>();
+
+  for (const result of results) {
+    if ((result.kind !== 'reviewed' && result.kind !== 'unrequested') || result.pr.state !== 'open') {
+      continue;
+    }
+
+    const key = `${result.pr.repo}#${result.pr.number}`;
+
+    if (pendingKeys.has(key)) {
+      continue;
+    }
+
+    const latest = latestReviews.get(key);
+
+    if (latest === undefined || result.reviewedAt > latest.reviewedAt) {
+      latestReviews.set(key, { pr: result.pr, reviewedAt: result.reviewedAt });
+    }
+  }
+
+  const reviewing = [...latestReviews.values()]
+    .map(({ pr, reviewedAt }) => {
+      return { pr, reviewedAt, hours: durationHours(reviewedAt, now) };
+    })
+    .toSorted((a, b) => a.reviewedAt.getTime() - b.reviewedAt.getTime());
+
   const expired = results.filter((result) => result.kind === 'pending' && result.pr.state !== 'open');
   const unrequested = results.filter((result) => result.kind === 'unrequested');
   const allHours = reviewed.map((result) => result.hours);
@@ -75,7 +121,7 @@ export function computeReviewStats(
       ? []
       : reviewed.filter((result) => result.hours > targetHours).toSorted((a, b) => b.hours - a.hours);
 
-  return { reviewed, pending, expired, unrequested, allHours, byRepo, misses };
+  return { reviewed, pending, reviewing, expired, unrequested, allHours, byRepo, misses };
 }
 
 export interface SizeMetric {

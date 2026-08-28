@@ -52,7 +52,7 @@ function QueueTab({
       heading={repos.length > 0 ? (scope.repo ?? (grouped ? 'All repos · grouped by repo' : 'All repos')) : null}
       warning={warning}
       empty={view.empty}
-      lists={view.lists}
+      sections={view.sections}
       cursor={Math.min(rowCursor, queueRows(view).length - 1)}
       onRefClick={onRefClick}
     />

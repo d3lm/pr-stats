@@ -24,11 +24,12 @@ export interface ReviewPr {
  * pending result for an unanswered request, so a PR that was reviewed and
  * then re-requested contributes both. Reviewed and pending results carry
  * raw timestamps instead of durations, so a different time mode can
- * recompute durations without refetching anything.
+ * recompute durations without refetching anything. Unrequested results
+ * carry the time of your latest review, which feeds the reviewing queue.
  */
 export type ReviewResult =
   | { kind: 'inaccessible'; pr: ReviewPr }
-  | { kind: 'unrequested'; pr: ReviewPr }
+  | { kind: 'unrequested'; pr: ReviewPr; reviewedAt: Date }
   | { kind: 'pending'; pr: ReviewPr; requestedAt: Date }
   | { kind: 'reviewed'; pr: ReviewPr; requestedAt: Date; reviewedAt: Date };
 
@@ -266,9 +267,14 @@ export function classifyPr(pr: ReviewPr, details: PrDetails | null, user: string
     /**
      * The reviewed-by search also returns PRs where you reviewed without a
      * direct request, for example via a team request. There is no personal
-     * request timestamp, so these cannot go into the histogram.
+     * request timestamp, so these cannot go into the histogram, but the
+     * latest review time rides along for the reviewing queue.
      */
-    return reviews.length > 0 ? [{ kind: 'unrequested', pr }] : [{ kind: 'inaccessible', pr }];
+    if (reviews.length === 0) {
+      return [{ kind: 'inaccessible', pr }];
+    }
+
+    return [{ kind: 'unrequested', pr, reviewedAt: new Date(Math.max(...reviews.map((review) => review.getTime()))) }];
   }
 
   /**
