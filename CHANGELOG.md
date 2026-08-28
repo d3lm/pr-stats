@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.6](https://github.com/d3lm/pr-stats/releases/tag/v0.2.6) - 2026-08-28
+
+### Features
+
+- feat: split the awaiting-review tab into awaiting and reviewing queues ([f7e9c7f](https://github.com/d3lm/pr-stats/commit/f7e9c7fbafc3d2a2eec8208863f3be7a7a58055d))
+
 ## [0.2.5](https://github.com/d3lm/pr-stats/releases/tag/v0.2.5) - 2026-08-28
 
 ### Features
