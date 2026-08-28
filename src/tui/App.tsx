@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable } from '@opentui/core';
-import { useKeyboard, useTerminalDimensions } from '@opentui/react';
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { saveTheme } from '../settings';
 import { CliError } from '../utils';
 import { Footer } from './components/Footer';
@@ -27,7 +27,7 @@ import {
   type ThemeState,
 } from './theme';
 import { openInBrowser } from './utils/browser';
-import { copyToClipboard } from './utils/clipboard';
+import { createClipboardCopier } from './utils/clipboard';
 import {
   buildCommentRepoOptions,
   buildMergedRepoOptions,
@@ -52,7 +52,7 @@ export function App({
   initialCopyLinks = false,
   initialTheme = defaultThemeState(),
   openUrl = openInBrowser,
-  copyUrl = copyToClipboard,
+  copyUrl,
   onQuit,
 }: {
   initial: OptionsState;
@@ -87,13 +87,23 @@ export function App({
   openUrl?: (url: string, onError: (message: string) => void) => void;
   /**
    * Copies a PR's link to the clipboard and reports a failure through
-   * the second argument. Tests inject a recorder here so activating a
-   * PR never touches the real clipboard.
+   * the second argument. When absent, the app copies through OpenTUI's
+   * clipboard service on the renderer. Tests inject a recorder here so
+   * activating a PR never touches the real clipboard.
    */
   copyUrl?: (url: string, onError: (message: string) => void) => void;
   onQuit: () => void;
 }) {
   const { width } = useTerminalDimensions();
+
+  /**
+   * Falls back to OpenTUI's clipboard service when no copyUrl override
+   * came in. The copier lazily creates the service on the first copy,
+   * so building it here costs nothing until the user actually copies.
+   */
+  const renderer = useRenderer();
+  const defaultCopyUrl = useMemo(() => createClipboardCopier(renderer), [renderer]);
+  const copyLink = copyUrl ?? defaultCopyUrl;
 
   const [ui, dispatchUi] = useReducer(uiReducer, initialUiState);
   const [browse, dispatchBrowse] = useReducer(browseReducer, initialBrowseState);
@@ -109,7 +119,7 @@ export function App({
    * asynchronously and takes the slot over from the notice.
    */
   const copyRow = (row: { ref: string; url: string }) => {
-    copyUrl(row.url, (message) => {
+    copyLink(row.url, (message) => {
       dispatchUi({ type: 'openErrorReported', message });
     });
 

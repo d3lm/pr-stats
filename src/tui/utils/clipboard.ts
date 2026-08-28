@@ -1,51 +1,56 @@
-import { spawn } from 'node:child_process';
+import {
+  createClipboard,
+  createHostClipboard,
+  createRendererClipboardAdapter,
+  type ClipboardService,
+  type ClipboardWriteResult,
+  type RendererClipboardBoundary,
+} from '@opentui/core';
 
 /**
- * Picks the platform's command that writes its stdin to the clipboard.
- * Linux prefers wl-copy on a Wayland session and falls back to xclip,
- * both of which may need installing, unlike pbcopy and clip.
+ * Describes why a write reached neither destination, preferring
+ * the host backend's own error message when it produced one.
  */
-function copyCommand(): { command: string; args: string[] } {
-  switch (process.platform) {
-    case 'darwin': {
-      return { command: 'pbcopy', args: [] };
-    }
-    case 'win32': {
-      return { command: 'clip', args: [] };
-    }
-    default: {
-      if (process.env.WAYLAND_DISPLAY !== undefined && process.env.WAYLAND_DISPLAY !== '') {
-        return { command: 'wl-copy', args: [] };
-      }
-
-      return { command: 'xclip', args: ['-selection', 'clipboard'] };
-    }
+function failureReason(result: ClipboardWriteResult): string {
+  if (result.host.status === 'failed') {
+    return result.host.error.message;
   }
+
+  return `host ${result.host.status}, terminal ${result.terminal.status}`;
 }
 
 /**
- * Copies the text to the system clipboard by piping it into the
- * platform's clipboard command. The child is fire and forget, so nothing
- * blocks on it. A spawn failure or a non-zero exit reports through
- * onError instead of tearing down the TUI, so the caller can tell the
- * user the copy failed rather than staying silent.
+ * Builds the copy function on OpenTUI's clipboard service, which talks
+ * to the Wayland, X11, Win32, or macOS clipboard natively and falls
+ * back to an OSC 52 escape through the terminal. Nothing shells out, so
+ * the copy works without xclip or wl-copy installed and reaches the
+ * local machine over SSH. The service comes to life on the first copy
+ * and stays alive for the rest of the session, because on Linux the
+ * process itself serves later pastes. A copy that reaches neither the
+ * host nor the terminal reports through onError instead of tearing
+ * down the TUI, so the caller can tell the user the copy failed rather
+ * than staying silent.
  */
-export function copyToClipboard(text: string, onError: (message: string) => void): void {
-  const { command, args } = copyCommand();
-  const child = spawn(command, args, { stdio: ['pipe', 'ignore', 'ignore'] });
+export function createClipboardCopier(
+  renderer: RendererClipboardBoundary,
+): (text: string, onError: (message: string) => void) => void {
+  let service: ClipboardService | null = null;
 
-  child.on('error', (error) => {
-    onError(`could not copy the link (${error.message})`);
-  });
+  return (text, onError) => {
+    service ??= createClipboard({
+      host: createHostClipboard(),
+      terminal: createRendererClipboardAdapter(renderer),
+    });
 
-  child.on('exit', (code) => {
-    if (code !== null && code !== 0) {
-      onError(`could not copy the link (${command} exited with ${code})`);
-    }
-  });
-
-  // a failed spawn also errors the pipe, which the child error already covers
-  child.stdin.on('error', () => {});
-
-  child.stdin.end(text);
+    service
+      .writeText(text, { destination: 'best-available' })
+      .then((result) => {
+        if (result.host.status !== 'written' && result.terminal.status !== 'attempted') {
+          onError(`could not copy the link (${failureReason(result)})`);
+        }
+      })
+      .catch((error: unknown) => {
+        onError(`could not copy the link (${error instanceof Error ? error.message : String(error)})`);
+      });
+  };
 }
