@@ -996,6 +996,111 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
   }
 }, 30_000);
 
+test('toggles the Your PRs tab between the open queue and the merged stats', async () => {
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+
+  try {
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    /**
+     * The Your PRs tab opens on the open sub-tab with its repo picker,
+     * and the sub-tab bar names both sub-tabs with the key that switches
+     * them.
+     */
+    setup.mockInput.pressKey('2');
+
+    await waitForText(setup, 'list its open PRs');
+
+    const openFrame = setup.captureCharFrame();
+
+    expect(openFrame).toContain('Merged & closed');
+    expect(openFrame).toContain('t switches');
+    expect(openFrame).toContain('t merged stats');
+
+    /**
+     * The t key switches to the merged sub-tab, which opens on its own
+     * repo picker. The details split the closed PRs into merged and
+     * closed unmerged, and the repo with the most merges sorts first.
+     */
+    setup.mockInput.pressKey('t');
+
+    await waitForText(setup, 'open its charts');
+
+    const pickerFrame = setup.captureCharFrame();
+
+    expect(pickerFrame).toContain('3 merged, 1 closed unmerged');
+    expect(pickerFrame).toContain('0 merged, 1 closed unmerged');
+    expect(pickerFrame).toContain('t open PRs');
+
+    /**
+     * Enter on All repos opens the merged stats, with the outcome counts
+     * in the pinned strip, the time-to-merge percentiles in the headline,
+     * and the merged and closed lists above the distribution strip.
+     */
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Time to merge distribution');
+
+    const mergedFrame = setup.captureCharFrame();
+
+    expect(mergedFrame).toContain('▸ All repos');
+    expect(mergedFrame).toContain('5 PRs created');
+    expect(mergedFrame).toContain('3 merged');
+    expect(mergedFrame).toContain('1 closed unmerged');
+    expect(mergedFrame).toContain('1 still open');
+    expect(mergedFrame).toContain('0 inaccessible (excluded)');
+    expect(mergedFrame).toContain('3 of 5 PRs merged');
+    expect(mergedFrame).toContain('Recently merged PRs');
+    expect(mergedFrame).toContain('to merge');
+    expect(mergedFrame).toContain('acme/api#14');
+    expect(mergedFrame).toContain('Closed without merging');
+    expect(mergedFrame).toContain('to close');
+    expect(mergedFrame).toContain('acme/web#12');
+
+    /**
+     * The remaining charts sit below the fold, so scroll the pane to the
+     * end before asserting on them.
+     */
+    setup.mockInput.pressKey(KeyCodes.END);
+
+    await waitForText(setup, 'PRs created per week');
+
+    const mergedEndFrame = setup.captureCharFrame();
+
+    expect(mergedEndFrame).toContain('Time to merge trend');
+    expect(mergedEndFrame).toContain('PRs merged per week');
+
+    /**
+     * Escape returns to the picker, and the row below All repos drills
+     * into acme/api, where every authored PR got merged.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'open its charts');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, '▸  acme/api');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, '3 of 3 PRs merged');
+
+    expect(setup.captureCharFrame()).toContain('▸ acme/api');
+    expect(setup.captureCharFrame()).toContain('3 PRs created');
+
+    /**
+     * The t key switches back to the open queue, which kept its own
+     * picker scope.
+     */
+    setup.mockInput.pressKey('t');
+
+    await waitForText(setup, 'list its open PRs');
+  } finally {
+    destroyApp(setup);
+  }
+}, 30_000);
+
 test('copies the PR link instead of opening it while the copy-links setting is on', async () => {
   const opened: string[] = [];
   const copied: string[] = [];

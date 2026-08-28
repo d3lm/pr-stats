@@ -5,9 +5,9 @@ import { dirname, join } from 'node:path';
 /**
  * Version of the on-disk format. A file written with a different version
  * is discarded, so schema changes only need a bump here. Version 2 added
- * the comment counters to the size entries.
+ * the merge and close timestamps to the size entries.
  */
-const VERSION = 1;
+const VERSION = 2;
 
 let enabled = false;
 

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { computeCommentStats } from './compute';
+import { computeCommentStats, computeMergeStats } from './compute';
 import type { SizeEntry } from './data';
 
 /**
@@ -20,6 +20,8 @@ function entry(number: number, discussion: number, review: number): SizeEntry {
     additions: 10,
     deletions: 5,
     total: 15,
+    mergedAt: null,
+    closedAt: new Date('2026-07-02T00:00:00Z'),
     comments: { discussion, review, total: discussion + review },
   };
 }
@@ -47,4 +49,34 @@ test('ties in the ranking keep the input order', () => {
   const stats = computeCommentStats([entry(1, 2, 1), entry(2, 0, 3), entry(3, 16, 0)]);
 
   expect(stats.top.map((size) => size.pr.number)).toEqual([3, 1, 2]);
+});
+
+/**
+ * The merge-stat dates stay on the Wednesday and Thursday after the
+ * helper's creation date, so the durations come out the same in every
+ * time mode a previously run test may have left configured.
+ */
+test('splits the PRs by outcome and derives the merge durations, most recent first', () => {
+  const merged1 = { ...entry(1, 0, 0), mergedAt: new Date('2026-07-02T12:00:00Z') };
+  const merged2 = { ...entry(2, 0, 0), mergedAt: new Date('2026-07-01T06:00:00Z') };
+  const closed = entry(3, 0, 0);
+  const open = { ...entry(4, 0, 0), pr: { ...entry(4, 0, 0).pr, state: 'open' }, closedAt: null };
+
+  const stats = computeMergeStats([closed, merged2, open, merged1]);
+
+  expect(stats.merged.map((result) => result.entry.pr.number)).toEqual([1, 2]);
+  expect(stats.allHours).toEqual([36, 6]);
+  expect(stats.closed.map((result) => result.entry.pr.number)).toEqual([3]);
+  expect(stats.closed[0].hours).toBe(24);
+  expect(stats.open.map((size) => size.pr.number)).toEqual([4]);
+});
+
+test('a reopened PR counts as open even though it still carries its old close time', () => {
+  const reopened = { ...entry(5, 0, 0), pr: { ...entry(5, 0, 0).pr, state: 'open' } };
+
+  const stats = computeMergeStats([reopened]);
+
+  expect(stats.open.map((size) => size.pr.number)).toEqual([5]);
+  expect(stats.closed).toEqual([]);
+  expect(stats.merged).toEqual([]);
 });

@@ -172,6 +172,61 @@ export function buildOpenRepoOptions(raw: RawData): RepoOption[] {
 }
 
 /**
+ * Formats the picker detail for one repo on the merged sub-tab of the
+ * Your PRs tab.
+ */
+function mergedDetail(counts: { merged: number; closed: number }): string {
+  return `${counts.merged} merged` + (counts.closed > 0 ? `, ${counts.closed} closed unmerged` : '');
+}
+
+/**
+ * Builds the entries for the repo picker on the merged sub-tab of the
+ * Your PRs tab. The repos mirror the size tab's picker, every repo with
+ * an analyzed authored PR, so this sub-tab shows its picker whenever the
+ * open sub-tab does, and the details count the merged and the
+ * closed-unmerged PRs, which can both be zero. Returns an empty array
+ * when the analyzed PRs span at most one repo, in which case the sub-tab
+ * skips the picker and renders the charts directly.
+ */
+export function buildMergedRepoOptions(raw: RawData): RepoOption[] {
+  const countsByRepo = new Map<string, { merged: number; closed: number }>();
+
+  for (const size of raw.sizes) {
+    const counts = countsByRepo.get(size.pr.repo) ?? { merged: 0, closed: 0 };
+
+    if (size.mergedAt !== null) {
+      counts.merged += 1;
+    } else if (size.pr.state !== 'open') {
+      counts.closed += 1;
+    }
+
+    countsByRepo.set(size.pr.repo, counts);
+  }
+
+  if (countsByRepo.size < 2) {
+    return [];
+  }
+
+  const entries = [...countsByRepo.entries()].toSorted(
+    (a, b) => b[1].merged - a[1].merged || b[1].closed - a[1].closed || a[0].localeCompare(b[0]),
+  );
+
+  const totals = { merged: 0, closed: 0 };
+
+  for (const [, counts] of entries) {
+    totals.merged += counts.merged;
+    totals.closed += counts.closed;
+  }
+
+  return [
+    { repo: null, label: 'All repos', detail: mergedDetail(totals) },
+    ...entries.map(([repo, counts]) => {
+      return { repo, label: repo, detail: mergedDetail(counts) };
+    }),
+  ];
+}
+
+/**
  * Formats the picker detail for one repo on the comments tab.
  */
 function commentDetail(comments: number, prs: number): string {

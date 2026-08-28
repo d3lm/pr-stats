@@ -1,5 +1,4 @@
 import { readCacheFile, writeCacheFile } from '../../cache';
-import { parseSince } from '../../flags';
 import {
   collectAuthoredPrs,
   collectReviewPrs,
@@ -9,6 +8,7 @@ import {
   type ReviewResult,
   type SizeEntry,
 } from '../../data';
+import { parseSince } from '../../flags';
 import { resolveRepos, searchPrs } from '../../github';
 import type { FetchParams } from '../state/options';
 
@@ -67,7 +67,12 @@ function reviveRawData(data: RawData): RawData {
       return { ...result, pr };
     }),
     sizes: data.sizes.map((entry) => {
-      return { ...entry, pr: { ...entry.pr, createdAt: new Date(entry.pr.createdAt) } };
+      return {
+        ...entry,
+        pr: { ...entry.pr, createdAt: new Date(entry.pr.createdAt) },
+        mergedAt: entry.mergedAt === null ? null : new Date(entry.mergedAt),
+        closedAt: entry.closedAt === null ? null : new Date(entry.closedAt),
+      };
     }),
   };
 }

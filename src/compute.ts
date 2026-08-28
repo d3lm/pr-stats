@@ -1,5 +1,5 @@
-import type { SizeTarget } from './flags';
 import type { ReviewPr, ReviewResult, SizeEntry } from './data';
+import type { SizeTarget } from './flags';
 import { durationHours } from './time';
 
 export interface ReviewedEntry {
@@ -127,6 +127,69 @@ export function computeSizeStats(sizes: SizeEntry[], { sizeTarget }: { sizeTarge
   const misses = sizes.filter((size) => !meetsTarget(size)).toSorted((a, b) => b.total - a.total);
 
   return { metrics, timelineTotals, met, misses, targetLabel };
+}
+
+export interface MergedEntry {
+  entry: SizeEntry;
+  mergedAt: Date;
+  hours: number;
+}
+
+export interface ClosedEntry {
+  entry: SizeEntry;
+  closedAt: Date;
+  hours: number;
+}
+
+export interface MergeStats {
+  /**
+   * Holds the merged PRs, most recently merged first, each with the time
+   * from creation to merge.
+   */
+  merged: MergedEntry[];
+  /**
+   * Holds the PRs that were closed without a merge, most recently closed
+   * first, each with the time from creation to close.
+   */
+  closed: ClosedEntry[];
+  /**
+   * Holds the PRs that are still open.
+   */
+  open: SizeEntry[];
+  /**
+   * Holds the time to merge of every merged PR, in merged order.
+   */
+  allHours: number[];
+}
+
+/**
+ * Splits the authored PRs by outcome and derives the merge durations.
+ * Like the other compute functions, this is pure computation over data
+ * already in memory, so configure the time mode before calling because
+ * the durations depend on it. A merged PR counts as merged even though
+ * GitHub also reports it closed, and a reopened PR counts as open even
+ * though it still carries its old close time. A closed PR without a
+ * close time cannot happen on GitHub and gets dropped.
+ */
+export function computeMergeStats(sizes: SizeEntry[]): MergeStats {
+  const merged: MergedEntry[] = [];
+  const closed: ClosedEntry[] = [];
+  const open: SizeEntry[] = [];
+
+  for (const entry of sizes) {
+    if (entry.mergedAt !== null) {
+      merged.push({ entry, mergedAt: entry.mergedAt, hours: durationHours(entry.pr.createdAt, entry.mergedAt) });
+    } else if (entry.pr.state === 'open') {
+      open.push(entry);
+    } else if (entry.closedAt !== null) {
+      closed.push({ entry, closedAt: entry.closedAt, hours: durationHours(entry.pr.createdAt, entry.closedAt) });
+    }
+  }
+
+  merged.sort((a, b) => b.mergedAt.getTime() - a.mergedAt.getTime());
+  closed.sort((a, b) => b.closedAt.getTime() - a.closedAt.getTime());
+
+  return { merged, closed, open, allHours: merged.map((result) => result.hours) };
 }
 
 export interface CommentStats {

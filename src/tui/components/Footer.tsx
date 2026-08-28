@@ -1,4 +1,5 @@
 import type { AppViews } from '../hooks/useViewModel';
+import type { AuthoredSubTab } from '../state/browse';
 import type { Modal } from '../state/ui';
 import { theme } from '../theme';
 
@@ -11,6 +12,7 @@ export function Footer({
   modal,
   editing,
   tab,
+  authoredTab,
   views,
   copyLinks,
   openError,
@@ -21,6 +23,7 @@ export function Footer({
   modal: Modal;
   editing: boolean;
   tab: number;
+  authoredTab: AuthoredSubTab;
   views: AppViews | null;
   copyLinks: boolean;
   openError: string | null;
@@ -43,7 +46,7 @@ export function Footer({
    * with a two-cell gap between the hints and the notice.
    */
   const noticeWidth = notice === '' ? 0 : notice.length + (check ? 2 : 0) + 2;
-  const hints = truncated(hintsFor(modal, editing, tab, views, copyLinks), width - 2 - noticeWidth);
+  const hints = truncated(hintsFor(modal, editing, tab, authoredTab, views, copyLinks), width - 2 - noticeWidth);
 
   return (
     <>
@@ -89,9 +92,18 @@ function truncated(text: string, limit: number): string {
 /**
  * Builds the footer hint line for the current input mode. The queue
  * detail hints name what enter does with the highlighted PR, which the
- * copy-links setting flips from opening to copying.
+ * copy-links setting flips from opening to copying. On the Your PRs tab
+ * the hints lead with the t toggle that switches between the open queue
+ * and the merged stats.
  */
-function hintsFor(modal: Modal, editing: boolean, tab: number, views: AppViews | null, copyLinks: boolean): string {
+function hintsFor(
+  modal: Modal,
+  editing: boolean,
+  tab: number,
+  authoredTab: AuthoredSubTab,
+  views: AppViews | null,
+  copyLinks: boolean,
+): string {
   if (modal === 'options') {
     return editing ? 'enter apply · esc cancel' : '↑/↓ select · enter edit · ←/→ toggle · s save · esc close · q quit';
   }
@@ -104,37 +116,56 @@ function hintsFor(modal: Modal, editing: boolean, tab: number, views: AppViews |
     return editing ? 'enter apply · esc cancel' : '↑/↓ select · enter edit hex · esc back · q quit';
   }
 
-  if (tab <= 1) {
+  const toggle = tab === 1 ? (authoredTab === 'open' ? 't merged stats · ' : 't open PRs · ') : '';
+
+  if (tab === 0 || (tab === 1 && authoredTab === 'open')) {
     const scope = views === null ? null : tab === 0 ? views.pendingScope : views.openScope;
     const repos = views === null ? [] : tab === 0 ? views.pendingRepos : views.openRepos;
 
     if (scope?.view === 'list') {
-      return '↑/↓ select · enter open · ←/→ tabs · o options · s settings · r reload · R refetch · q quit';
+      return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · s settings · r reload · R refetch · q quit`;
     }
 
     const action = copyLinks ? 'enter copy link' : 'enter open';
 
     if (scope !== null && repos.length > 0) {
       return scope.repo === null
-        ? `↑/↓ select · ${action} · g group by repo · esc back · o options · s settings · r reload · q quit`
-        : `↑/↓ select · ${action} · esc back · 1-5 tabs · o options · s settings · r reload · R refetch · q quit`;
+        ? `↑/↓ select · ${action} · ${toggle}g group by repo · esc back · o options · s settings · r reload · q quit`
+        : `↑/↓ select · ${action} · ${toggle}esc back · 1-5 tabs · o options · s settings · r reload · R refetch · q quit`;
     }
 
-    return `↑/↓ select · ${copyLinks ? 'enter copy link' : 'enter open in browser'} · ←/→ tabs · o options · s settings · r reload · R refetch · q quit`;
+    return `↑/↓ select · ${copyLinks ? 'enter copy link' : 'enter open in browser'} · ${toggle}←/→ tabs · o options · s settings · r reload · R refetch · q quit`;
   }
 
   const scope =
-    views === null ? null : tab === 2 ? views.reviewScope : tab === 3 ? views.sizeScope : views.commentScope;
+    views === null
+      ? null
+      : tab === 1
+        ? views.mergedScope
+        : tab === 2
+          ? views.reviewScope
+          : tab === 3
+            ? views.sizeScope
+            : views.commentScope;
 
-  const repos = views === null ? [] : tab === 2 ? views.reviewRepos : tab === 3 ? views.sizeRepos : views.commentRepos;
+  const repos =
+    views === null
+      ? []
+      : tab === 1
+        ? views.mergedRepos
+        : tab === 2
+          ? views.reviewRepos
+          : tab === 3
+            ? views.sizeRepos
+            : views.commentRepos;
 
   if (scope?.view === 'list') {
-    return '↑/↓ select · enter open · ←/→ tabs · o options · s settings · r reload · R refetch · q quit';
+    return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · s settings · r reload · R refetch · q quit`;
   }
 
   if (scope !== null && repos.length > 0) {
-    return 'esc back · j/k scroll · 1-5 tabs · o options · s settings · r reload · R refetch · q quit';
+    return `${toggle}esc back · j/k scroll · 1-5 tabs · o options · s settings · r reload · R refetch · q quit`;
   }
 
-  return '1-5 tabs · j/k scroll · o options · s settings · r reload · R refetch · q quit';
+  return `${toggle}1-5 tabs · j/k scroll · o options · s settings · r reload · R refetch · q quit`;
 }

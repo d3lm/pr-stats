@@ -328,6 +328,8 @@ const SNAPSHOT_DATA: RawData = {
       additions: 3,
       deletions: 4,
       total: 7,
+      mergedAt: new Date('2026-06-08T10:00:00Z'),
+      closedAt: new Date('2026-06-08T10:00:00Z'),
       comments: { discussion: 1, review: 2, total: 3 },
     },
   ],

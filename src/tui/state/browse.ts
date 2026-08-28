@@ -1,6 +1,6 @@
 import type { RepoOption } from '../views/repos';
 
-export const TABS = ['1 Awaiting you', '2 Your open PRs', '3 Review time', '4 PR size', '5 Comments'];
+export const TABS = ['1 Awaiting you', '2 Your PRs', '3 Review time', '4 PR size', '5 Comments'];
 
 /**
  * The two queue tabs, which render a selectable PR list with an optional
@@ -9,9 +9,17 @@ export const TABS = ['1 Awaiting you', '2 Your open PRs', '3 Review time', '4 PR
 export type QueueTabKey = 'pending' | 'open';
 
 /**
- * The three stats tabs, which render scrollable chart panels.
+ * The stats tabs, which render scrollable chart panels. The merged key
+ * belongs to the second sub-tab of the Your PRs tab rather than a
+ * top-level tab, but it scopes and scrolls like the other three.
  */
-export type StatsTabKey = 'review' | 'size' | 'comment';
+export type StatsTabKey = 'review' | 'size' | 'comment' | 'merged';
+
+/**
+ * The two sub-tabs of the Your PRs tab, the queue of your open PRs and
+ * the merged-and-closed stats.
+ */
+export type AuthoredSubTab = 'open' | 'merged';
 
 export type BrowseTabKey = QueueTabKey | StatsTabKey;
 
@@ -41,6 +49,11 @@ export type QueueGrouping = Record<QueueTabKey, boolean>;
  */
 export interface BrowseState {
   tab: number;
+  /**
+   * Selects which sub-tab the Your PRs tab shows, the open queue or the
+   * merged-and-closed stats.
+   */
+  authoredTab: AuthoredSubTab;
   scopes: TabScopes;
   /**
    * Holds the repo-picker cursor of every tab that has a picker.
@@ -55,14 +68,16 @@ export interface BrowseState {
 
 export const initialBrowseState: BrowseState = {
   tab: 0,
+  authoredTab: 'open',
   scopes: {
     pending: { view: 'list' },
     open: { view: 'list' },
     review: { view: 'list' },
     size: { view: 'list' },
     comment: { view: 'list' },
+    merged: { view: 'list' },
   },
-  repoCursors: { pending: 0, open: 0, review: 0, size: 0, comment: 0 },
+  repoCursors: { pending: 0, open: 0, review: 0, size: 0, comment: 0, merged: 0 },
   rowCursors: { pending: 0, open: 0 },
   grouped: { pending: false, open: false },
 };
@@ -70,6 +85,7 @@ export const initialBrowseState: BrowseState = {
 export type BrowseAction =
   | { type: 'tabSelected'; tab: number }
   | { type: 'tabCycled'; delta: 1 | -1 }
+  | { type: 'subTabToggled' }
   | { type: 'repoCursorMoved'; tab: BrowseTabKey; delta: 1 | -1; count: number }
   | { type: 'rowCursorMoved'; tab: QueueTabKey; delta: 1 | -1; count: number }
   | { type: 'repoOpened'; tab: BrowseTabKey; repo: string | null }
@@ -108,6 +124,9 @@ export function browseReducer(state: BrowseState, action: BrowseAction): BrowseS
     case 'tabCycled': {
       return { ...state, tab: (state.tab + TABS.length + action.delta) % TABS.length };
     }
+    case 'subTabToggled': {
+      return { ...state, authoredTab: state.authoredTab === 'open' ? 'merged' : 'open' };
+    }
     case 'repoCursorMoved': {
       return {
         ...state,
@@ -144,6 +163,7 @@ export function browseReducer(state: BrowseState, action: BrowseAction): BrowseS
           review: dropVanishedRepo(state.scopes.review, action.repos.review),
           size: dropVanishedRepo(state.scopes.size, action.repos.size),
           comment: dropVanishedRepo(state.scopes.comment, action.repos.comment),
+          merged: dropVanishedRepo(state.scopes.merged, action.repos.merged),
         },
       };
     }

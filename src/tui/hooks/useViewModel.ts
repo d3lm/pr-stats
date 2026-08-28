@@ -8,13 +8,14 @@ import { targetLabelOf, type OptionsState } from '../state/options';
 import { buildOpenAuthoredView, buildPendingReviewView, type QueueView } from '../views/queue';
 import {
   buildCommentRepoOptions,
+  buildMergedRepoOptions,
   buildOpenRepoOptions,
   buildPendingRepoOptions,
   buildReviewRepoOptions,
   buildSizeRepoOptions,
   type RepoOption,
 } from '../views/repos';
-import { buildCommentView, buildReviewView, buildSizeView, type StatsView } from '../views/stats';
+import { buildCommentView, buildMergedView, buildReviewView, buildSizeView, type StatsView } from '../views/stats';
 
 /**
  * Resolves the scope a tab actually renders. Data that spans at most one
@@ -36,11 +37,13 @@ function resolveScope(scope: PanelScope, repos: RepoOption[]): PanelScope {
 export interface AppViews {
   pendingRepos: RepoOption[];
   openRepos: RepoOption[];
+  mergedRepos: RepoOption[];
   reviewRepos: RepoOption[];
   sizeRepos: RepoOption[];
   commentRepos: RepoOption[];
   pendingScope: PanelScope;
   openScope: PanelScope;
+  mergedScope: PanelScope;
   reviewScope: PanelScope;
   sizeScope: PanelScope;
   commentScope: PanelScope;
@@ -50,6 +53,7 @@ export interface AppViews {
    */
   pending: QueueView | null;
   open: QueueView | null;
+  merged: StatsView | null;
   review: StatsView | null;
   size: StatsView | null;
   comments: StatsView | null;
@@ -102,11 +106,13 @@ export function useViewModel(
 
     const pendingRepos = buildPendingRepoOptions(raw);
     const openRepos = buildOpenRepoOptions(raw);
+    const mergedRepos = buildMergedRepoOptions(raw);
     const reviewRepos = buildReviewRepoOptions(raw);
     const sizeRepos = buildSizeRepoOptions(raw);
     const commentRepos = buildCommentRepoOptions(raw);
     const pendingScope = resolveScope(scopes.pending, pendingRepos);
     const openScope = resolveScope(scopes.open, openRepos);
+    const mergedScope = resolveScope(scopes.merged, mergedRepos);
     const reviewScope = resolveScope(scopes.review, reviewRepos);
     const sizeScope = resolveScope(scopes.size, sizeRepos);
     const commentScope = resolveScope(scopes.comment, commentRepos);
@@ -119,16 +125,19 @@ export function useViewModel(
     return {
       pendingRepos,
       openRepos,
+      mergedRepos,
       reviewRepos,
       sizeRepos,
       commentRepos,
       pendingScope,
       openScope,
+      mergedScope,
       reviewScope,
       sizeScope,
       commentScope,
       pending: pendingScope.view === 'detail' ? buildPendingReviewView(raw, pendingScope.repo, grouping.pending) : null,
       open: openScope.view === 'detail' ? buildOpenAuthoredView(raw, openScope.repo, grouping.open) : null,
+      merged: mergedScope.view === 'detail' ? buildMergedView(raw, mergedScope.repo, width) : null,
       review,
       size: sizeScope.view === 'detail' ? buildSizeView(raw, sizeTarget, sizeScope.repo, width) : null,
       comments: commentScope.view === 'detail' ? buildCommentView(raw, commentScope.repo, width) : null,
@@ -143,6 +152,7 @@ export function useViewModel(
     width,
     scopes.pending,
     scopes.open,
+    scopes.merged,
     scopes.review,
     scopes.size,
     scopes.comment,

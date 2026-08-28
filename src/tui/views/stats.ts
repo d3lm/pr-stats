@@ -1,4 +1,4 @@
-import { computeCommentStats, computeReviewStats, computeSizeStats } from '../../compute';
+import { computeCommentStats, computeMergeStats, computeReviewStats, computeSizeStats } from '../../compute';
 import { COMMENT_BUCKETS, currentBuckets, FILE_BUCKETS, formatCount, LINE_BUCKETS } from '../../report';
 import { percentile } from '../../utils';
 import type { RawData } from '../data/load';
@@ -456,6 +456,150 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
       ),
     });
   }
+
+  return { empty: null, ...base, strip, headline, left, right, distribution, lists };
+}
+
+/**
+ * Builds everything the merged sub-tab of the Your PRs tab renders, the
+ * outcome counts of your authored PRs and the merge-time charts over the
+ * merged ones. Call this after the time mode is configured, because the
+ * merge durations and buckets depend on it. Passing a repo narrows every
+ * chart and list to that repo. The width argument sizes the full-width
+ * distribution strip to the visible pane.
+ */
+export function buildMergedView(raw: RawData, repo: string | null = null, width = 100): StatsView {
+  const base = {
+    strip: [] as Line[],
+    headline: null,
+    distributionTitle: 'Time to merge distribution',
+    noCharts: 'No merged PRs to chart.',
+    left: [],
+    right: [],
+    distribution: null,
+    lists: [],
+  };
+
+  if (raw.authoredTotal === 0) {
+    return { empty: 'No authored PRs found.', ...base };
+  }
+
+  const sizes = repo === null ? raw.sizes : raw.sizes.filter((size) => size.pr.repo === repo);
+
+  if (sizes.length === 0) {
+    return { empty: 'No accessible authored PRs to analyze.', ...base };
+  }
+
+  const stats = computeMergeStats(sizes);
+
+  const strip = [
+    countCell(sizes.length, 'PRs created'),
+    countCell(stats.merged.length, 'merged'),
+    countCell(stats.closed.length, 'closed unmerged', true),
+    countCell(stats.open.length, 'still open', true),
+  ];
+
+  /**
+   * Inaccessible PRs never make it into the size entries, so their count
+   * is only known across all repos and the cell stays off the per-repo
+   * views, like on the size tab.
+   */
+  if (repo === null) {
+    strip.push([{ text: `${raw.authoredTotal - raw.sizes.length} inaccessible (excluded)`, fg: theme.dim }]);
+  }
+
+  const lists: PrList[] = [];
+
+  if (stats.merged.length > 0) {
+    const top = stats.merged.slice(0, 5);
+
+    lists.push({
+      title: 'Recently merged PRs',
+      rows: toPrRows(
+        top.map((result) => result.entry),
+        top.map((result) => `${durationLead(result)} to merge`),
+      ),
+    });
+  }
+
+  if (stats.closed.length > 0) {
+    const top = stats.closed.slice(0, 5);
+
+    lists.push({
+      title: 'Closed without merging',
+      rows: toPrRows(
+        top.map((result) => result.entry),
+        top.map((result) => `${durationLead(result)} to close`),
+      ),
+    });
+  }
+
+  if (stats.merged.length === 0) {
+    return { empty: null, ...base, strip, lists };
+  }
+
+  const sorted = [...stats.allHours].toSorted((a, b) => a - b);
+
+  const headline: Line = [
+    { text: 'p50 ', fg: theme.muted },
+    { text: formatDuration(percentile(sorted, 50)), fg: theme.accent },
+    { text: '   p90 ', fg: theme.muted },
+    { text: formatDuration(percentile(sorted, 90)), fg: theme.accent },
+    { text: `   ${stats.merged.length} of ${sizes.length} PRs merged`, fg: theme.muted },
+  ];
+
+  const mergeDates = stats.merged.map((result) => result.mergedAt);
+  const created = sizes.map((size) => size.pr.createdAt);
+
+  const left = [
+    buildHistogramCard({
+      title: 'Time to merge',
+      subtitle: 'elapsed time, created → merged',
+      values: stats.allHours,
+      buckets: currentBuckets(),
+      format: formatDuration,
+    }),
+    buildHeatmapCard({
+      title: 'When your PRs merge',
+      subtitle: 'PRs merged, weekday × hour, local time',
+      grid: mergeDates,
+      columns: [
+        { label: 'merged', dates: mergeDates },
+        { label: 'created', dates: created, muted: true },
+      ],
+      legend: 'PRs merged in that hour',
+    }),
+    buildGaugeCard({
+      title: 'Outcomes',
+      subtitle: 'where your authored PRs ended up',
+      rows: [
+        { label: 'merged', count: stats.merged.length, color: theme.accent },
+        { label: 'closed unmerged', count: stats.closed.length, color: theme.warn },
+        ...(stats.open.length > 0 ? [{ label: 'still open', count: stats.open.length, color: theme.chartDim }] : []),
+      ],
+    }),
+  ];
+
+  const right = [
+    buildTrendCard({
+      title: 'Time to merge trend',
+      entries: stats.merged.map((result) => {
+        return { date: result.mergedAt, value: result.hours };
+      }),
+      format: formatDuration,
+      floor: 1 / 60,
+    }),
+    buildVolumeCard('PRs merged per week', mergeDates),
+    buildVolumeCard('PRs created per week', created),
+  ];
+
+  const distribution = buildDistribution({
+    values: stats.allHours,
+    width: Math.max(width - 3, 40),
+    format: formatDuration,
+    ticks: DURATION_TICKS,
+    flat: (n, value) => `all ${n} merged ${n === 1 ? 'PR' : 'PRs'} took ${value}`,
+  });
 
   return { empty: null, ...base, strip, headline, left, right, distribution, lists };
 }

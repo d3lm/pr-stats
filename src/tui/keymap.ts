@@ -376,12 +376,20 @@ function handleQueueKey(key: KeyEvent, context: KeymapContext): void {
 }
 
 /**
- * Resolves the derived views and the state key of the active stats tab,
+ * Resolves the derived views and the state key of the active stats view,
  * so the key handler below works the same on the review, size, and
- * comments tabs.
+ * comments tabs and on the merged sub-tab of the Your PRs tab.
  */
 function statsTabOf(context: KeymapContext) {
   const { views } = context;
+
+  if (context.browse.tab === 1) {
+    return {
+      key: 'merged' as StatsTabKey,
+      repos: views?.mergedRepos ?? [],
+      scope: views?.mergedScope ?? null,
+    };
+  }
 
   if (context.browse.tab === 2) {
     return {
@@ -497,7 +505,10 @@ export function handleAppKey(key: KeyEvent, context: KeymapContext): void {
     context.dispatchBrowse({ type: 'tabCycled', delta: -1 });
   } else if (key.name === 'right' || key.name === 'tab') {
     context.dispatchBrowse({ type: 'tabCycled', delta: 1 });
-  } else if (context.browse.tab <= 1) {
+  } else if (context.browse.tab === 1 && key.name === 't') {
+    // t flips the Your PRs tab between the open queue and the merged stats
+    context.dispatchBrowse({ type: 'subTabToggled' });
+  } else if (context.browse.tab === 0 || (context.browse.tab === 1 && context.browse.authoredTab === 'open')) {
     handleQueueKey(key, context);
   } else {
     handleStatsKey(key, context);

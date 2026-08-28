@@ -11,6 +11,7 @@ import { ChartsPanel } from './ChartsPanel';
 import { Placeholder } from './Placeholder';
 import { QueuePanel } from './QueuePanel';
 import { RepoList } from './RepoList';
+import { SubTabBar } from './TabBar';
 
 /**
  * One queue tab, either the repo picker or the selectable PR list of the
@@ -127,7 +128,7 @@ export function MainPanel({
    * which an open modal takes away.
    */
   focused: boolean;
-  scrollRefs: Record<'review' | 'size' | 'comment', RefObject<ScrollBoxRenderable | null>>;
+  scrollRefs: Record<'review' | 'size' | 'comment' | 'merged', RefObject<ScrollBoxRenderable | null>>;
   error: string | null;
   loading: boolean;
   load: LoadPhase | null;
@@ -155,17 +156,32 @@ export function MainPanel({
           onRefClick={onRefClick}
         />
       ) : browse.tab === 1 ? (
-        <QueueTab
-          prompt="Select a repository and press enter to list its open PRs."
-          repos={views.openRepos}
-          scope={views.openScope}
-          view={views.open}
-          repoCursor={browse.repoCursors.open}
-          rowCursor={browse.rowCursors.open}
-          grouped={browse.grouped.open}
-          warning={warning}
-          onRefClick={onRefClick}
-        />
+        <box flexGrow={1} flexDirection="column">
+          <SubTabBar active={browse.authoredTab} />
+          {browse.authoredTab === 'open' ? (
+            <QueueTab
+              prompt="Select a repository and press enter to list its open PRs."
+              repos={views.openRepos}
+              scope={views.openScope}
+              view={views.open}
+              repoCursor={browse.repoCursors.open}
+              rowCursor={browse.rowCursors.open}
+              grouped={browse.grouped.open}
+              warning={warning}
+              onRefClick={onRefClick}
+            />
+          ) : (
+            <StatsTab
+              repos={views.mergedRepos}
+              scope={views.mergedScope}
+              view={views.merged}
+              cursor={browse.repoCursors.merged}
+              scrollRef={scrollRefs.merged}
+              focused={focused}
+              warning={warning}
+            />
+          )}
+        </box>
       ) : browse.tab === 2 ? (
         <StatsTab
           repos={views.reviewRepos}

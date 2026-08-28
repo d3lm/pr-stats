@@ -30,6 +30,7 @@ import { openInBrowser } from './utils/browser';
 import { copyToClipboard } from './utils/clipboard';
 import {
   buildCommentRepoOptions,
+  buildMergedRepoOptions,
   buildOpenRepoOptions,
   buildPendingRepoOptions,
   buildReviewRepoOptions,
@@ -137,6 +138,7 @@ export function App({
   const reviewScrollRef = useRef<ScrollBoxRenderable>(null);
   const sizeScrollRef = useRef<ScrollBoxRenderable>(null);
   const commentScrollRef = useRef<ScrollBoxRenderable>(null);
+  const mergedScrollRef = useRef<ScrollBoxRenderable>(null);
 
   /**
    * Every fresh load clears an opened repo that the new data no longer
@@ -154,6 +156,7 @@ export function App({
         review: buildReviewRepoOptions(data),
         size: buildSizeRepoOptions(data),
         comment: buildCommentRepoOptions(data),
+        merged: buildMergedRepoOptions(data),
       },
     });
   });
@@ -252,7 +255,15 @@ export function App({
         dispatchUi({ type: 'editStarted' });
       },
       scrollBy: (forTab, delta) => {
-        const ref = forTab === 2 ? reviewScrollRef : forTab === 3 ? sizeScrollRef : commentScrollRef;
+        // tab 1 scrolls the merged sub-tab, the only stats view it hosts
+        const ref =
+          forTab === 1
+            ? mergedScrollRef
+            : forTab === 2
+              ? reviewScrollRef
+              : forTab === 3
+                ? sizeScrollRef
+                : commentScrollRef;
 
         ref.current?.scrollBy(delta);
       },
@@ -274,7 +285,12 @@ export function App({
         browse={browse}
         warning={capWarning}
         focused={ui.modal === null}
-        scrollRefs={{ review: reviewScrollRef, size: sizeScrollRef, comment: commentScrollRef }}
+        scrollRefs={{
+          review: reviewScrollRef,
+          size: sizeScrollRef,
+          comment: commentScrollRef,
+          merged: mergedScrollRef,
+        }}
         error={error}
         loading={loading}
         load={load}
@@ -286,6 +302,7 @@ export function App({
         modal={ui.modal}
         editing={ui.editing}
         tab={browse.tab}
+        authoredTab={browse.authoredTab}
         views={views}
         copyLinks={copyLinks}
         openError={ui.openError}

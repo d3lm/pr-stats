@@ -36,6 +36,8 @@ function sizeEntry(repo: string, number: number, state: string, createdAt = '202
     additions: 10,
     deletions: 5,
     total: 15,
+    mergedAt: null,
+    closedAt: state === 'open' ? null : new Date('2026-07-15T00:00:00Z'),
     comments: { discussion: 0, review: 0, total: 0 },
   };
 }

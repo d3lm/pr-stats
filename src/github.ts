@@ -50,12 +50,24 @@ export interface PrDetails {
  * counts the conversation comments, and each review node carries the
  * count of its inline comments, so the sum over the nodes is the number
  * of review comments. GitHub's aggregate totalCommentsCount field is
- * unreliable, which is why the two sources are fetched separately.
+ * unreliable, which is why the two sources are fetched separately. The
+ * merge and close timestamps ride along because the search endpoints
+ * only report open or closed and cannot tell a merge from a plain close.
  */
 export interface PrSize {
   additions: number;
   deletions: number;
   changedFiles: number;
+  /**
+   * Holds the merge time as an ISO string, or null while the PR is open
+   * or was closed without a merge.
+   */
+  mergedAt: string | null;
+  /**
+   * Holds the close time as an ISO string, merged or not, or null while
+   * the PR is open.
+   */
+  closedAt: string | null;
   comments: { totalCount: number };
   reviews: { nodes: ({ comments: { totalCount: number } } | null)[] };
 }
@@ -442,6 +454,8 @@ export async function fetchPrSizes(prs: PrRef[]): Promise<(PrSize | null)[]> {
           additions
           deletions
           changedFiles
+          mergedAt
+          closedAt
           comments {
             totalCount
           }

@@ -59,6 +59,16 @@ export interface SizeEntry {
   additions: number;
   deletions: number;
   total: number;
+  /**
+   * Holds when the PR was merged, or null while it is open or was closed
+   * without a merge.
+   */
+  mergedAt: Date | null;
+  /**
+   * Holds when the PR was closed, merged or not, or null while it is
+   * open.
+   */
+  closedAt: Date | null;
   comments: CommentCounts;
 }
 
@@ -428,6 +438,8 @@ export async function fetchSizeRaw(
         additions: details.additions,
         deletions: details.deletions,
         total: details.additions + details.deletions,
+        mergedAt: details.mergedAt === null ? null : new Date(details.mergedAt),
+        closedAt: details.closedAt === null ? null : new Date(details.closedAt),
         comments: { discussion, review, total: discussion + review },
       });
     }
