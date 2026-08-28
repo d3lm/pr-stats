@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.8](https://github.com/d3lm/pr-stats/releases/tag/v0.2.8) - 2026-08-28
+
+### Features
+
+- feat: add reviewer leaderboard and review coverage to the merged tab ([ca86871](https://github.com/d3lm/pr-stats/commit/ca868718b48840493cc5b64d6538d4fd8e0e876a))
+
+### Bug Fixes
+
+- fix: resync the scrollbar thumb when the slider clamps its viewport ([4036aff](https://github.com/d3lm/pr-stats/commit/4036affdf8164928507b00cf793ee5a4a8f2aa93))
+
 ## [0.2.7](https://github.com/d3lm/pr-stats/releases/tag/v0.2.7) - 2026-08-28
 
 ### Features
