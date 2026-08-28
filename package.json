@@ -38,6 +38,8 @@
     "check": "tsc --noEmit",
     "lint": "oxlint src && eslint --cache src",
     "test": "bun test",
+    "changelog": "git-cliff -o CHANGELOG.md && prettier --write CHANGELOG.md",
+    "version": "git-cliff --tag v$npm_package_version -o CHANGELOG.md && prettier --write CHANGELOG.md && git add CHANGELOG.md",
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {
@@ -59,6 +61,7 @@
     "@types/node": "^26.3.0",
     "@types/react": "^19.2.18",
     "esbuild": "^0.28.2",
+    "git-cliff": "^2.13.1",
     "oxlint-tsgolint": "^7.0.2001",
     "typescript": "^6.0.3"
   }
