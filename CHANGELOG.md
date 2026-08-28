@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.4](https://github.com/d3lm/pr-stats/releases/tag/v0.2.4) - 2026-08-28
+
+### Bug Fixes
+
+- fix: copy links through OpenTUI's clipboard service instead of xclip ([15be4ee](https://github.com/d3lm/pr-stats/commit/15be4ee3ad3defc3c9292b9063ac44e644182248))
+
 ## [0.2.3](https://github.com/d3lm/pr-stats/releases/tag/v0.2.3) - 2026-08-28
 
 ### Bug Fixes
