@@ -47,21 +47,22 @@ export function ChartsPanel({
     );
   }
 
-  const leftWidth = Math.max(0, ...view.left.map(cardWidth));
-  const rightWidth = Math.max(0, ...view.right.map(cardWidth));
-  const twoColumns = view.left.length > 0 && view.right.length > 0 && width - 4 >= leftWidth + COLUMN_GAP + rightWidth;
-
   /**
-   * The grid pairs left[i] with right[i] into one row, so the two cards of
-   * a row share their top edge and the next row starts below the taller of
-   * the two. A column that runs out of cards keeps an empty fixed-width
-   * slot, which holds the other column in place.
+   * The grid deals the cards into rows in order, left cell first, so a
+   * conditional card shifts everything after it instead of leaving a
+   * hole. Both cards of a row share their top edge and the next row
+   * starts below the taller of the two. The final row can hold a single
+   * card, whose right slot keeps its fixed width so the columns stay in
+   * place.
    */
-  const rows = Array.from({ length: Math.max(view.left.length, view.right.length) }, (_, i) => {
-    const left = view.left.at(i);
-    const right = view.right.at(i);
+  const left = view.cards.filter((_, i) => i % 2 === 0);
+  const right = view.cards.filter((_, i) => i % 2 === 1);
+  const leftWidth = Math.max(0, ...left.map((card) => cardWidth(card)));
+  const rightWidth = Math.max(0, ...right.map((card) => cardWidth(card)));
+  const twoColumns = right.length > 0 && width - 4 >= leftWidth + COLUMN_GAP + rightWidth;
 
-    return { key: left?.title ?? right?.title ?? '', left, right };
+  const rows = left.map((card, i) => {
+    return { key: card.title, left: card, right: right.at(i) };
   });
 
   const cards = twoColumns ? (
@@ -69,7 +70,7 @@ export function ChartsPanel({
       {rows.map((row) => (
         <box key={row.key} flexDirection="row" alignItems="flex-start" columnGap={COLUMN_GAP}>
           <box flexDirection="column" width={leftWidth} flexShrink={0}>
-            {row.left !== undefined && <ChartCard card={row.left} />}
+            <ChartCard card={row.left} />
           </box>
           <box flexDirection="column" width={rightWidth} flexShrink={0}>
             {row.right !== undefined && <ChartCard card={row.right} />}
@@ -79,7 +80,7 @@ export function ChartsPanel({
     </box>
   ) : (
     <box flexDirection="column" rowGap={1}>
-      {[...view.left, ...view.right].map((card) => (
+      {view.cards.map((card) => (
         <ChartCard key={card.title} card={card} />
       ))}
     </box>
@@ -169,7 +170,7 @@ export function ChartsPanel({
           </box>
         )}
 
-        {view.left.length === 0 ? (
+        {view.cards.length === 0 ? (
           <text wrapMode="none" fg={theme.muted} marginTop={1}>
             {view.noCharts}
           </text>

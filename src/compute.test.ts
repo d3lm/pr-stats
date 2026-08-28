@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import { computeCommentStats, computeMergeStats } from './compute';
-import type { SizeEntry } from './data';
+import { computeCommentStats, computeMergeStats, computeReviewStats } from './compute';
+import type { ReviewResult, SizeEntry } from './data';
 
 /**
  * Builds a size entry with the given comment counts and a fixed size, so
@@ -79,4 +79,36 @@ test('a reopened PR counts as open even though it still carries its old close ti
   expect(stats.open.map((size) => size.pr.number)).toEqual([5]);
   expect(stats.closed).toEqual([]);
   expect(stats.merged).toEqual([]);
+});
+
+/**
+ * Builds one completed review cycle on the given PR with the given
+ * verdict, so the cycle and verdict tests can vary just those two.
+ */
+function reviewedResult(number: number, verdict: string): ReviewResult {
+  return {
+    kind: 'reviewed',
+    pr: {
+      repo: 'acme/api',
+      number,
+      title: `pr ${number}`,
+      url: `https://example.com/${number}`,
+      state: 'closed',
+      createdAt: new Date('2026-07-01T00:00:00Z'),
+    },
+    requestedAt: new Date('2026-07-01T09:00:00Z'),
+    reviewedAt: new Date('2026-07-01T15:00:00Z'),
+    verdict,
+  };
+}
+
+test('counts the completed cycles per PR and carries the verdicts through', () => {
+  const stats = computeReviewStats([
+    reviewedResult(1, 'CHANGES_REQUESTED'),
+    reviewedResult(1, 'APPROVED'),
+    reviewedResult(2, 'COMMENTED'),
+  ]);
+
+  expect(stats.cycles).toEqual([2, 1]);
+  expect(stats.reviewed.map((entry) => entry.verdict)).toEqual(['CHANGES_REQUESTED', 'APPROVED', 'COMMENTED']);
 });

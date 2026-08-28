@@ -12,10 +12,11 @@ const pr: ReviewPr = {
 };
 
 /**
- * Builds a PrDetails timeline from request and review timestamps,
- * all attributed to the given user unless a login is passed explicitly.
+ * Builds a PrDetails timeline from request and review timestamps, all
+ * attributed to the given user unless a login is passed explicitly,
+ * and all approvals unless a state overrides it.
  */
-function details(requests: string[], reviews: (string | { at: string; login: string })[]): PrDetails {
+function details(requests: string[], reviews: (string | { at: string; login?: string; state?: string })[]): PrDetails {
   return {
     timelineItems: {
       nodes: requests.map((at) => {
@@ -24,9 +25,9 @@ function details(requests: string[], reviews: (string | { at: string; login: str
     },
     reviews: {
       nodes: reviews.map((review) => {
-        const { at, login } = typeof review === 'string' ? { at: review, login: 'me' } : review;
+        const { at, login = 'me', state = 'APPROVED' } = typeof review === 'string' ? { at: review } : review;
 
-        return { author: { login }, submittedAt: at, state: 'APPROVED' };
+        return { author: { login }, submittedAt: at, state };
       }),
     },
   };
@@ -39,6 +40,7 @@ test('classifies a single answered request as one reviewed cycle', () => {
       pr,
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T15:00:00Z'),
+      verdict: 'APPROVED',
     },
   ]);
 });
@@ -52,6 +54,7 @@ test('a re-request after a review yields the completed cycle plus a pending one'
       pr,
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T15:00:00Z'),
+      verdict: 'APPROVED',
     },
     { kind: 'pending', pr, requestedAt: new Date('2026-07-02T09:00:00Z') },
   ]);
@@ -66,14 +69,18 @@ test('a nudge before any review stays inside the first cycle', () => {
       pr,
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-03T15:00:00Z'),
+      verdict: 'APPROVED',
     },
   ]);
 });
 
-test('two answered requests yield two reviewed cycles', () => {
+test('two answered requests yield two reviewed cycles, each with its own verdict', () => {
   const results = classifyPr(
     pr,
-    details(['2026-07-01T09:00:00Z', '2026-07-02T09:00:00Z'], ['2026-07-01T15:00:00Z', '2026-07-02T15:00:00Z']),
+    details(
+      ['2026-07-01T09:00:00Z', '2026-07-02T09:00:00Z'],
+      [{ at: '2026-07-01T15:00:00Z', state: 'CHANGES_REQUESTED' }, '2026-07-02T15:00:00Z'],
+    ),
     'me',
   );
 
@@ -83,12 +90,14 @@ test('two answered requests yield two reviewed cycles', () => {
       pr,
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T15:00:00Z'),
+      verdict: 'CHANGES_REQUESTED',
     },
     {
       kind: 'reviewed',
       pr,
       requestedAt: new Date('2026-07-02T09:00:00Z'),
       reviewedAt: new Date('2026-07-02T15:00:00Z'),
+      verdict: 'APPROVED',
     },
   ]);
 });
@@ -100,6 +109,7 @@ test('a review at the exact request timestamp closes that cycle', () => {
       pr,
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T09:00:00Z'),
+      verdict: 'APPROVED',
     },
   ]);
 });

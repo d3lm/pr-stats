@@ -125,6 +125,20 @@ export function loadSnapshot(options: FetchParams): RawData | null {
     return null;
   }
 
+  const hasMissingVerdict = data.reviewResults.some((result) => {
+    return result.kind === 'reviewed' && (result.verdict as string | undefined) === undefined;
+  });
+
+  /**
+   * Snapshots written before reviewed results carried a verdict would
+   * render an empty verdict gauge, so they never get served either.
+   * The cast reflects that stored data can predate the field the type
+   * promises.
+   */
+  if (hasMissingVerdict) {
+    return null;
+  }
+
   if (sinceIso === data.sinceIso) {
     return data;
   }

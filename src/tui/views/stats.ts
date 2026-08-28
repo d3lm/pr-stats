@@ -1,8 +1,18 @@
-import { computeCommentStats, computeMergeStats, computeReviewStats, computeSizeStats } from '../../compute';
-import { COMMENT_BUCKETS, currentBuckets, FILE_BUCKETS, formatCount, LINE_BUCKETS } from '../../report';
+import {
+  computeCommentStats,
+  computeMergeStats,
+  computeReviewStats,
+  computeSizeStats,
+  type MergeStats,
+  type ReviewedEntry,
+} from '../../compute';
+import { COMMENT_BUCKETS, currentBuckets, CYCLE_BUCKETS, FILE_BUCKETS, formatCount, LINE_BUCKETS } from '../../report';
+import { classifyInstant, durationHours, hasWorkWindows, zonedStamp } from '../../time';
 import { percentile } from '../../utils';
 import type { RawData } from '../data/load';
 import { theme } from '../theme';
+import { buildBarsCard } from './charts/bars';
+import { buildCumulativeCard } from './charts/cumulative';
 import { buildDistribution, COUNT_TICKS, DURATION_TICKS, type Distribution } from './charts/distribution';
 import { buildGaugeCard } from './charts/gauge';
 import { buildHeatmapCard } from './charts/heatmap';
@@ -12,6 +22,7 @@ import { buildScatterCard } from './charts/scatter';
 import { buildSpreadCard } from './charts/spread';
 import { buildTrendCard } from './charts/trend';
 import { buildVolumeCard } from './charts/volume';
+import { mondayOf, WEEK_MS } from './charts/weeks';
 import { durationLead, toPrRows, type PrList } from './rows';
 
 /**
@@ -41,11 +52,12 @@ export interface StatsView {
    */
   noCharts: string;
   /**
-   * Holds the chart cards for the two columns of the responsive grid. On
-   * narrow terminals the panel stacks left before right.
+   * Holds the chart cards in display order. The panel deals them into
+   * the responsive grid row by row, left cell first, so consecutive
+   * cards share a row and a conditional card never leaves a hole. On
+   * narrow terminals the cards stack in this order.
    */
-  left: Card[];
-  right: Card[];
+  cards: Card[];
   distribution: Distribution | null;
   lists: PrList[];
 }
@@ -62,6 +74,136 @@ function countCell(count: number, label: string, dimWhenZero = false): Line {
     { text: String(count), fg: dim ? theme.dim : theme.text, bold: true },
     { text: ` ${label}`, fg: dim ? theme.dim : theme.muted },
   ];
+}
+
+/**
+ * Turns an encoded Monday back into an instant that zonedStamp maps into
+ * the same week in every configured timezone. Noon UTC stays inside the
+ * same local week for every offset the world uses, while midnight would
+ * slip one week back in timezones behind UTC.
+ */
+function mondayNoon(monday: number): Date {
+  return new Date(monday + 12 * 3_600_000);
+}
+
+/**
+ * Sums dated values into one entry per week for the linear trends, dated
+ * on each week's Monday. Weeks without data get a zero entry, because a
+ * quiet week really contributes nothing, unlike the median trends where
+ * a gap carries the previous value forward.
+ */
+function weeklySums(entries: { date: Date; value: number }[]): { date: Date; value: number }[] {
+  const byWeek = new Map<number, number>();
+
+  for (const entry of entries) {
+    const monday = mondayOf(zonedStamp(entry.date).dayUtcMs);
+
+    byWeek.set(monday, (byWeek.get(monday) ?? 0) + entry.value);
+  }
+
+  const mondays = [...byWeek.keys()];
+  const first = Math.min(...mondays);
+  const last = Math.max(...mondays);
+  const result: { date: Date; value: number }[] = [];
+
+  for (let monday = first; monday <= last; monday += WEEK_MS) {
+    result.push({ date: mondayNoon(monday), value: byWeek.get(monday) ?? 0 });
+  }
+
+  return result;
+}
+
+/**
+ * Builds one merge-rate entry per creation week, the merged share of that
+ * week's concluded PRs as a percentage. Open PRs stay out of the rate
+ * because their outcome is not known yet, so a week whose PRs are all
+ * still open gets no entry and the trend carries the previous rate
+ * forward.
+ */
+function mergeRateEntries(stats: MergeStats): { date: Date; value: number }[] {
+  const byWeek = new Map<number, { merged: number; concluded: number }>();
+
+  const add = (createdAt: Date, merged: boolean) => {
+    const monday = mondayOf(zonedStamp(createdAt).dayUtcMs);
+    const counts = byWeek.get(monday) ?? { merged: 0, concluded: 0 };
+
+    counts.concluded += 1;
+    counts.merged += merged ? 1 : 0;
+
+    byWeek.set(monday, counts);
+  };
+
+  for (const result of stats.merged) {
+    add(result.entry.pr.createdAt, true);
+  }
+
+  for (const result of stats.closed) {
+    add(result.entry.pr.createdAt, false);
+  }
+
+  return [...byWeek.entries()].map(([monday, counts]) => {
+    return { date: mondayNoon(monday), value: (counts.merged / counts.concluded) * 100 };
+  });
+}
+
+/**
+ * Builds the off-hours gauge over the given instants, split by the
+ * configured working calendar in the configured timezone. With working
+ * windows set, the weekday rows split into work hours and after hours,
+ * and without them weekdays form a single row against the weekend.
+ */
+function buildOffHoursCard(subtitle: string, dates: Date[]): Card {
+  const counts = { work: 0, after: 0, weekend: 0 };
+
+  for (const date of dates) {
+    counts[classifyInstant(date)] += 1;
+  }
+
+  const rows = hasWorkWindows()
+    ? [
+        { label: 'work hours', count: counts.work, color: theme.accent },
+        { label: 'after hours', count: counts.after, color: theme.warn },
+        { label: 'weekend', count: counts.weekend, color: theme.chartDim },
+      ]
+    : [
+        { label: 'weekday', count: counts.work + counts.after, color: theme.accent },
+        { label: 'weekend', count: counts.weekend, color: theme.chartDim },
+      ];
+
+  return buildGaugeCard({ title: 'Off-hours share', subtitle, rows });
+}
+
+/**
+ * Builds the verdict gauge over the completed review cycles. The three
+ * regular GitHub review states get one row each, and anything else, like
+ * a dismissed review, folds into an other row that only shows when it
+ * has entries. Every row renders in the chart bar color with the most
+ * common verdict in the accent color, like the bars card, so the card
+ * stays within the theme's hue instead of mixing the status colors.
+ */
+function buildVerdictCard(reviewed: ReviewedEntry[]): Card {
+  const countOf = (state: string) => reviewed.filter((entry) => entry.verdict === state).length;
+  const approved = countOf('APPROVED');
+  const changes = countOf('CHANGES_REQUESTED');
+  const commented = countOf('COMMENTED');
+  const other = reviewed.length - approved - changes - commented;
+
+  const counts = [
+    { label: 'approved', count: approved },
+    { label: 'changes requested', count: changes },
+    { label: 'commented', count: commented },
+    ...(other > 0 ? [{ label: 'other', count: other }] : []),
+  ];
+
+  const max = Math.max(...counts.map((row) => row.count));
+
+  return buildGaugeCard({
+    title: 'Review verdicts',
+    subtitle: 'how your requested reviews concluded',
+    rows: counts.map((row) => {
+      return { ...row, color: row.count === max ? theme.accent : theme.chartBar };
+    }),
+  });
 }
 
 /**
@@ -92,8 +234,7 @@ export function buildReviewView(
     headline: null,
     distributionTitle: 'Review time distribution',
     noCharts: 'No completed reviews to chart.',
-    left: [],
-    right: [],
+    cards: [],
     distribution: null,
   };
 
@@ -110,8 +251,24 @@ export function buildReviewView(
     });
   }
 
+  /**
+   * The pending-age histogram only needs open requests, so it renders
+   * even when no review has completed yet and the other charts stay
+   * away.
+   */
+  const pendingCard =
+    stats.pending.length === 0
+      ? null
+      : buildHistogramCard({
+          title: 'Pending request age',
+          subtitle: 'how long open requests have waited',
+          values: stats.pending.map((entry) => entry.hours),
+          buckets: currentBuckets(),
+          format: formatDuration,
+        });
+
   if (stats.reviewed.length === 0) {
-    return { empty: null, ...base, lists };
+    return { empty: null, ...base, cards: pendingCard === null ? [] : [pendingCard], lists };
   }
 
   const sorted = [...stats.allHours].toSorted((a, b) => a - b);
@@ -128,13 +285,79 @@ export function buildReviewView(
   const requestDates = [...stats.reviewed, ...stats.pending].map((entry) => entry.requestedAt);
   const reviewDates = stats.reviewed.map((entry) => entry.reviewedAt);
 
-  const left = [
+  /**
+   * The age at request measures how long a PR already existed before the
+   * review request reached you, over the same completed and pending
+   * cycles the other request charts cover.
+   */
+  const requestAges = [...stats.reviewed, ...stats.pending].map((entry) =>
+    durationHours(entry.pr.createdAt, entry.requestedAt),
+  );
+
+  /**
+   * The service-level gauge only renders with a configured target.
+   * Pending reviews that have already waited past the target are
+   * guaranteed misses no matter when the review lands, so they join the
+   * denominator.
+   */
+  let serviceCard: Card | null = null;
+
+  if (targetHours !== undefined && targetLabel !== undefined) {
+    const inside = stats.allHours.filter((value) => value <= targetHours).length;
+    const overdue = stats.pending.filter((entry) => entry.hours > targetHours).length;
+
+    serviceCard = buildGaugeCard({
+      title: 'Service level',
+      subtitle: `reviewed within ${targetLabel}`,
+      rows: [
+        { label: `inside ${targetLabel}`, count: inside, color: theme.accent },
+        { label: `over ${targetLabel}`, count: stats.allHours.length - inside, color: theme.chartDim },
+        ...(overdue > 0 ? [{ label: 'awaiting and already over', count: overdue, color: theme.warn }] : []),
+      ],
+    });
+  }
+
+  /**
+   * The by-repo comparison only makes sense on the aggregate view with
+   * more than one repo, because a single repo compares against nothing
+   * and the drilled-in views already scope every chart.
+   */
+  const byRepoCard =
+    repo === null && stats.byRepo.length > 1
+      ? buildBarsCard({
+          title: 'Review time by repo',
+          subtitle: 'median review time, slowest first',
+          rows: stats.byRepo
+            .map(([name, hours]) => {
+              return {
+                label: name,
+                value: percentile(
+                  hours.toSorted((a, b) => a - b),
+                  50,
+                ),
+                detail: `n=${hours.length}`,
+              };
+            })
+            .toSorted((a, b) => b.value - a.value),
+          format: formatDuration,
+        })
+      : null;
+
+  const cards = [
     buildHistogramCard({
       title: 'Time to review',
       subtitle: 'elapsed time, request → review',
       values: stats.allHours,
       buckets: currentBuckets(),
       format: formatDuration,
+    }),
+    buildTrendCard({
+      title: 'Review time trend',
+      entries: stats.reviewed.map((entry) => {
+        return { date: entry.reviewedAt, value: entry.hours };
+      }),
+      format: formatDuration,
+      floor: 1 / 60,
     }),
     buildHeatmapCard({
       title: 'When you review',
@@ -146,42 +369,27 @@ export function buildReviewView(
       ],
       legend: 'reviews in that hour',
     }),
-  ];
-
-  const right = [
-    buildTrendCard({
-      title: 'Review time trend',
-      entries: stats.reviewed.map((entry) => {
-        return { date: entry.reviewedAt, value: entry.hours };
-      }),
-      format: formatDuration,
-      floor: 1 / 60,
-    }),
     buildVolumeCard('Reviews completed per week', reviewDates),
+    buildHistogramCard({
+      title: 'Review cycles per PR',
+      subtitle: 'completed request → review rounds per PR',
+      values: stats.cycles,
+      buckets: CYCLE_BUCKETS,
+      format: count,
+    }),
+    buildHistogramCard({
+      title: 'PR age at request',
+      subtitle: 'elapsed time, PR created → review requested',
+      values: requestAges,
+      buckets: currentBuckets(),
+      format: formatDuration,
+    }),
+    buildVerdictCard(stats.reviewed),
+    ...(pendingCard === null ? [] : [pendingCard]),
+    buildOffHoursCard('reviews submitted, local time', reviewDates),
+    ...(serviceCard === null ? [] : [serviceCard]),
+    ...(byRepoCard === null ? [] : [byRepoCard]),
   ];
-
-  if (targetHours !== undefined && targetLabel !== undefined) {
-    const inside = stats.allHours.filter((value) => value <= targetHours).length;
-
-    /**
-     * Pending reviews that have already waited past the target are
-     * guaranteed misses no matter when the review lands, so they join the
-     * denominator.
-     */
-    const overdue = stats.pending.filter((entry) => entry.hours > targetHours).length;
-
-    left.push(
-      buildGaugeCard({
-        title: 'Service level',
-        subtitle: `reviewed within ${targetLabel}`,
-        rows: [
-          { label: `inside ${targetLabel}`, count: inside, color: theme.accent },
-          { label: `over ${targetLabel}`, count: stats.allHours.length - inside, color: theme.chartDim },
-          ...(overdue > 0 ? [{ label: 'awaiting and already over', count: overdue, color: theme.warn }] : []),
-        ],
-      }),
-    );
-  }
 
   /**
    * The strip spans the scroll area's content width, which is the terminal
@@ -198,7 +406,7 @@ export function buildReviewView(
     flat: (count, value) => `all ${count} ${count === 1 ? 'review' : 'reviews'} took ${value}`,
   });
 
-  return { empty: null, ...base, headline, left, right, distribution, lists };
+  return { empty: null, ...base, headline, cards, distribution, lists };
 }
 
 /**
@@ -217,8 +425,7 @@ export function buildSizeView(
     headline: null,
     distributionTitle: 'PR size distribution',
     noCharts: 'No authored PRs to chart.',
-    left: [],
-    right: [],
+    cards: [],
     distribution: null,
     lists: [],
   };
@@ -263,7 +470,22 @@ export function buildSizeView(
     { text: `   ${sizes.length} of ${raw.sizes.length} PRs`, fg: theme.muted },
   ];
 
-  const left = [
+  /**
+   * The target gauge only renders with a configured size target.
+   */
+  const targetCard =
+    stats.met !== undefined && stats.targetLabel !== undefined
+      ? buildGaugeCard({
+          title: 'Size target',
+          subtitle: `authored within ${stats.targetLabel}`,
+          rows: [
+            { label: 'inside target', count: stats.met, color: theme.accent },
+            { label: 'over target', count: sizes.length - stats.met, color: theme.chartDim },
+          ],
+        })
+      : null;
+
+  const cards = [
     buildHistogramCard({
       title: 'PR size',
       subtitle: 'total lines changed per authored PR',
@@ -271,23 +493,6 @@ export function buildSizeView(
       buckets: LINE_BUCKETS,
       format: count,
     }),
-    buildHistogramCard({
-      title: 'Files touched',
-      subtitle: 'files changed per authored PR',
-      values: sizes.map((size) => size.files),
-      buckets: FILE_BUCKETS,
-      format: count,
-    }),
-    buildHeatmapCard({
-      title: 'When you open PRs',
-      subtitle: 'PRs opened, weekday × hour, local time',
-      grid: created,
-      columns: [{ label: 'opened', dates: created }],
-      legend: 'PRs opened in that hour',
-    }),
-  ];
-
-  const right = [
     buildTrendCard({
       title: 'PR size trend',
       entries: sizes.map((size) => {
@@ -296,22 +501,35 @@ export function buildSizeView(
       format: count,
       floor: 1,
     }),
+    buildHistogramCard({
+      title: 'Files touched',
+      subtitle: 'files changed per authored PR',
+      values: sizes.map((size) => size.files),
+      buckets: FILE_BUCKETS,
+      format: count,
+    }),
+    buildTrendCard({
+      title: 'Net lines trend',
+      entries: weeklySums(
+        sizes.map((size) => {
+          return { date: size.pr.createdAt, value: size.additions - size.deletions };
+        }),
+      ),
+      format: netCount,
+      scale: 'linear',
+      valueLabel: 'net lines',
+    }),
+    buildHeatmapCard({
+      title: 'When you open PRs',
+      subtitle: 'PRs opened, weekday × hour, local time',
+      grid: created,
+      columns: [{ label: 'opened', dates: created }],
+      legend: 'PRs opened in that hour',
+    }),
     buildVolumeCard('PRs opened per week', created),
+    ...(targetCard === null ? [] : [targetCard]),
     buildSpreadCard('Size spread', stats.metrics, count),
   ];
-
-  if (stats.met !== undefined && stats.targetLabel !== undefined) {
-    left.push(
-      buildGaugeCard({
-        title: 'Size target',
-        subtitle: `authored within ${stats.targetLabel}`,
-        rows: [
-          { label: 'inside target', count: stats.met, color: theme.accent },
-          { label: 'over target', count: sizes.length - stats.met, color: theme.chartDim },
-        ],
-      }),
-    );
-  }
 
   const distribution = buildDistribution({
     values: totals,
@@ -333,7 +551,7 @@ export function buildSizeView(
     });
   }
 
-  return { empty: null, ...base, strip, headline, left, right, distribution, lists };
+  return { empty: null, ...base, strip, headline, cards, distribution, lists };
 }
 
 /**
@@ -348,8 +566,7 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
     headline: null,
     distributionTitle: 'Comments per PR distribution',
     noCharts: 'No authored PRs to chart.',
-    left: [],
-    right: [],
+    cards: [],
     distribution: null,
     lists: [],
   };
@@ -393,13 +610,21 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
     { text: `   ${sizes.length} of ${raw.sizes.length} PRs`, fg: theme.muted },
   ];
 
-  const left = [
+  const cards = [
     buildHistogramCard({
       title: 'Comments per PR',
       subtitle: 'discussion plus review comments per authored PR',
       values: stats.totals,
       buckets: COMMENT_BUCKETS,
       format: count,
+    }),
+    buildTrendCard({
+      title: 'Comment trend',
+      entries: sizes.map((size) => {
+        return { date: size.pr.createdAt, value: size.comments.total };
+      }),
+      format: count,
+      floor: 1,
     }),
     buildScatterCard({
       title: 'Comments vs size',
@@ -410,19 +635,8 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
       formatX: count,
       formatY: count,
     }),
-    buildSpreadCard('Comment spread', stats.metrics, count),
-  ];
-
-  const right = [
-    buildTrendCard({
-      title: 'Comment trend',
-      entries: sizes.map((size) => {
-        return { date: size.pr.createdAt, value: size.comments.total };
-      }),
-      format: count,
-      floor: 1,
-    }),
     buildVolumeCard('Comments received per week', created, stats.totals),
+    buildSpreadCard('Comment spread', stats.metrics, count),
     buildGaugeCard({
       title: 'Feedback rate',
       subtitle: 'authored PRs that received comments',
@@ -457,7 +671,7 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
     });
   }
 
-  return { empty: null, ...base, strip, headline, left, right, distribution, lists };
+  return { empty: null, ...base, strip, headline, cards, distribution, lists };
 }
 
 /**
@@ -474,8 +688,7 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     headline: null,
     distributionTitle: 'Time to merge distribution',
     noCharts: 'No merged PRs to chart.',
-    left: [],
-    right: [],
+    cards: [],
     distribution: null,
     lists: [],
   };
@@ -551,13 +764,21 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
   const mergeDates = stats.merged.map((result) => result.mergedAt);
   const created = sizes.map((size) => size.pr.createdAt);
 
-  const left = [
+  const cards = [
     buildHistogramCard({
       title: 'Time to merge',
       subtitle: 'elapsed time, created → merged',
       values: stats.allHours,
       buckets: currentBuckets(),
       format: formatDuration,
+    }),
+    buildTrendCard({
+      title: 'Time to merge trend',
+      entries: stats.merged.map((result) => {
+        return { date: result.mergedAt, value: result.hours };
+      }),
+      format: formatDuration,
+      floor: 1 / 60,
     }),
     buildHeatmapCard({
       title: 'When your PRs merge',
@@ -569,6 +790,38 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
       ],
       legend: 'PRs merged in that hour',
     }),
+    buildTrendCard({
+      title: 'Merge rate trend',
+      entries: mergeRateEntries(stats),
+      format: (value) => `${Math.round(value)}%`,
+      scale: 'linear',
+      valueLabel: 'merge rate',
+    }),
+    buildScatterCard({
+      title: 'Merge time vs size',
+      subtitle: 'time to merge against lines changed, log scale',
+      points: stats.merged.map((result) => {
+        return { x: result.entry.total, y: result.hours };
+      }),
+      formatX: count,
+      formatY: formatDuration,
+    }),
+    buildCumulativeCard({
+      title: 'Created vs merged',
+      series: [
+        /**
+         * The created line stays a neutral gray because every theme preset
+         * keeps chartLine and accent in one hue family, which made the two
+         * lines indistinguishable. The gray also survives theme changes,
+         * since the presets only rotate the hue-carrying colors.
+         */
+        { label: 'created', dates: created, color: theme.muted },
+        { label: 'merged', dates: mergeDates, color: theme.accent },
+      ],
+      legend: 'cumulative PRs by week',
+    }),
+    buildVolumeCard('PRs created per week', created),
+    buildVolumeCard('PRs merged per week', mergeDates),
     buildGaugeCard({
       title: 'Outcomes',
       subtitle: 'where your authored PRs ended up',
@@ -580,19 +833,6 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     }),
   ];
 
-  const right = [
-    buildTrendCard({
-      title: 'Time to merge trend',
-      entries: stats.merged.map((result) => {
-        return { date: result.mergedAt, value: result.hours };
-      }),
-      format: formatDuration,
-      floor: 1 / 60,
-    }),
-    buildVolumeCard('PRs merged per week', mergeDates),
-    buildVolumeCard('PRs created per week', created),
-  ];
-
   const distribution = buildDistribution({
     values: stats.allHours,
     width: Math.max(width - 3, 40),
@@ -601,9 +841,17 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     flat: (n, value) => `all ${n} merged ${n === 1 ? 'PR' : 'PRs'} took ${value}`,
   });
 
-  return { empty: null, ...base, strip, headline, left, right, distribution, lists };
+  return { empty: null, ...base, strip, headline, cards, distribution, lists };
 }
 
 function count(value: number): string {
   return formatCount(Math.round(value));
+}
+
+/**
+ * Formats a signed line count with an explicit sign, so the net-lines
+ * trend tells growth from shrinkage at a glance.
+ */
+function netCount(value: number): string {
+  return value < 0 ? `-${count(-value)}` : `+${count(value)}`;
 }

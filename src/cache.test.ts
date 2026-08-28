@@ -289,6 +289,7 @@ const SNAPSHOT_DATA: RawData = {
       },
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T15:00:00Z'),
+      verdict: 'APPROVED',
     },
     {
       kind: 'pending',
@@ -367,6 +368,23 @@ test('a snapshot whose unrequested results lack a review time never gets served'
       result.kind === 'unrequested' ? { kind: 'unrequested', pr: result.pr } : result,
     ),
   } as RawData;
+
+  saveSnapshot(SNAPSHOT_OPTIONS, legacy);
+
+  expect(loadSnapshot(SNAPSHOT_OPTIONS)).toBeNull();
+});
+
+test('a snapshot whose reviewed results lack a verdict never gets served', () => {
+  /**
+   * Snapshots written before reviewed results carried the verdict would
+   * render an empty verdict gauge, so the loader drops them the same way.
+   */
+  const legacy = {
+    ...SNAPSHOT_DATA,
+    reviewResults: SNAPSHOT_DATA.reviewResults.map((result) =>
+      result.kind === 'reviewed' ? { ...result, verdict: undefined } : result,
+    ),
+  } as unknown as RawData;
 
   saveSnapshot(SNAPSHOT_OPTIONS, legacy);
 

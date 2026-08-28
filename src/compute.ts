@@ -7,6 +7,11 @@ export interface ReviewedEntry {
   requestedAt: Date;
   reviewedAt: Date;
   hours: number;
+  /**
+   * Holds the GitHub state of the review that closed the cycle, like
+   * APPROVED or CHANGES_REQUESTED.
+   */
+  verdict: string;
 }
 
 export interface PendingEntry {
@@ -36,6 +41,12 @@ export interface ReviewStats {
   allHours: number[];
   byRepo: [string, number[]][];
   misses: ReviewedEntry[];
+  /**
+   * Holds the number of completed request-review cycles per PR, one
+   * count for every PR with at least one completed cycle. A count above
+   * one means the PR came back to you after a review.
+   */
+  cycles: number[];
 }
 
 /**
@@ -60,6 +71,7 @@ export function computeReviewStats(
         requestedAt: result.requestedAt,
         reviewedAt: result.reviewedAt,
         hours: durationHours(result.requestedAt, result.reviewedAt),
+        verdict: result.verdict,
       });
     } else if (result.kind === 'pending' && result.pr.state === 'open') {
       pending.push({ pr: result.pr, requestedAt: result.requestedAt, hours: durationHours(result.requestedAt, now) });
@@ -121,7 +133,25 @@ export function computeReviewStats(
       ? []
       : reviewed.filter((result) => result.hours > targetHours).toSorted((a, b) => b.hours - a.hours);
 
-  return { reviewed, pending, reviewing, expired, unrequested, allHours, byRepo, misses };
+  const cyclesByPr = new Map<string, number>();
+
+  for (const result of reviewed) {
+    const key = `${result.pr.repo}#${result.pr.number}`;
+
+    cyclesByPr.set(key, (cyclesByPr.get(key) ?? 0) + 1);
+  }
+
+  return {
+    reviewed,
+    pending,
+    reviewing,
+    expired,
+    unrequested,
+    allHours,
+    byRepo,
+    misses,
+    cycles: [...cyclesByPr.values()],
+  };
 }
 
 export interface SizeMetric {

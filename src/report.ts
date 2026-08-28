@@ -81,6 +81,19 @@ export const FILE_BUCKETS: Bucket[] = [
 ];
 
 /**
+ * Buckets for the review-cycles histogram. One cycle means the PR was
+ * done after a single review, so the low buckets get one bar each and
+ * only the rare high counts share one.
+ */
+export const CYCLE_BUCKETS: Bucket[] = [
+  { label: '1', max: 2 },
+  { label: '2', max: 3 },
+  { label: '3', max: 4 },
+  { label: '4-5', max: 6 },
+  { label: '> 5', max: Infinity },
+];
+
+/**
  * Buckets for the comments-per-PR histogram. Zero gets its own bucket
  * because silent merges are worth seeing on their own, and the rest grows
  * roughly logarithmically like the size buckets.

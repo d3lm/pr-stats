@@ -97,16 +97,47 @@ function wallParts(instantMs: number): WallParts {
 
 /**
  * Returns the local calendar day of an instant in the configured timezone,
- * encoded as a UTC timestamp, together with the local weekday and hour.
- * The encoded day's UTC weekday matches the local weekday, so day and week
- * arithmetic on it stays exact across DST changes.
+ * encoded as a UTC timestamp, together with the local weekday, hour, and
+ * minute. The encoded day's UTC weekday matches the local weekday, so day
+ * and week arithmetic on it stays exact across DST changes.
  */
-export function zonedStamp(date: Date): { dayUtcMs: number; weekday: number; hour: number } {
+export function zonedStamp(date: Date): { dayUtcMs: number; weekday: number; hour: number; minute: number } {
   const parts = wallParts(date.getTime());
 
   const dayUtcMs = Date.UTC(parts.year, parts.month - 1, parts.day);
 
-  return { dayUtcMs, weekday: new Date(dayUtcMs).getUTCDay(), hour: parts.hour };
+  return { dayUtcMs, weekday: new Date(dayUtcMs).getUTCDay(), hour: parts.hour, minute: parts.minute };
+}
+
+/**
+ * Reports whether the configured working windows leave gaps in the day,
+ * which is the case once the user sets --work-hours. Only then can an
+ * instant classify as after hours.
+ */
+export function hasWorkWindows(): boolean {
+  const covered = timeMode.workWindows.reduce((sum, window) => sum + (window.endMin - window.startMin), 0);
+
+  return covered < 24 * 60;
+}
+
+/**
+ * Classifies an instant by the configured working calendar into the
+ * weekend, inside the working windows, or after hours. With full-day
+ * windows every weekday instant counts as work time, so after hours can
+ * only appear once the user sets --work-hours.
+ */
+export function classifyInstant(date: Date): 'work' | 'after' | 'weekend' {
+  const { weekday, hour, minute } = zonedStamp(date);
+
+  if (weekday === 0 || weekday === 6) {
+    return 'weekend';
+  }
+
+  const minuteOfDay = hour * 60 + minute;
+
+  return timeMode.workWindows.some((window) => minuteOfDay >= window.startMin && minuteOfDay < window.endMin)
+    ? 'work'
+    : 'after';
 }
 
 /**

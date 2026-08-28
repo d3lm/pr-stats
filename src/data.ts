@@ -26,12 +26,14 @@ export interface ReviewPr {
  * raw timestamps instead of durations, so a different time mode can
  * recompute durations without refetching anything. Unrequested results
  * carry the time of your latest review, which feeds the reviewing queue.
+ * Reviewed results also carry the verdict of the review that closed the
+ * cycle, a GitHub review state like APPROVED or CHANGES_REQUESTED.
  */
 export type ReviewResult =
   | { kind: 'inaccessible'; pr: ReviewPr }
   | { kind: 'unrequested'; pr: ReviewPr; reviewedAt: Date }
   | { kind: 'pending'; pr: ReviewPr; requestedAt: Date }
-  | { kind: 'reviewed'; pr: ReviewPr; requestedAt: Date; reviewedAt: Date };
+  | { kind: 'reviewed'; pr: ReviewPr; requestedAt: Date; reviewedAt: Date; verdict: string };
 
 export interface AuthoredPr {
   repo: string;
@@ -260,7 +262,7 @@ export function classifyPr(pr: ReviewPr, details: PrDetails | null, user: string
   );
 
   const reviews = details.reviews.nodes.flatMap((node) =>
-    node?.author?.login === user && node.submittedAt ? [new Date(node.submittedAt)] : [],
+    node?.author?.login === user && node.submittedAt ? [{ at: new Date(node.submittedAt), state: node.state }] : [],
   );
 
   if (requests.length === 0) {
@@ -274,7 +276,9 @@ export function classifyPr(pr: ReviewPr, details: PrDetails | null, user: string
       return [{ kind: 'inaccessible', pr }];
     }
 
-    return [{ kind: 'unrequested', pr, reviewedAt: new Date(Math.max(...reviews.map((review) => review.getTime()))) }];
+    return [
+      { kind: 'unrequested', pr, reviewedAt: new Date(Math.max(...reviews.map((review) => review.at.getTime()))) },
+    ];
   }
 
   /**
@@ -283,10 +287,10 @@ export function classifyPr(pr: ReviewPr, details: PrDetails | null, user: string
    */
   const events = [
     ...requests.map((at) => {
-      return { at, isRequest: true };
+      return { at, isRequest: true, state: '' };
     }),
-    ...reviews.map((at) => {
-      return { at, isRequest: false };
+    ...reviews.map(({ at, state }) => {
+      return { at, isRequest: false, state };
     }),
   ].toSorted((a, b) => a.at.getTime() - b.at.getTime() || Number(b.isRequest) - Number(a.isRequest));
 
@@ -298,7 +302,7 @@ export function classifyPr(pr: ReviewPr, details: PrDetails | null, user: string
     if (event.isRequest) {
       openedAt ??= event.at;
     } else if (openedAt !== null) {
-      results.push({ kind: 'reviewed', pr, requestedAt: openedAt, reviewedAt: event.at });
+      results.push({ kind: 'reviewed', pr, requestedAt: openedAt, reviewedAt: event.at, verdict: event.state });
       openedAt = null;
     }
   }

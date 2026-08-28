@@ -135,6 +135,29 @@ function clearInput(mockInput: { pressBackspace: () => void }, text: string): vo
 }
 
 /**
+ * Scrolls the focused charts pane down with j until the text enters the
+ * frame, for cards that sit between the top and the end of a pane taller
+ * than the viewport. Charts already above the target stay above it, so
+ * consecutive calls must follow the pane's card order.
+ */
+async function scrollToText(setup: AppSetup, text: string, maxPresses = 120): Promise<void> {
+  for (let press = 0; press < maxPresses; press++) {
+    await setup.renderOnce();
+
+    if (setup.captureCharFrame().includes(text)) {
+      return;
+    }
+
+    setup.mockInput.pressKey('j');
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+
+  throw new Error(
+    `scrolled to the end without finding ${JSON.stringify(text)}, last frame:\n${setup.captureCharFrame()}`,
+  );
+}
+
+/**
  * Presses enter once and returns the URL the injected opener recorded
  * for it, polling render passes until the record lands.
  */
@@ -214,25 +237,51 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     /**
      * The remaining charts sit below the fold, so scroll the review pane
-     * to the end before asserting on them.
+     * down card by card in the grid's fill order. The cycles histogram
+     * counts every canned PR as one-and-done, and the verdict gauge
+     * splits the three completed reviews into two approvals and one
+     * change request.
      */
-    setup.mockInput.pressKey(KeyCodes.END);
+    await scrollToText(setup, 'Review time trend');
+    await scrollToText(setup, 'reviews in that hour');
+    await scrollToText(setup, '3 weeks · 3 total');
 
-    await waitForText(setup, 'inside 1d');
+    expect(setup.captureCharFrame()).toContain('Reviews completed per week');
 
-    const reviewEndFrame = setup.captureCharFrame();
+    await scrollToText(setup, 'Review cycles per PR');
+    await scrollToText(setup, '← p50 1 ');
+    await scrollToText(setup, 'PR age at request');
+    await scrollToText(setup, 'Review verdicts');
+    await scrollToText(setup, 'changes requested');
 
-    expect(reviewEndFrame).toContain('reviews in that hour');
-    expect(reviewEndFrame).toContain('Review time trend');
-    expect(reviewEndFrame).toContain('Reviews completed per week');
-    expect(reviewEndFrame).toContain('3 weeks · 3 total');
+    expect(setup.captureCharFrame()).toContain('approved');
+
+    await scrollToText(setup, 'Pending request age');
 
     /**
      * The pending review on acme/web has waited past the one-day target,
      * so the service-level gauge counts it as a guaranteed miss next to
      * the completed reviews.
      */
-    expect(reviewEndFrame).toContain('awaiting and already over');
+    await scrollToText(setup, 'awaiting and already over');
+
+    expect(setup.captureCharFrame()).toContain('inside 1d');
+
+    /**
+     * The end of the pane holds the by-repo comparison, which the
+     * aggregate view renders because the data spans two repos, with the
+     * off-hours gauge above it.
+     */
+    setup.mockInput.pressKey(KeyCodes.END);
+
+    await waitForText(setup, 'Review time by repo');
+
+    const reviewEndFrame = setup.captureCharFrame();
+
+    expect(reviewEndFrame).toContain('Off-hours share');
+    expect(reviewEndFrame).toContain('weekday');
+    expect(reviewEndFrame).toContain('weekend');
+    expect(reviewEndFrame).toContain('n=2');
 
     /**
      * Escape returns to the picker, and the row below All repos drills
@@ -284,21 +333,31 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(sizeFrame).toContain('← p50 400');
 
     /**
-     * The remaining size charts sit below the fold, so scroll the pane to
-     * the end before asserting on them.
+     * The remaining size charts sit below the fold, so scroll the pane
+     * down card by card in the grid's fill order. The net lines trend
+     * sums additions minus deletions per week, so its line ends on the
+     * +200 of the last merged PR.
      */
+    await scrollToText(setup, 'PR size trend');
+    await scrollToText(setup, 'Files touched');
+    await scrollToText(setup, 'weekly net lines');
+
+    expect(setup.captureCharFrame()).toContain('Net lines trend');
+
+    await scrollToText(setup, '+200');
+    await scrollToText(setup, '9 weeks · 5 total');
+
+    expect(setup.captureCharFrame()).toContain('PRs opened per week');
+
+    await scrollToText(setup, 'authored within <= 400 lines, <= 20 files');
+
+    expect(setup.captureCharFrame()).toContain('Size target');
+
     setup.mockInput.pressKey(KeyCodes.END);
 
-    await waitForText(setup, 'inside target');
+    await waitForText(setup, 'Size spread');
 
-    const sizeEndFrame = setup.captureCharFrame();
-
-    expect(sizeEndFrame).toContain('PR size trend');
-    expect(sizeEndFrame).toContain('PRs opened per week');
-    expect(sizeEndFrame).toContain('9 weeks · 5 total');
-    expect(sizeEndFrame).toContain('Size spread');
-    expect(sizeEndFrame).toContain('Size target');
-    expect(sizeEndFrame).toContain('authored within <= 400 lines, <= 20 files');
+    expect(setup.captureCharFrame()).toContain('inside target');
 
     /**
      * The size picker keeps its own cursor, so it starts back at All
@@ -359,23 +418,25 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(commentFrame).toContain('Most commented PRs');
     expect(commentFrame).toContain('16 comments (4 discussion, 12 review)');
     expect(commentFrame).toContain('← p50 3');
-    expect(commentFrame).toContain('Comments vs size');
 
     /**
      * The remaining comment charts sit below the fold, so scroll the pane
-     * to the end before asserting on them. The volume chart sums the
-     * comment counts per week instead of counting PRs, so its total says
-     * 30 over the same nine weeks the size tab spans.
+     * down card by card in the grid's fill order. The volume chart sums
+     * the comment counts per week instead of counting PRs, so its total
+     * says 30 over the same nine weeks the size tab spans.
      */
+    await scrollToText(setup, 'Comment trend');
+    await scrollToText(setup, 'Comments vs size');
+    await scrollToText(setup, '9 weeks · 30 total');
+
+    expect(setup.captureCharFrame()).toContain('Comments received per week');
+
     setup.mockInput.pressKey(KeyCodes.END);
 
     await waitForText(setup, 'Feedback rate');
 
     const commentEndFrame = setup.captureCharFrame();
 
-    expect(commentEndFrame).toContain('Comment trend');
-    expect(commentEndFrame).toContain('Comments received per week');
-    expect(commentEndFrame).toContain('9 weeks · 30 total');
     expect(commentEndFrame).toContain('Comment spread');
     expect(commentEndFrame).toContain('no comments');
 
@@ -1088,17 +1149,30 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
     expect(mergedFrame).toContain('acme/web#12');
 
     /**
-     * The remaining charts sit below the fold, so scroll the pane to the
-     * end before asserting on them.
+     * The remaining charts sit below the fold, so scroll the pane down
+     * card by card in the grid's fill order. The scatter plots merge
+     * time against lines changed over the three merged PRs.
+     */
+    await scrollToText(setup, 'Time to merge trend');
+    await scrollToText(setup, 'Merge rate trend');
+
+    expect(setup.captureCharFrame()).toContain('weekly merge rate');
+
+    await scrollToText(setup, 'Merge time vs size');
+    await scrollToText(setup, 'cumulative PRs by week');
+
+    expect(setup.captureCharFrame()).toContain('Created vs merged');
+
+    await scrollToText(setup, 'PRs created per week');
+
+    /**
+     * The end of the pane holds the merged volume and the outcome gauge.
      */
     setup.mockInput.pressKey(KeyCodes.END);
 
-    await waitForText(setup, 'PRs created per week');
+    await waitForText(setup, 'where your authored PRs ended up');
 
-    const mergedEndFrame = setup.captureCharFrame();
-
-    expect(mergedEndFrame).toContain('Time to merge trend');
-    expect(mergedEndFrame).toContain('PRs merged per week');
+    expect(setup.captureCharFrame()).toContain('PRs merged per week');
 
     /**
      * Escape returns to the picker, and the row below All repos drills
@@ -1330,8 +1404,9 @@ test('lays the review charts out in two columns on wide terminals', async () => 
 
     /**
      * The two card columns fit side by side at this width, so the first
-     * card titles of both columns share a frame line, and the right
-     * column's remaining cards render alongside the left column.
+     * card titles of both columns share a frame line, and the following
+     * rows pair the heatmap with the volume chart and the cycles
+     * histogram with the age-at-request histogram.
      */
     const frame = setup.captureCharFrame();
     const lines = frame.split('\n');
@@ -1339,12 +1414,16 @@ test('lays the review charts out in two columns on wide terminals', async () => 
     expect(lines.some((line) => line.includes('Time to review') && line.includes('Review time trend'))).toBe(true);
     expect(frame).toContain('When you review');
     expect(frame).toContain('Reviews completed per week');
-    expect(frame).toContain('Service level');
+
+    expect(lines.some((line) => line.includes('Review cycles per PR') && line.includes('PR age at request'))).toBe(
+      true,
+    );
 
     /**
      * The size tab gets the same two-column treatment. The left column's
      * histogram subtitle and the right column's trend title share the
-     * first grid row.
+     * first grid row, and the second row pairs the files histogram with
+     * the net lines trend.
      */
     setup.mockInput.pressKey('4');
 
@@ -1361,7 +1440,7 @@ test('lays the review charts out in two columns on wide terminals', async () => 
       sizeLines.some((line) => line.includes('total lines changed per authored PR') && line.includes('PR size trend')),
     ).toBe(true);
 
-    expect(sizeFrame).toContain('Files touched');
+    expect(sizeLines.some((line) => line.includes('Files touched') && line.includes('Net lines trend'))).toBe(true);
     expect(sizeFrame).toContain('PRs opened per week');
   } finally {
     destroyApp(setup);

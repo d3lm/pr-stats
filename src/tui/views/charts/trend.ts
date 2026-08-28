@@ -32,18 +32,36 @@ export interface TrendSpec {
   format: (value: number) => string;
   /**
    * Clamps values from below before taking the logarithm, so zero values
-   * cannot blow up the scale.
+   * cannot blow up the scale. The linear scale ignores it.
    */
-  floor: number;
+  floor?: number;
+  /**
+   * Chooses the y scale. The default log scale suits heavy-tailed
+   * quantities like durations and sizes, and the linear scale handles
+   * values that can be zero or negative, like net lines or rates.
+   */
+  scale?: 'log' | 'linear';
+  /**
+   * Names the plotted value in the subtitle, like "median" or "net
+   * lines". The subtitle reads "weekly <label>" or "<label> per N weeks".
+   */
+  valueLabel?: string;
 }
 
 /**
- * Builds a trend card as an asciichart line chart of weekly medians on a
- * log scale. Weeks without data carry the previous median forward so the
- * line stays continuous. Long ranges average several weeks per point, and
- * the final value is annotated at the line's end.
+ * Builds a trend card as an asciichart line chart of weekly medians, on a
+ * log scale by default. Weeks without data carry the previous median
+ * forward so the line stays continuous. Long ranges average several weeks
+ * per point, and the final value is annotated at the line's end.
  */
-export function buildTrendCard({ title, entries, format, floor }: TrendSpec): Card {
+export function buildTrendCard({
+  title,
+  entries,
+  format,
+  floor = 1,
+  scale = 'log',
+  valueLabel = 'median',
+}: TrendSpec): Card {
   const byWeek = new Map<number, number[]>();
 
   for (const entry of entries) {
@@ -58,10 +76,12 @@ export function buildTrendCard({ title, entries, format, floor }: TrendSpec): Ca
   const first = Math.min(...mondays);
   const weekCount = (Math.max(...mondays) - first) / WEEK_MS + 1;
 
+  const scaleSuffix = scale === 'log' ? ', log scale' : '';
+
   if (weekCount < 2) {
     return {
       title,
-      subtitle: 'weekly median, log scale',
+      subtitle: `weekly ${valueLabel}${scaleSuffix}`,
       lines: [[{ text: 'not enough weeks to draw a trend', fg: theme.muted }]],
     };
   }
@@ -84,14 +104,18 @@ export function buildTrendCard({ title, entries, format, floor }: TrendSpec): Ca
   }
 
   /**
-   * Weeks before the first entry carry nothing forward, so they backfill
-   * from the first known median. The first week always has data, which
-   * makes this a no-op, but it keeps the series total when that changes.
+   * On the log scale, weeks before the first entry carry nothing forward,
+   * so they backfill from the first known median. The first week always
+   * has data, which makes this a no-op, but it keeps the series total
+   * when that changes. The linear scale skips this, because zero is a
+   * legitimate value there rather than a placeholder.
    */
-  const firstKnown = medians.find((value) => value > 0) ?? 0;
+  if (scale === 'log') {
+    const firstKnown = medians.find((value) => value > 0) ?? 0;
 
-  for (let i = 0; i < medians.length && medians[i] === 0; i++) {
-    medians[i] = firstKnown;
+    for (let i = 0; i < medians.length && medians[i] === 0; i++) {
+      medians[i] = firstKnown;
+    }
   }
 
   const chunk = Math.ceil(weekCount / TREND_POINTS);
@@ -105,26 +129,26 @@ export function buildTrendCard({ title, entries, format, floor }: TrendSpec): Ca
 
   const stretch = Math.max(1, Math.floor(TREND_POINTS / points.length));
   const series = points.flatMap((value) => Array.from({ length: stretch }, () => value));
-  const logs = series.map((value) => Math.log2(Math.max(value, floor)));
+  const plotted = scale === 'log' ? series.map((value) => Math.log2(Math.max(value, floor))) : series;
 
-  let lo = Math.min(...logs);
-  let hi = Math.max(...logs);
+  let lo = Math.min(...plotted);
+  let hi = Math.max(...plotted);
 
   /**
    * A flat series has no range, which asciichart cannot scale, so the
-   * bounds widen by one octave in both directions and the line renders
-   * in the middle.
+   * bounds widen by one step in both directions (an octave on the log
+   * scale) and the line renders in the middle.
    */
   if (hi - lo < 1e-9) {
     lo -= 1;
     hi += 1;
   }
 
-  const chart = asciichart.plot(logs, {
+  const chart = asciichart.plot(plotted, {
     height: TREND_HEIGHT,
     min: lo,
     max: hi,
-    format: (x) => format(2 ** x).padStart(6),
+    format: (x) => format(scale === 'log' ? 2 ** x : x).padStart(6),
   });
 
   /**
@@ -134,7 +158,7 @@ export function buildTrendCard({ title, entries, format, floor }: TrendSpec): Ca
   const ratio = TREND_HEIGHT / (hi - lo);
   const min2 = Math.round(lo * ratio);
   const rows = Math.abs(Math.round(hi * ratio) - min2);
-  const lastRow = Math.min(rows, Math.max(0, rows - (Math.round((logs.at(-1) ?? 0) * ratio) - min2)));
+  const lastRow = Math.min(rows, Math.max(0, rows - (Math.round((plotted.at(-1) ?? 0) * ratio) - min2)));
 
   const raw = chart.split('\n');
 
@@ -169,7 +193,8 @@ export function buildTrendCard({ title, entries, format, floor }: TrendSpec): Ca
     ),
   );
 
-  const subtitle = chunk === 1 ? 'weekly median, log scale' : `median per ${chunk} weeks, log scale`;
+  const subtitle =
+    chunk === 1 ? `weekly ${valueLabel}${scaleSuffix}` : `${valueLabel} per ${chunk} weeks${scaleSuffix}`;
 
   return { title, subtitle, lines };
 }
