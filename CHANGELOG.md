@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.7](https://github.com/d3lm/pr-stats/releases/tag/v0.2.7) - 2026-08-28
+
+### Features
+
+- feat: add new charts across the review, size, and merged tabs ([796fc84](https://github.com/d3lm/pr-stats/commit/796fc8442bd8e30f77e70dccc6f07364ef637d59))
+
 ## [0.2.6](https://github.com/d3lm/pr-stats/releases/tag/v0.2.6) - 2026-08-28
 
 ### Features
