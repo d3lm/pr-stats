@@ -1,5 +1,6 @@
 import type { LoadPhase } from '../data/load';
 import { theme } from '../theme';
+import { Spinner } from './Spinner';
 
 const BAR_WIDTH = 40;
 
@@ -38,9 +39,10 @@ export function Placeholder({
 
 /**
  * Renders the load phase as a label with a progress bar underneath. Phases
- * without a measurable total, like the PR search, fall back to the plain
- * label. The done count is padded to the total's width so the centered
- * line keeps a stable width while the numbers tick up.
+ * without a measurable total, like the PR search, show the label with a
+ * spinner on its right instead. The done count is padded to the total's
+ * width so the centered line keeps a stable width while the numbers tick
+ * up.
  *
  * The bar is painted with cell backgrounds instead of block glyphs, so it
  * stays continuous no matter how the font renders block characters. Only
@@ -50,7 +52,12 @@ export function Placeholder({
  */
 function LoadProgress({ load }: { load: LoadPhase }) {
   if (!load.total) {
-    return <text fg={theme.muted}>{loadLabel(load)}</text>;
+    return (
+      <box flexDirection="row" columnGap={1}>
+        <text fg={theme.muted}>{loadLabel(load)}</text>
+        <Spinner />
+      </box>
+    );
   }
 
   const done = load.done ?? 0;
@@ -75,5 +82,5 @@ function LoadProgress({ load }: { load: LoadPhase }) {
 }
 
 function loadLabel(load: LoadPhase): string {
-  return load.phase === 'search' ? 'searching PRs...' : 'fetching PR details';
+  return load.phase === 'search' ? 'searching PRs' : 'fetching PR details';
 }
