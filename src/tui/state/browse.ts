@@ -64,6 +64,11 @@ export interface BrowseState {
    */
   rowCursors: Record<QueueTabKey, number>;
   grouped: QueueGrouping;
+  /**
+   * Holds whether each stats tab renders its capped comparison cards,
+   * like the reviewer leaderboard, with the row cap lifted.
+   */
+  expanded: Record<StatsTabKey, boolean>;
 }
 
 export const initialBrowseState: BrowseState = {
@@ -80,6 +85,7 @@ export const initialBrowseState: BrowseState = {
   repoCursors: { pending: 0, open: 0, review: 0, size: 0, comment: 0, merged: 0 },
   rowCursors: { pending: 0, open: 0 },
   grouped: { pending: false, open: false },
+  expanded: { review: false, size: false, comment: false, merged: false },
 };
 
 export type BrowseAction =
@@ -91,6 +97,7 @@ export type BrowseAction =
   | { type: 'repoOpened'; tab: BrowseTabKey; repo: string | null }
   | { type: 'pickerReturned'; tab: BrowseTabKey }
   | { type: 'groupingToggled'; tab: QueueTabKey }
+  | { type: 'expandToggled'; tab: StatsTabKey }
   | { type: 'dataLoaded'; repos: Record<BrowseTabKey, RepoOption[]> };
 
 /**
@@ -153,6 +160,9 @@ export function browseReducer(state: BrowseState, action: BrowseAction): BrowseS
     }
     case 'groupingToggled': {
       return { ...state, grouped: { ...state.grouped, [action.tab]: !state.grouped[action.tab] } };
+    }
+    case 'expandToggled': {
+      return { ...state, expanded: { ...state.expanded, [action.tab]: !state.expanded[action.tab] } };
     }
     case 'dataLoaded': {
       return {

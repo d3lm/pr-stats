@@ -388,6 +388,7 @@ function statsTabOf(context: KeymapContext) {
       key: 'merged' as StatsTabKey,
       repos: views?.mergedRepos ?? [],
       scope: views?.mergedScope ?? null,
+      view: views?.merged ?? null,
     };
   }
 
@@ -396,6 +397,7 @@ function statsTabOf(context: KeymapContext) {
       key: 'review' as StatsTabKey,
       repos: views?.reviewRepos ?? [],
       scope: views?.reviewScope ?? null,
+      view: views?.review ?? null,
     };
   }
 
@@ -404,6 +406,7 @@ function statsTabOf(context: KeymapContext) {
       key: 'size' as StatsTabKey,
       repos: views?.sizeRepos ?? [],
       scope: views?.sizeScope ?? null,
+      view: views?.size ?? null,
     };
   }
 
@@ -411,11 +414,12 @@ function statsTabOf(context: KeymapContext) {
     key: 'comment' as StatsTabKey,
     repos: views?.commentRepos ?? [],
     scope: views?.commentScope ?? null,
+    view: views?.comments ?? null,
   };
 }
 
 function handleStatsKey(key: KeyEvent, context: KeymapContext): void {
-  const { key: tab, repos, scope } = statsTabOf(context);
+  const { key: tab, repos, scope, view } = statsTabOf(context);
 
   if (scope !== null && scope.view === 'list') {
     switch (key.name) {
@@ -441,6 +445,9 @@ function handleStatsKey(key: KeyEvent, context: KeymapContext): void {
     }
   } else if ((key.name === 'escape' || key.name === 'backspace') && repos.length > 0) {
     context.dispatchBrowse({ type: 'pickerReturned', tab });
+  } else if (key.name === 'x' && view?.expandable === true) {
+    // x lifts the row cap of the capped comparison cards and restores it
+    context.dispatchBrowse({ type: 'expandToggled', tab });
   } else if (key.name === 'j') {
     context.scrollBy(context.browse.tab, 2);
   } else if (key.name === 'k') {

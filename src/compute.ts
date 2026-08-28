@@ -268,6 +268,88 @@ export function computeMergeStats(sizes: SizeEntry[]): MergeStats {
   return { merged, closed, open, allHours: merged.map((result) => result.hours) };
 }
 
+export interface ReviewerRow {
+  login: string;
+  /**
+   * Counts the distinct PRs this reviewer reviewed.
+   */
+  prs: number;
+  /**
+   * Counts the review rounds this reviewer submitted across those PRs.
+   */
+  reviews: number;
+}
+
+export interface ReviewerStats {
+  /**
+   * Holds one row per person who reviewed an authored PR, most PRs
+   * first. Ties break on the review count and then on the login, so the
+   * order stays stable across runs.
+   */
+  leaderboard: ReviewerRow[];
+  /**
+   * Counts the merged PRs that received at least one review from
+   * someone else.
+   */
+  mergedReviewed: number;
+  /**
+   * Counts the merged PRs that merged without any review from someone
+   * else.
+   */
+  mergedUnreviewed: number;
+}
+
+/**
+ * Derives who reviews the authored PRs from the review authors that ride
+ * along on the size entries. The author argument names the PR author,
+ * whose own logins get excluded, because GitHub records the author's
+ * inline replies as reviews too. Like the other compute functions, this
+ * is pure computation over data already in memory.
+ */
+export function computeReviewerStats(sizes: SizeEntry[], author: string): ReviewerStats {
+  const byLogin = new Map<string, { prs: number; reviews: number }>();
+
+  let mergedReviewed = 0;
+  let mergedUnreviewed = 0;
+
+  for (const entry of sizes) {
+    const others = entry.reviewers.filter((login) => login !== author);
+
+    for (const login of others) {
+      const counts = byLogin.get(login) ?? { prs: 0, reviews: 0 };
+
+      counts.reviews += 1;
+      byLogin.set(login, counts);
+    }
+
+    const distinct = new Set(others);
+
+    for (const login of distinct) {
+      const counts = byLogin.get(login);
+
+      if (counts !== undefined) {
+        counts.prs += 1;
+      }
+    }
+
+    if (entry.mergedAt !== null) {
+      if (others.length > 0) {
+        mergedReviewed += 1;
+      } else {
+        mergedUnreviewed += 1;
+      }
+    }
+  }
+
+  const leaderboard = [...byLogin.entries()]
+    .map(([login, counts]) => {
+      return { login, ...counts };
+    })
+    .toSorted((a, b) => b.prs - a.prs || b.reviews - a.reviews || a.login.localeCompare(b.login));
+
+  return { leaderboard, mergedReviewed, mergedUnreviewed };
+}
+
 export interface CommentStats {
   /**
    * Holds one labeled series per comment kind, discussion, review, and

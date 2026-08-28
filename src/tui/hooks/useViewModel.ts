@@ -3,7 +3,13 @@ import { parseSizeTarget, parseTarget, parseWorkHours, resolveTimezone } from '.
 import { initBuckets } from '../../report';
 import { configureTimeMode } from '../../time';
 import type { RawData } from '../data/load';
-import { dropVanishedRepo, type PanelScope, type QueueGrouping, type TabScopes } from '../state/browse';
+import {
+  dropVanishedRepo,
+  type PanelScope,
+  type QueueGrouping,
+  type StatsTabKey,
+  type TabScopes,
+} from '../state/browse';
 import { targetLabelOf, type OptionsState } from '../state/options';
 import { buildOpenAuthoredView, buildPendingReviewView, type QueueView } from '../views/queue';
 import {
@@ -78,6 +84,7 @@ export function useViewModel(
   width: number,
   scopes: TabScopes,
   grouping: QueueGrouping,
+  expanded: Record<StatsTabKey, boolean>,
   themeEpoch: unknown,
 ): AppViews | null {
   return useMemo(() => {
@@ -119,7 +126,7 @@ export function useViewModel(
 
     const review =
       reviewScope.view === 'detail'
-        ? buildReviewView(raw, targetHours, targetLabelOf(options.target), reviewScope.repo, width)
+        ? buildReviewView(raw, targetHours, targetLabelOf(options.target), reviewScope.repo, width, expanded.review)
         : null;
 
     return {
@@ -137,7 +144,7 @@ export function useViewModel(
       commentScope,
       pending: pendingScope.view === 'detail' ? buildPendingReviewView(raw, pendingScope.repo, grouping.pending) : null,
       open: openScope.view === 'detail' ? buildOpenAuthoredView(raw, openScope.repo, grouping.open) : null,
-      merged: mergedScope.view === 'detail' ? buildMergedView(raw, mergedScope.repo, width) : null,
+      merged: mergedScope.view === 'detail' ? buildMergedView(raw, mergedScope.repo, width, expanded.merged) : null,
       review,
       size: sizeScope.view === 'detail' ? buildSizeView(raw, sizeTarget, sizeScope.repo, width) : null,
       comments: commentScope.view === 'detail' ? buildCommentView(raw, commentScope.repo, width) : null,
@@ -158,6 +165,8 @@ export function useViewModel(
     scopes.comment,
     grouping.pending,
     grouping.open,
+    expanded.review,
+    expanded.merged,
     themeEpoch,
   ]);
 }

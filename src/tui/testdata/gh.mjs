@@ -50,7 +50,7 @@ const SIZES = {
     mergedAt: '2026-06-08T10:00:00Z',
     closedAt: '2026-06-08T10:00:00Z',
     comments: { totalCount: 1 },
-    reviews: { nodes: [{ comments: { totalCount: 2 } }] },
+    reviews: { nodes: [{ author: { login: 'alice' }, comments: { totalCount: 2 } }] },
   },
   'acme/api#11': {
     additions: 800,
@@ -59,7 +59,12 @@ const SIZES = {
     mergedAt: '2026-06-26T10:00:00Z',
     closedAt: '2026-06-26T10:00:00Z',
     comments: { totalCount: 4 },
-    reviews: { nodes: [{ comments: { totalCount: 7 } }, { comments: { totalCount: 5 } }] },
+    reviews: {
+      nodes: [
+        { author: { login: 'alice' }, comments: { totalCount: 7 } },
+        { author: { login: 'bob' }, comments: { totalCount: 5 } },
+      ],
+    },
   },
   'acme/web#12': {
     additions: 40,
@@ -71,22 +76,43 @@ const SIZES = {
     reviews: { nodes: [] },
   },
   'acme/web#13': {
+    /**
+     * The trailing zero-comment reviews push the reviewer leaderboard
+     * one row past its cap, so the tests can drive the x expansion.
+     * Their empty comment counts keep every comment total unchanged.
+     */
     additions: 2500,
     deletions: 400,
     changedFiles: 48,
     mergedAt: null,
     closedAt: null,
     comments: { totalCount: 2 },
-    reviews: { nodes: [{ comments: { totalCount: 6 } }] },
+    reviews: {
+      nodes: [
+        { author: { login: 'alice' }, comments: { totalCount: 6 } },
+        { author: { login: 'carol' }, comments: { totalCount: 0 } },
+        { author: { login: 'dave' }, comments: { totalCount: 0 } },
+        { author: { login: 'erin' }, comments: { totalCount: 0 } },
+        { author: { login: 'frank' }, comments: { totalCount: 0 } },
+        { author: { login: 'grace' }, comments: { totalCount: 0 } },
+        { author: { login: 'heidi' }, comments: { totalCount: 0 } },
+        { author: { login: 'ivan' }, comments: { totalCount: 0 } },
+      ],
+    },
   },
   'acme/api#14': {
+    /**
+     * The only review here is the author replying to their own threads,
+     * which GitHub records as a review too, so this PR counts as merged
+     * unreviewed and stays off the leaderboard.
+     */
     additions: 300,
     deletions: 100,
     changedFiles: 12,
     mergedAt: '2026-08-03T16:00:00Z',
     closedAt: '2026-08-03T16:00:00Z',
     comments: { totalCount: 0 },
-    reviews: { nodes: [{ comments: { totalCount: 3 } }] },
+    reviews: { nodes: [{ author: { login: 'testuser' }, comments: { totalCount: 3 } }] },
   },
 };
 

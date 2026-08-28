@@ -1164,15 +1164,50 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
     expect(setup.captureCharFrame()).toContain('Created vs merged');
 
     await scrollToText(setup, 'PRs created per week');
+    await scrollToText(setup, 'PRs merged per week');
 
     /**
-     * The end of the pane holds the merged volume and the outcome gauge.
+     * The end of the pane holds the merged volume, the outcome and
+     * review-coverage gauges, and the reviewer leaderboard. The canned
+     * data has alice on three PRs and bob on one, and api#14 merged with
+     * only the author's own replies, so it counts as merged unreviewed.
      */
     setup.mockInput.pressKey(KeyCodes.END);
 
     await waitForText(setup, 'where your authored PRs ended up');
 
-    expect(setup.captureCharFrame()).toContain('PRs merged per week');
+    const endFrame = setup.captureCharFrame();
+
+    expect(endFrame).toContain('merged PRs that received a review');
+    expect(endFrame).toContain('merged unreviewed');
+    expect(endFrame).toContain('Who reviews your PRs');
+    expect(endFrame).toContain('alice');
+    expect(endFrame).toContain('3 reviews');
+    expect(endFrame).toContain('bob');
+    expect(endFrame).toContain('1 review');
+
+    /**
+     * The nine canned reviewers overflow the leaderboard's eight-row cap
+     * by one, so ivan hides behind the overflow line and the x key lifts
+     * the cap in place and restores it. The footer hint flips between
+     * expand and collapse along the way.
+     */
+    expect(endFrame).toContain('x expand');
+    expect(endFrame).toContain('+ 1 more · x expands');
+    expect(endFrame).not.toContain('ivan');
+
+    setup.mockInput.pressKey('x');
+
+    await waitForText(setup, 'ivan');
+
+    const expandedFrame = setup.captureCharFrame();
+
+    expect(expandedFrame).not.toContain('+ 1 more');
+    expect(expandedFrame).toContain('x collapse');
+
+    setup.mockInput.pressKey('x');
+
+    await waitForText(setup, '+ 1 more');
 
     /**
      * Escape returns to the picker, and the row below All repos drills

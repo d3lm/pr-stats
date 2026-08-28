@@ -73,6 +73,14 @@ export interface SizeEntry {
    */
   closedAt: Date | null;
   comments: CommentCounts;
+  /**
+   * Holds the author login of every submitted review on the PR, one
+   * entry per review, so a repeat reviewer appears once per round.
+   * GitHub records inline replies as reviews too, so the PR author's own
+   * login shows up here, and consumers exclude it. Reviews from deleted
+   * accounts carry no login and stay out of the list.
+   */
+  reviewers: string[];
 }
 
 export type ProgressCallback = (done: number, total: number) => void;
@@ -441,6 +449,7 @@ export async function fetchSizeRaw(
     if (details) {
       const discussion = details.comments.totalCount;
       const review = details.reviews.nodes.reduce((sum, node) => sum + (node?.comments.totalCount ?? 0), 0);
+      const reviewers = details.reviews.nodes.flatMap((node) => (node?.author == null ? [] : [node.author.login]));
 
       sizes.push({
         pr,
@@ -451,6 +460,7 @@ export async function fetchSizeRaw(
         mergedAt: details.mergedAt === null ? null : new Date(details.mergedAt),
         closedAt: details.closedAt === null ? null : new Date(details.closedAt),
         comments: { discussion, review, total: discussion + review },
+        reviewers,
       });
     }
   }

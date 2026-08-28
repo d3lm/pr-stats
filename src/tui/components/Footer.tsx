@@ -163,9 +163,26 @@ function hintsFor(
     return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · s settings · r reload · R refetch · q quit`;
   }
 
+  /**
+   * The x hint only shows while the open stats view has a capped card to
+   * expand, and it flips to collapse while the cap is lifted.
+   */
+  const view =
+    views === null
+      ? null
+      : tab === 1
+        ? views.merged
+        : tab === 2
+          ? views.review
+          : tab === 3
+            ? views.size
+            : views.comments;
+
+  const expand = view?.expandable ? (view.expanded ? 'x collapse · ' : 'x expand · ') : '';
+
   if (scope !== null && repos.length > 0) {
-    return `${toggle}esc back · j/k scroll · 1-5 tabs · o options · s settings · r reload · R refetch · q quit`;
+    return `${toggle}${expand}esc back · j/k scroll · 1-5 tabs · o options · s settings · r reload · R refetch · q quit`;
   }
 
-  return `${toggle}1-5 tabs · j/k scroll · o options · s settings · r reload · R refetch · q quit`;
+  return `${toggle}${expand}1-5 tabs · j/k scroll · o options · s settings · r reload · R refetch · q quit`;
 }

@@ -130,7 +130,7 @@ test('discards a saved options file that fails the shape or value checks', () =>
 
   expect(readSavedOptions()).toBeNull();
 
-  writeFileSync(join(dir, 'options.json'), JSON.stringify({ version: 2, value: { since: 42 } }));
+  writeFileSync(join(dir, 'options.json'), JSON.stringify({ version: 3, value: { since: 42 } }));
 
   expect(readSavedOptions()).toBeNull();
 
@@ -263,7 +263,7 @@ test('ignores an expired cached login', async () => {
 
   writeFileSync(
     join(dir, 'user.json'),
-    JSON.stringify({ version: 2, value: { login: 'stale', auth, cachedAt: '2020-01-01T00:00:00Z' } }),
+    JSON.stringify({ version: 3, value: { login: 'stale', auth, cachedAt: '2020-01-01T00:00:00Z' } }),
   );
 
   expect(readCachedLogin(auth)).toBeNull();
@@ -333,6 +333,7 @@ const SNAPSHOT_DATA: RawData = {
       mergedAt: new Date('2026-06-08T10:00:00Z'),
       closedAt: new Date('2026-06-08T10:00:00Z'),
       comments: { discussion: 1, review: 2, total: 3 },
+      reviewers: ['alice'],
     },
   ],
   authoredTotal: 2,

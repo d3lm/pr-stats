@@ -53,6 +53,8 @@ export interface PrDetails {
  * unreliable, which is why the two sources are fetched separately. The
  * merge and close timestamps ride along because the search endpoints
  * only report open or closed and cannot tell a merge from a plain close.
+ * Each review node also names its author, which feeds the reviewer
+ * leaderboard. A deleted account leaves the author null.
  */
 export interface PrSize {
   additions: number;
@@ -69,7 +71,7 @@ export interface PrSize {
    */
   closedAt: string | null;
   comments: { totalCount: number };
-  reviews: { nodes: ({ comments: { totalCount: number } } | null)[] };
+  reviews: { nodes: ({ author: { login: string } | null; comments: { totalCount: number } } | null)[] };
 }
 
 export interface SearchArgs {
@@ -461,6 +463,7 @@ export async function fetchPrSizes(prs: PrRef[]): Promise<(PrSize | null)[]> {
           }
           reviews(first: 100) {
             nodes {
+              author { login }
               comments {
                 totalCount
               }

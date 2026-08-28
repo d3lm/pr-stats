@@ -172,7 +172,7 @@ export function App({
     });
   });
 
-  const views = useViewModel(raw, options, width, browse.scopes, browse.grouped, themeState);
+  const views = useViewModel(raw, options, width, browse.scopes, browse.grouped, browse.expanded, themeState);
 
   /**
    * A refresh is always running behind the startup snapshot, so the

@@ -6,10 +6,11 @@ const BAR_WIDTH = 24;
 
 /**
  * Number of rows a bars card renders before folding the rest into one
- * muted overflow line, so a dataset spanning many repos cannot grow the
- * card without bound.
+ * muted overflow line, so a dataset spanning many rows cannot grow the
+ * card without bound. The x key lifts the cap, which the view builders
+ * pass down through the expanded flag.
  */
-const MAX_BARS = 8;
+export const MAX_BARS = 8;
 
 export interface BarsSpec {
   title: string;
@@ -24,16 +25,22 @@ export interface BarsSpec {
    * Formats a row value for the column next to the bar.
    */
   format: (value: number) => string;
+  /**
+   * Lifts the row cap so every row renders, driven by the x key on the
+   * stats tabs.
+   */
+  expanded?: boolean;
 }
 
 /**
  * Builds a comparison card of labeled horizontal bars on one common
  * scale, with the formatted value and a muted detail next to each bar.
  * The largest value renders in the accent color. Rows beyond the cap
- * collapse into a single overflow line.
+ * collapse into a single overflow line that names the x key, and the
+ * expanded flag lifts the cap.
  */
-export function buildBarsCard({ title, subtitle, rows, format }: BarsSpec): Card {
-  const shown = rows.slice(0, MAX_BARS);
+export function buildBarsCard({ title, subtitle, rows, format, expanded = false }: BarsSpec): Card {
+  const shown = expanded ? rows : rows.slice(0, MAX_BARS);
   const max = Math.max(...shown.map((row) => row.value), 0);
   const labelWidth = Math.max(...shown.map((row) => row.label.length));
   const valueWidth = Math.max(...shown.map((row) => format(row.value).length));
@@ -56,7 +63,7 @@ export function buildBarsCard({ title, subtitle, rows, format }: BarsSpec): Card
   });
 
   if (rows.length > shown.length) {
-    lines.push([{ text: `+ ${rows.length - shown.length} more`, fg: theme.dim }]);
+    lines.push([{ text: `+ ${rows.length - shown.length} more · x expands`, fg: theme.dim }]);
   }
 
   return { title, subtitle, lines };

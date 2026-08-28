@@ -1,12 +1,13 @@
 import { expect, test } from 'bun:test';
-import { computeCommentStats, computeMergeStats, computeReviewStats } from './compute';
+import { computeCommentStats, computeMergeStats, computeReviewerStats, computeReviewStats } from './compute';
 import type { ReviewResult, SizeEntry } from './data';
 
 /**
- * Builds a size entry with the given comment counts and a fixed size, so
- * the tests only vary what the comment stats read.
+ * Builds a size entry with the given comment counts and review authors
+ * and a fixed size, so the tests only vary what the comment and reviewer
+ * stats read.
  */
-function entry(number: number, discussion: number, review: number): SizeEntry {
+function entry(number: number, discussion: number, review: number, reviewers: string[] = []): SizeEntry {
   return {
     pr: {
       repo: 'acme/api',
@@ -23,6 +24,7 @@ function entry(number: number, discussion: number, review: number): SizeEntry {
     mergedAt: null,
     closedAt: new Date('2026-07-02T00:00:00Z'),
     comments: { discussion, review, total: discussion + review },
+    reviewers,
   };
 }
 
@@ -79,6 +81,43 @@ test('a reopened PR counts as open even though it still carries its old close ti
   expect(stats.open.map((size) => size.pr.number)).toEqual([5]);
   expect(stats.closed).toEqual([]);
   expect(stats.merged).toEqual([]);
+});
+
+test('counts distinct PRs and review rounds per reviewer and excludes the author', () => {
+  const stats = computeReviewerStats(
+    [entry(1, 0, 0, ['alice', 'me', 'alice']), entry(2, 0, 0, ['bob']), entry(3, 0, 0, ['alice'])],
+    'me',
+  );
+
+  expect(stats.leaderboard).toEqual([
+    { login: 'alice', prs: 2, reviews: 3 },
+    { login: 'bob', prs: 1, reviews: 1 },
+  ]);
+});
+
+test('ties on the leaderboard break on review rounds and then on the login', () => {
+  const stats = computeReviewerStats([entry(1, 0, 0, ['carol', 'carol', 'bob']), entry(2, 0, 0, ['bob', 'ann'])], 'me');
+
+  expect(stats.leaderboard.map((row) => row.login)).toEqual(['bob', 'carol', 'ann']);
+});
+
+test('splits the merged PRs by review coverage, where self-replies never count', () => {
+  const mergedAt = new Date('2026-07-02T00:00:00Z');
+  const reviewedMerge = { ...entry(1, 0, 0, ['alice']), mergedAt };
+  const selfReviewedMerge = { ...entry(2, 0, 0, ['me']), mergedAt };
+  const silentMerge = { ...entry(3, 0, 0), mergedAt };
+  const reviewedClose = entry(4, 0, 0, ['alice']);
+
+  const stats = computeReviewerStats([reviewedMerge, selfReviewedMerge, silentMerge, reviewedClose], 'me');
+
+  expect(stats.mergedReviewed).toBe(1);
+  expect(stats.mergedUnreviewed).toBe(2);
+
+  /**
+   * The closed PR stays out of the coverage but its review still counts
+   * on the leaderboard.
+   */
+  expect(stats.leaderboard).toEqual([{ login: 'alice', prs: 2, reviews: 2 }]);
 });
 
 /**

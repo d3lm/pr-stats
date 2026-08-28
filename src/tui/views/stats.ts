@@ -1,6 +1,7 @@
 import {
   computeCommentStats,
   computeMergeStats,
+  computeReviewerStats,
   computeReviewStats,
   computeSizeStats,
   type MergeStats,
@@ -11,7 +12,7 @@ import { classifyInstant, durationHours, hasWorkWindows, zonedStamp } from '../.
 import { percentile } from '../../utils';
 import type { RawData } from '../data/load';
 import { theme } from '../theme';
-import { buildBarsCard } from './charts/bars';
+import { buildBarsCard, MAX_BARS } from './charts/bars';
 import { buildCumulativeCard } from './charts/cumulative';
 import { buildDistribution, COUNT_TICKS, DURATION_TICKS, type Distribution } from './charts/distribution';
 import { buildGaugeCard } from './charts/gauge';
@@ -60,6 +61,17 @@ export interface StatsView {
   cards: Card[];
   distribution: Distribution | null;
   lists: PrList[];
+  /**
+   * Reports whether the tab has a capped card the x key can expand or an
+   * expanded one it can collapse, so the footer only hints the key when
+   * it does something.
+   */
+  expandable: boolean;
+  /**
+   * Mirrors whether the capped cards render expanded, so the footer
+   * words the x hint as expand or collapse.
+   */
+  expanded: boolean;
 }
 
 /**
@@ -210,7 +222,8 @@ function buildVerdictCard(reviewed: ReviewedEntry[]): Card {
  * Builds everything the review tab renders. Call this after the time mode
  * is configured, because durations and buckets depend on it. Passing a
  * repo narrows every chart and list to that repo. The width argument sizes
- * the full-width distribution strip to the visible pane.
+ * the full-width distribution strip to the visible pane, and the expanded
+ * flag lifts the row cap of the by-repo comparison.
  */
 export function buildReviewView(
   raw: RawData,
@@ -218,6 +231,7 @@ export function buildReviewView(
   targetLabel: string | undefined,
   repo: string | null = null,
   width = 100,
+  expanded = false,
 ): StatsView {
   const results = repo === null ? raw.reviewResults : raw.reviewResults.filter((result) => result.pr.repo === repo);
   const stats = computeReviewStats(results, { targetHours, now: raw.fetchedAt });
@@ -236,6 +250,8 @@ export function buildReviewView(
     noCharts: 'No completed reviews to chart.',
     cards: [],
     distribution: null,
+    expandable: false,
+    expanded,
   };
 
   if (results.length === 0) {
@@ -340,6 +356,7 @@ export function buildReviewView(
             })
             .toSorted((a, b) => b.value - a.value),
           format: formatDuration,
+          expanded,
         })
       : null;
 
@@ -406,7 +423,15 @@ export function buildReviewView(
     flat: (count, value) => `all ${count} ${count === 1 ? 'review' : 'reviews'} took ${value}`,
   });
 
-  return { empty: null, ...base, headline, cards, distribution, lists };
+  return {
+    empty: null,
+    ...base,
+    headline,
+    cards,
+    distribution,
+    lists,
+    expandable: byRepoCard !== null && stats.byRepo.length > MAX_BARS,
+  };
 }
 
 /**
@@ -428,6 +453,8 @@ export function buildSizeView(
     cards: [],
     distribution: null,
     lists: [],
+    expandable: false,
+    expanded: false,
   };
 
   if (raw.authoredTotal === 0) {
@@ -569,6 +596,8 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
     cards: [],
     distribution: null,
     lists: [],
+    expandable: false,
+    expanded: false,
   };
 
   if (raw.authoredTotal === 0) {
@@ -680,9 +709,10 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
  * merged ones. Call this after the time mode is configured, because the
  * merge durations and buckets depend on it. Passing a repo narrows every
  * chart and list to that repo. The width argument sizes the full-width
- * distribution strip to the visible pane.
+ * distribution strip to the visible pane, and the expanded flag lifts
+ * the row cap of the reviewer leaderboard.
  */
-export function buildMergedView(raw: RawData, repo: string | null = null, width = 100): StatsView {
+export function buildMergedView(raw: RawData, repo: string | null = null, width = 100, expanded = false): StatsView {
   const base = {
     strip: [] as Line[],
     headline: null,
@@ -691,6 +721,8 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     cards: [],
     distribution: null,
     lists: [],
+    expandable: false,
+    expanded,
   };
 
   if (raw.authoredTotal === 0) {
@@ -704,6 +736,7 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
   }
 
   const stats = computeMergeStats(sizes);
+  const reviewers = computeReviewerStats(sizes, raw.user);
 
   const strip = [
     countCell(sizes.length, 'PRs created'),
@@ -747,8 +780,32 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     });
   }
 
+  /**
+   * The leaderboard counts reviews on every authored PR, merged or not,
+   * so it renders even when no PR has merged yet and the merge charts
+   * stay away.
+   */
+  const reviewerCard =
+    reviewers.leaderboard.length === 0
+      ? null
+      : buildBarsCard({
+          title: 'Who reviews your PRs',
+          subtitle: 'distinct PRs reviewed per person',
+          rows: reviewers.leaderboard.map((row) => {
+            return {
+              label: row.login,
+              value: row.prs,
+              detail: row.reviews === 1 ? '1 review' : `${row.reviews} reviews`,
+            };
+          }),
+          format: count,
+          expanded,
+        });
+
+  const expandable = reviewers.leaderboard.length > MAX_BARS;
+
   if (stats.merged.length === 0) {
-    return { empty: null, ...base, strip, lists };
+    return { empty: null, ...base, strip, cards: reviewerCard === null ? [] : [reviewerCard], lists, expandable };
   }
 
   const sorted = [...stats.allHours].toSorted((a, b) => a - b);
@@ -831,6 +888,15 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
         ...(stats.open.length > 0 ? [{ label: 'still open', count: stats.open.length, color: theme.chartDim }] : []),
       ],
     }),
+    buildGaugeCard({
+      title: 'Review coverage',
+      subtitle: 'merged PRs that received a review',
+      rows: [
+        { label: 'reviewed', count: reviewers.mergedReviewed, color: theme.accent },
+        { label: 'merged unreviewed', count: reviewers.mergedUnreviewed, color: theme.warn },
+      ],
+    }),
+    ...(reviewerCard === null ? [] : [reviewerCard]),
   ];
 
   const distribution = buildDistribution({
@@ -841,7 +907,7 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     flat: (n, value) => `all ${n} merged ${n === 1 ? 'PR' : 'PRs'} took ${value}`,
   });
 
-  return { empty: null, ...base, strip, headline, cards, distribution, lists };
+  return { empty: null, ...base, strip, headline, cards, distribution, lists, expandable };
 }
 
 function count(value: number): string {
