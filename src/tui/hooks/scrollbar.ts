@@ -44,6 +44,18 @@ export const overlayScrollbar: ScrollBoxOptions['verticalScrollbarOptions'] = {
  * Pass mounted=false while the scrollbox is not rendered. The gate
  * re-arms when the flag flips back to true, which covers scrollboxes
  * that appear after their parent component mounted.
+ *
+ * The hook also keeps the scrollbar's thumb sized to the real viewport,
+ * working around an OpenTUI bug in the slider inside the bar. The slider's
+ * viewPortSize setter clamps against its own max, which is still zero when
+ * a layout pass sizes the viewport while the content measures zero rows,
+ * so the viewport size collapses to the setter's 0.01 floor. The bar only
+ * re-pushes the value when the viewport height changes, which it never does
+ * again, so the thumb sticks at its minimum size no matter how little the
+ * content overflows. The repair in resyncThumb runs on every rendered frame
+ * and re-pushes the value once the slider disagrees with the bar, so it also
+ * heals the related clamp bug where a resize leaves less scroll range than
+ * viewport and the setter truncates the value.
  */
 export function useScrollbarSettle(scrollRef: RefObject<ScrollBoxRenderable | null>, mounted = true): void {
   const renderer = useRenderer();
@@ -64,10 +76,39 @@ export function useScrollbarSettle(scrollRef: RefObject<ScrollBoxRenderable | nu
       scrollRef.current?.verticalScrollBar.resetVisibilityControl();
     };
 
+    /**
+     * Detects a slider whose viewport size diverged from the bar's and
+     * re-pushes it through the bar's setter pair. Writing zero first
+     * raises the slider's max to the full scroll size, so the restore
+     * write passes the buggy clamp unharmed and lands the exact
+     * viewport height. Both writes happen between frames, so no
+     * intermediate state ever paints, and the guard keeps steady
+     * frames free of writes and render requests.
+     */
+    const resyncThumb = () => {
+      const bar = scrollRef.current?.verticalScrollBar;
+
+      if (!bar) {
+        return;
+      }
+
+      const height = bar.viewportSize;
+      const wanted = Math.max(1, height);
+
+      if (bar.scrollSize < wanted || bar.slider.viewPortSize === wanted) {
+        return;
+      }
+
+      bar.viewportSize = 0;
+      bar.viewportSize = height;
+    };
+
     renderer.on(CliRenderEvents.FRAME, release);
+    renderer.on(CliRenderEvents.FRAME, resyncThumb);
 
     return () => {
       renderer.off(CliRenderEvents.FRAME, release);
+      renderer.off(CliRenderEvents.FRAME, resyncThumb);
     };
   }, [scrollRef, renderer, mounted]);
 }
