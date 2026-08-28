@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.5](https://github.com/d3lm/pr-stats/releases/tag/v0.2.5) - 2026-08-28
+
+### Features
+
+- feat: show a spinner next to indeterminate load phases ([a41e881](https://github.com/d3lm/pr-stats/commit/a41e881d28c01933ddb246f6a4f11f8a25f53590))
+- feat: label the heatmap hour axis at 3-hour intervals ([d947785](https://github.com/d3lm/pr-stats/commit/d947785c379b06e497649e59125779d8215d60ba))
+
 ## [0.2.4](https://github.com/d3lm/pr-stats/releases/tag/v0.2.4) - 2026-08-28
 
 ### Bug Fixes
