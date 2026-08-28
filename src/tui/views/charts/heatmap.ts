@@ -63,7 +63,10 @@ export function buildHeatmapCard({ title, subtitle, grid, columns, legend }: Hea
   const columnWidths = columns.map((column) => column.label.length + 2);
 
   const header: Line = [
-    { text: `    ${['00', '06', '12', '18'].map((label) => label.padEnd(12)).join(' ')}`, fg: theme.dim },
+    {
+      text: `    ${['00    03', '06    09', '12    15', '18    21'].map((label) => label.padEnd(12)).join(' ')}`,
+      fg: theme.dim,
+    },
     { text: columns.map((column, i) => column.label.padStart(columnWidths[i])).join(''), fg: theme.dim },
   ];
 
