@@ -7,8 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/d3lm/scripts.git",
-    "directory": "packages/pr-stats"
+    "url": "git+https://github.com/d3lm/pr-stats.git"
   },
   "keywords": [
     "github",
