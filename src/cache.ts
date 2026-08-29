@@ -7,9 +7,10 @@ import { dirname, join } from 'node:path';
  * is discarded, so schema changes only need a bump here. Version 2 added
  * the merge and close timestamps to the size entries. Version 3 added the
  * review authors to the size entries. Version 4 added the PR size to the
- * review details.
+ * review details. Version 5 added the review submission times to the
+ * size entries.
  */
-const VERSION = 4;
+const VERSION = 5;
 
 let enabled = false;
 

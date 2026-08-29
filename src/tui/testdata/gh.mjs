@@ -66,7 +66,9 @@ const SIZES = {
     mergedAt: '2026-06-08T10:00:00Z',
     closedAt: '2026-06-08T10:00:00Z',
     comments: { totalCount: 1 },
-    reviews: { nodes: [{ author: { login: 'alice' }, comments: { totalCount: 2 } }] },
+    reviews: {
+      nodes: [{ author: { login: 'alice' }, submittedAt: '2026-06-05T16:00:00Z', comments: { totalCount: 2 } }],
+    },
   },
   'acme/api#11': {
     additions: 800,
@@ -77,8 +79,8 @@ const SIZES = {
     comments: { totalCount: 4 },
     reviews: {
       nodes: [
-        { author: { login: 'alice' }, comments: { totalCount: 7 } },
-        { author: { login: 'bob' }, comments: { totalCount: 5 } },
+        { author: { login: 'alice' }, submittedAt: '2026-06-23T10:00:00Z', comments: { totalCount: 7 } },
+        { author: { login: 'bob' }, submittedAt: '2026-06-24T10:00:00Z', comments: { totalCount: 5 } },
       ],
     },
   },
@@ -105,14 +107,14 @@ const SIZES = {
     comments: { totalCount: 2 },
     reviews: {
       nodes: [
-        { author: { login: 'alice' }, comments: { totalCount: 6 } },
-        { author: { login: 'carol' }, comments: { totalCount: 0 } },
-        { author: { login: 'dave' }, comments: { totalCount: 0 } },
-        { author: { login: 'erin' }, comments: { totalCount: 0 } },
-        { author: { login: 'frank' }, comments: { totalCount: 0 } },
-        { author: { login: 'grace' }, comments: { totalCount: 0 } },
-        { author: { login: 'heidi' }, comments: { totalCount: 0 } },
-        { author: { login: 'ivan' }, comments: { totalCount: 0 } },
+        { author: { login: 'alice' }, submittedAt: '2026-07-21T10:00:00Z', comments: { totalCount: 6 } },
+        { author: { login: 'carol' }, submittedAt: '2026-07-22T10:00:00Z', comments: { totalCount: 0 } },
+        { author: { login: 'dave' }, submittedAt: '2026-07-22T11:00:00Z', comments: { totalCount: 0 } },
+        { author: { login: 'erin' }, submittedAt: '2026-07-22T12:00:00Z', comments: { totalCount: 0 } },
+        { author: { login: 'frank' }, submittedAt: '2026-07-22T13:00:00Z', comments: { totalCount: 0 } },
+        { author: { login: 'grace' }, submittedAt: '2026-07-22T14:00:00Z', comments: { totalCount: 0 } },
+        { author: { login: 'heidi' }, submittedAt: '2026-07-22T15:00:00Z', comments: { totalCount: 0 } },
+        { author: { login: 'ivan' }, submittedAt: '2026-07-22T16:00:00Z', comments: { totalCount: 0 } },
       ],
     },
   },
@@ -128,7 +130,9 @@ const SIZES = {
     mergedAt: '2026-08-03T16:00:00Z',
     closedAt: '2026-08-03T16:00:00Z',
     comments: { totalCount: 0 },
-    reviews: { nodes: [{ author: { login: 'testuser' }, comments: { totalCount: 3 } }] },
+    reviews: {
+      nodes: [{ author: { login: 'testuser' }, submittedAt: '2026-08-02T10:00:00Z', comments: { totalCount: 3 } }],
+    },
   },
 };
 

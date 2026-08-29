@@ -1,11 +1,18 @@
 import { expect, test } from 'bun:test';
-import { computeCommentStats, computeMergeStats, computeReviewerStats, computeReviewStats } from './compute';
-import type { ReviewResult, SizeEntry } from './data';
+import {
+  computeCommentStats,
+  computeFirstReviewStats,
+  computeMergeStats,
+  computeReviewerStats,
+  computeReviewStats,
+} from './compute';
+import type { PrReview, ReviewResult, SizeEntry } from './data';
 
 /**
  * Builds a size entry with the given comment counts and review authors
  * and a fixed size, so the tests only vary what the comment and reviewer
- * stats read.
+ * stats read. The reviews carry no submission time, which the reviewer
+ * and comment stats never read.
  */
 function entry(number: number, discussion: number, review: number, reviewers: string[] = []): SizeEntry {
   return {
@@ -24,7 +31,9 @@ function entry(number: number, discussion: number, review: number, reviewers: st
     mergedAt: null,
     closedAt: new Date('2026-07-02T00:00:00Z'),
     comments: { discussion, review, total: discussion + review },
-    reviewers,
+    reviews: reviewers.map((login) => {
+      return { login, submittedAt: null };
+    }),
   };
 }
 
@@ -118,6 +127,65 @@ test('splits the merged PRs by review coverage, where self-replies never count',
    * on the leaderboard.
    */
   expect(stats.leaderboard).toEqual([{ login: 'alice', prs: 2, reviews: 2 }]);
+});
+
+/**
+ * Builds a size entry with the given reviews, state, and creation date,
+ * so the first-review tests only vary who reviewed and when. The dates
+ * stay on the Wednesday and Thursday the other helpers use, so the
+ * durations come out the same in every time mode.
+ */
+function reviewedEntry(
+  number: number,
+  reviews: PrReview[],
+  state = 'closed',
+  createdAt = '2026-07-01T00:00:00Z',
+): SizeEntry {
+  const base = entry(number, 0, 0);
+
+  return {
+    ...base,
+    pr: { ...base.pr, state, createdAt: new Date(createdAt) },
+    closedAt: state === 'open' ? null : base.closedAt,
+    reviews,
+  };
+}
+
+test('finds the first review from someone else and skips the author and deleted accounts', () => {
+  const stats = computeFirstReviewStats(
+    [
+      reviewedEntry(1, [
+        { login: 'me', submittedAt: new Date('2026-07-01T01:00:00Z') },
+        { login: null, submittedAt: new Date('2026-07-01T02:00:00Z') },
+        { login: 'bob', submittedAt: new Date('2026-07-02T00:00:00Z') },
+        { login: 'alice', submittedAt: new Date('2026-07-01T06:00:00Z') },
+      ]),
+    ],
+    'me',
+  );
+
+  expect(stats.received).toHaveLength(1);
+  expect(stats.received[0].reviewedAt).toEqual(new Date('2026-07-01T06:00:00Z'));
+  expect(stats.allHours).toEqual([6]);
+  expect(stats.awaiting).toEqual([]);
+});
+
+test('open PRs without a counted review wait, longest first, and closed ones stay out', () => {
+  const now = new Date('2026-07-02T00:00:00Z');
+
+  const stats = computeFirstReviewStats(
+    [
+      reviewedEntry(2, [{ login: 'alice', submittedAt: null }], 'open', '2026-07-01T12:00:00Z'),
+      reviewedEntry(1, [{ login: 'me', submittedAt: new Date('2026-07-01T01:00:00Z') }], 'open'),
+      reviewedEntry(3, []),
+    ],
+    'me',
+    { now },
+  );
+
+  expect(stats.received).toEqual([]);
+  expect(stats.awaiting.map((result) => result.entry.pr.number)).toEqual([1, 2]);
+  expect(stats.awaiting.map((result) => result.hours)).toEqual([24, 12]);
 });
 
 /**

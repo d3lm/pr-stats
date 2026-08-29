@@ -57,11 +57,13 @@ export interface PrDetails {
  * counts the conversation comments, and each review node carries the
  * count of its inline comments, so the sum over the nodes is the number
  * of review comments. GitHub's aggregate totalCommentsCount field is
- * unreliable, which is why the two sources are fetched separately. The
- * merge and close timestamps ride along because the search endpoints
+ * unreliable, which is why the two sources are fetched separately.
+ * The merge and close timestamps ride along because the search endpoints
  * only report open or closed and cannot tell a merge from a plain close.
- * Each review node also names its author, which feeds the reviewer
- * leaderboard. A deleted account leaves the author null.
+ * Each review node also names its author and carries its submission time,
+ * which feed the reviewer leaderboard and the first-review stats. A deleted
+ * account leaves the author null, and the viewer's own unsubmitted pending
+ * review leaves the submission time null.
  */
 export interface PrSize {
   additions: number;
@@ -78,7 +80,13 @@ export interface PrSize {
    */
   closedAt: string | null;
   comments: { totalCount: number };
-  reviews: { nodes: ({ author: { login: string } | null; comments: { totalCount: number } } | null)[] };
+  reviews: {
+    nodes: ({
+      author: { login: string } | null;
+      submittedAt: string | null;
+      comments: { totalCount: number };
+    } | null)[];
+  };
 }
 
 export interface SearchArgs {
@@ -473,6 +481,7 @@ export async function fetchPrSizes(prs: PrRef[]): Promise<(PrSize | null)[]> {
           reviews(first: 100) {
             nodes {
               author { login }
+              submittedAt
               comments {
                 totalCount
               }

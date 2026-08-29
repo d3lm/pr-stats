@@ -76,6 +76,9 @@ function reviveRawData(data: RawData): RawData {
         pr: { ...entry.pr, createdAt: new Date(entry.pr.createdAt) },
         mergedAt: entry.mergedAt === null ? null : new Date(entry.mergedAt),
         closedAt: entry.closedAt === null ? null : new Date(entry.closedAt),
+        reviews: entry.reviews.map((review) => {
+          return { ...review, submittedAt: review.submittedAt === null ? null : new Date(review.submittedAt) };
+        }),
       };
     }),
   };

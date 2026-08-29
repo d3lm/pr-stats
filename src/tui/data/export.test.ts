@@ -52,7 +52,7 @@ function sizeEntry(number: number, total: number, overrides: Partial<SizeEntry> 
     mergedAt: null,
     closedAt: new Date('2026-07-03T00:00:00Z'),
     comments: { discussion: 0, review: 0, total: 0 },
-    reviewers: [],
+    reviews: [],
     ...overrides,
   };
 }
@@ -82,7 +82,7 @@ const sizes: SizeEntry[] = [
     mergedAt: new Date('2026-07-02T00:00:00Z'),
     closedAt: new Date('2026-07-02T00:00:00Z'),
     comments: { discussion: 1, review: 2, total: 3 },
-    reviewers: ['alice'],
+    reviews: [{ login: 'alice', submittedAt: new Date('2026-07-01T12:00:00Z') }],
   }),
   sizeEntry(11, 150),
 ];
@@ -159,6 +159,15 @@ test('builds the report with durations, targets, and per-PR entries', () => {
 
     expect(report.authored.sizeLines).toEqual({ count: 2, mean: 100, p50: 50, p90: 150, min: 50, max: 150 });
     expect(report.authored.mergeTimeHours).toEqual({ count: 1, mean: 24, p50: 24, p90: 24, min: 24, max: 24 });
+
+    /**
+     * Only the merged PR received a review, 12 wall-clock hours after
+     * its creation, and the other PR closed unreviewed, so nothing is
+     * still awaiting a first review.
+     */
+    expect(report.authored.firstReviewHours).toEqual({ count: 1, mean: 12, p50: 12, p90: 12, min: 12, max: 12 });
+    expect(report.authored.awaitingFirstReview).toBe(0);
+
     expect(report.authored.sizeTarget).toEqual({ label: '<= 100 lines', inside: 1, over: 1 });
 
     expect(report.authored.reviewers).toEqual({
@@ -171,13 +180,18 @@ test('builds the report with durations, targets, and per-PR entries', () => {
 
     expect(merged.hoursToMerge).toBe(24);
     expect(merged.hoursToClose).toBeNull();
+    expect(merged.firstReviewAt).toBe('2026-07-01T12:00:00.000Z');
+    expect(merged.hoursToFirstReview).toBe(12);
     expect(merged.totalLines).toBe(50);
     expect(merged.comments).toEqual({ discussion: 1, review: 2, total: 3 });
+    expect(merged.reviewers).toEqual(['alice']);
 
     const closed = report.authored.prs[1];
 
     expect(closed.hoursToMerge).toBeNull();
     expect(closed.hoursToClose).toBe(48);
+    expect(closed.firstReviewAt).toBeNull();
+    expect(closed.hoursToFirstReview).toBeNull();
 
     expect(report.comments).toEqual({
       received: 3,
@@ -201,6 +215,8 @@ test('reports null summaries and empty targets on an empty load', () => {
     expect(report.options.reviewTarget).toBeNull();
     expect(report.authored.sizeLines).toBeNull();
     expect(report.authored.mergeTimeHours).toBeNull();
+    expect(report.authored.firstReviewHours).toBeNull();
+    expect(report.authored.awaitingFirstReview).toBe(0);
     expect(report.authored.sizeTarget).toBeNull();
     expect(report.comments.perPr).toBeNull();
     expect(report.authored.prs).toEqual([]);
@@ -307,6 +323,16 @@ test('the --json flag prints the full report to stdout', async () => {
   expect(report.authored.mergeTimeHours?.count).toBe(3);
   expect(report.authored.mergeTimeHours?.p50).toBe(24);
 
+  /**
+   * Three authored PRs received a review. api#10 got alice's review six
+   * hours into its creation Friday, api#11 was created on a Saturday and
+   * alice reviewed it Tuesday noon Berlin time, 36 counted hours, and
+   * web#13 got its first review a full day in. Nothing else is open and
+   * unreviewed.
+   */
+  expect(report.authored.firstReviewHours).toEqual({ count: 3, mean: 22, p50: 24, p90: 36, min: 6, max: 36 });
+  expect(report.authored.awaitingFirstReview).toBe(0);
+
   // api#14 sits exactly on the 400-line budget, so it counts as inside
   expect(report.authored.sizeTarget).toEqual({ label: '<= 400 lines, <= 20 files', inside: 3, over: 2 });
 
@@ -321,6 +347,8 @@ test('the --json flag prints the full report to stdout', async () => {
   expect(open?.state).toBe('open');
   expect(open?.hoursToMerge).toBeNull();
   expect(open?.hoursToClose).toBeNull();
+  expect(open?.firstReviewAt).toBe('2026-07-21T10:00:00.000Z');
+  expect(open?.hoursToFirstReview).toBe(24);
   expect(open?.totalLines).toBe(2900);
 
   expect(report.comments).toEqual({

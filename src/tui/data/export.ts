@@ -2,10 +2,12 @@ import { join } from 'node:path';
 import { writeFileAtomic } from '../../cache';
 import {
   computeCommentStats,
+  computeFirstReviewStats,
   computeMergeStats,
   computeReviewerStats,
   computeReviewStats,
   computeSizeStats,
+  firstReviewOf,
   type ReviewerRow,
 } from '../../compute';
 import { parseSizeTarget, parseTarget, parseWorkHours, resolveTimezone, type SizeTarget } from '../../flags';
@@ -93,14 +95,18 @@ export interface StatsReport {
     };
     sizeLines: Summary | null;
     mergeTimeHours: Summary | null;
+    firstReviewHours: Summary | null;
+    awaitingFirstReview: number;
     sizeTarget: { label: string; inside: number; over: number } | null;
     reviewers: { leaderboard: ReviewerRow[]; mergedReviewed: number; mergedUnreviewed: number };
     prs: (PrRef & {
       createdAt: string;
       mergedAt: string | null;
       closedAt: string | null;
+      firstReviewAt: string | null;
       hoursToMerge: number | null;
       hoursToClose: number | null;
+      hoursToFirstReview: number | null;
       files: number;
       additions: number;
       deletions: number;
@@ -200,6 +206,7 @@ export function buildStatsReport(raw: RawData, options: OptionsState): StatsRepo
   const review = computeReviewStats(raw.reviewResults, { targetHours, now: raw.fetchedAt });
   const merge = computeMergeStats(raw.sizes);
   const reviewers = computeReviewerStats(raw.sizes, raw.user);
+  const firstReview = computeFirstReviewStats(raw.sizes, raw.user, { now: raw.fetchedAt });
   const comments = computeCommentStats(raw.sizes);
 
   const verdictCount = (state: string) => review.reviewed.filter((entry) => entry.verdict === state).length;
@@ -299,6 +306,8 @@ export function buildStatsReport(raw: RawData, options: OptionsState): StatsRepo
       },
       sizeLines: summarize(raw.sizes.map((entry) => entry.total)),
       mergeTimeHours: summarize(merge.allHours),
+      firstReviewHours: summarize(firstReview.allHours),
+      awaitingFirstReview: firstReview.awaiting.length,
       sizeTarget: sizeTargetReport,
       reviewers: {
         leaderboard: reviewers.leaderboard,
@@ -306,19 +315,23 @@ export function buildStatsReport(raw: RawData, options: OptionsState): StatsRepo
         mergedUnreviewed: reviewers.mergedUnreviewed,
       },
       prs: raw.sizes.map((entry) => {
+        const first = firstReviewOf(entry, raw.user);
+
         return {
           ...prRef(entry.pr),
           createdAt: entry.pr.createdAt.toISOString(),
           mergedAt: entry.mergedAt === null ? null : entry.mergedAt.toISOString(),
           closedAt: entry.closedAt === null ? null : entry.closedAt.toISOString(),
+          firstReviewAt: first === null ? null : first.reviewedAt.toISOString(),
           hoursToMerge: hoursToMerge(entry),
           hoursToClose: hoursToClose(entry),
+          hoursToFirstReview: first === null ? null : round(first.hours),
           files: entry.files,
           additions: entry.additions,
           deletions: entry.deletions,
           totalLines: entry.total,
           comments: entry.comments,
-          reviewers: entry.reviewers,
+          reviewers: entry.reviews.flatMap((review) => (review.login === null ? [] : [review.login])),
         };
       }),
     },

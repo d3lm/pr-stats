@@ -1165,10 +1165,21 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
 
     /**
      * The remaining charts sit below the fold, so scroll the pane down
-     * card by card in the grid's fill order. The scatter plots merge
-     * time against lines changed over the three merged PRs.
+     * card by card in the grid's fill order. The first-review pair
+     * covers the three canned PRs that got a review from someone else,
+     * where api#14's author-only replies never count, and no open PR is
+     * still waiting, so the awaiting histogram stays away. The scatter
+     * plots merge time against lines changed over the three merged PRs.
      */
     await scrollToText(setup, 'Time to merge trend');
+    await scrollToText(setup, 'Time to first review');
+
+    expect(setup.captureCharFrame()).toContain('created → first review received');
+
+    await scrollToText(setup, 'First review time trend');
+
+    expect(setup.captureCharFrame()).not.toContain('Awaiting first review');
+
     await scrollToText(setup, 'Merge rate trend');
 
     expect(setup.captureCharFrame()).toContain('weekly merge rate');

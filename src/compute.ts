@@ -306,11 +306,12 @@ export interface ReviewerStats {
 }
 
 /**
- * Derives who reviews the authored PRs from the review authors that ride
- * along on the size entries. The author argument names the PR author,
- * whose own logins get excluded, because GitHub records the author's
- * inline replies as reviews too. Like the other compute functions, this
- * is pure computation over data already in memory.
+ * Derives who reviews the authored PRs from the reviews that ride along
+ * on the size entries. The author argument names the PR author, whose
+ * own logins get excluded, because GitHub records the author's inline
+ * replies as reviews too. Reviews from deleted accounts carry no login
+ * and stay out as well. Like the other compute functions, this is pure
+ * computation over data already in memory.
  */
 export function computeReviewerStats(sizes: SizeEntry[], author: string): ReviewerStats {
   const byLogin = new Map<string, { prs: number; reviews: number }>();
@@ -319,7 +320,9 @@ export function computeReviewerStats(sizes: SizeEntry[], author: string): Review
   let mergedUnreviewed = 0;
 
   for (const entry of sizes) {
-    const others = entry.reviewers.filter((login) => login !== author);
+    const others = entry.reviews.flatMap((review) =>
+      review.login === null || review.login === author ? [] : [review.login],
+    );
 
     for (const login of others) {
       const counts = byLogin.get(login) ?? { prs: 0, reviews: 0 };
@@ -354,6 +357,103 @@ export function computeReviewerStats(sizes: SizeEntry[], author: string): Review
     .toSorted((a, b) => b.prs - a.prs || b.reviews - a.reviews || a.login.localeCompare(b.login));
 
   return { leaderboard, mergedReviewed, mergedUnreviewed };
+}
+
+export interface FirstReviewEntry {
+  entry: SizeEntry;
+  /**
+   * Holds when the first counted review landed.
+   */
+  reviewedAt: Date;
+  /**
+   * Holds the time from the PR's creation to that review.
+   */
+  hours: number;
+}
+
+export interface AwaitingFirstReview {
+  entry: SizeEntry;
+  /**
+   * Holds how long the PR has waited since its creation.
+   */
+  hours: number;
+}
+
+export interface FirstReviewStats {
+  /**
+   * Holds the PRs that received a review from someone else, in input
+   * order, each with the time to that first review.
+   */
+  received: FirstReviewEntry[];
+  /**
+   * Holds the open PRs still waiting for their first review, longest
+   * wait first. Closed and merged PRs without a review are no longer
+   * waiting, so they stay out.
+   */
+  awaiting: AwaitingFirstReview[];
+  /**
+   * Holds the time to first review of every received entry, in the same
+   * order.
+   */
+  allHours: number[];
+}
+
+/**
+ * Finds the first review on an authored PR from someone other than the
+ * author. A review counts when it names a reviewer other than the
+ * author and carries a submission time, the same rule the reviewer
+ * stats use, so the author's own inline replies and reviews from
+ * deleted accounts never count. Returns null when no review counts.
+ */
+export function firstReviewOf(entry: SizeEntry, author: string): { reviewedAt: Date; hours: number } | null {
+  let earliest: Date | null = null;
+
+  for (const review of entry.reviews) {
+    if (review.login === null || review.login === author || review.submittedAt === null) {
+      continue;
+    }
+
+    if (earliest === null || review.submittedAt < earliest) {
+      earliest = review.submittedAt;
+    }
+  }
+
+  if (earliest === null) {
+    return null;
+  }
+
+  return { reviewedAt: earliest, hours: durationHours(entry.pr.createdAt, earliest) };
+}
+
+/**
+ * Derives how long the authored PRs waited for their first review from
+ * someone else, the author-side counterpart of the review-time stats.
+ * Like the other compute functions, this is pure computation over data
+ * already in memory, so configure the time mode before calling because
+ * the durations depend on it. The options carry the clock for the
+ * waiting durations.
+ */
+export function computeFirstReviewStats(
+  sizes: SizeEntry[],
+  author: string,
+  { now = new Date() }: { now?: Date } = {},
+): FirstReviewStats {
+  const received: FirstReviewEntry[] = [];
+  const awaiting: AwaitingFirstReview[] = [];
+
+  for (const entry of sizes) {
+    const first = firstReviewOf(entry, author);
+
+    if (first !== null) {
+      received.push({ entry, ...first });
+    } else if (entry.pr.state === 'open') {
+      awaiting.push({ entry, hours: durationHours(entry.pr.createdAt, now) });
+    }
+  }
+
+  awaiting.sort((a, b) => a.entry.pr.createdAt.getTime() - b.entry.pr.createdAt.getTime());
+
+  return { received, awaiting, allHours: received.map((result) => result.hours) };
 }
 
 export interface CommentStats {

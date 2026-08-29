@@ -1,5 +1,6 @@
 import {
   computeCommentStats,
+  computeFirstReviewStats,
   computeMergeStats,
   computeReviewerStats,
   computeReviewStats,
@@ -714,9 +715,10 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
 
 /**
  * Builds everything the merged sub-tab of the Your PRs tab renders, the
- * outcome counts of your authored PRs and the merge-time charts over the
- * merged ones. Call this after the time mode is configured, because the
- * merge durations and buckets depend on it. Passing a repo narrows every
+ * outcome counts of your authored PRs, the merge-time charts over the
+ * merged ones, and the first-review charts over the PRs that received a
+ * review. Call this after the time mode is configured, because the
+ * durations and buckets depend on it. Passing a repo narrows every
  * chart and list to that repo. The width argument sizes the full-width
  * distribution strip to the visible pane, and the expanded flag lifts
  * the row cap of the reviewer leaderboard.
@@ -746,6 +748,7 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
 
   const stats = computeMergeStats(sizes);
   const reviewers = computeReviewerStats(sizes, raw.user);
+  const firstReview = computeFirstReviewStats(sizes, raw.user, { now: raw.fetchedAt });
 
   const strip = [
     countCell(sizes.length, 'PRs created'),
@@ -813,8 +816,56 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
 
   const expandable = reviewers.leaderboard.length > MAX_BARS;
 
+  /**
+   * The first-review charts measure how long your authored PRs waited
+   * for their first review from someone else, the author-side counterpart
+   * of the review tab. They only need reviews, not merges, so they render
+   * even when no PR has merged yet and the merge charts stay away.
+   * The awaiting histogram covers the open PRs still without a review,
+   * mirroring the pending card on the review tab.
+   */
+  const firstReviewCards = [
+    ...(firstReview.received.length === 0
+      ? []
+      : [
+          buildHistogramCard({
+            title: 'Time to first review',
+            subtitle: 'elapsed time, created → first review received',
+            values: firstReview.allHours,
+            buckets: currentBuckets(),
+            format: formatDuration,
+          }),
+          buildTrendCard({
+            title: 'First review time trend',
+            entries: firstReview.received.map((result) => {
+              return { date: result.reviewedAt, value: result.hours };
+            }),
+            format: formatDuration,
+            floor: 1 / 60,
+          }),
+        ]),
+    ...(firstReview.awaiting.length === 0
+      ? []
+      : [
+          buildHistogramCard({
+            title: 'Awaiting first review',
+            subtitle: 'how long open unreviewed PRs have waited',
+            values: firstReview.awaiting.map((result) => result.hours),
+            buckets: currentBuckets(),
+            format: formatDuration,
+          }),
+        ]),
+  ];
+
   if (stats.merged.length === 0) {
-    return { empty: null, ...base, strip, cards: reviewerCard === null ? [] : [reviewerCard], lists, expandable };
+    return {
+      empty: null,
+      ...base,
+      strip,
+      cards: [...firstReviewCards, ...(reviewerCard === null ? [] : [reviewerCard])],
+      lists,
+      expandable,
+    };
   }
 
   const sorted = [...stats.allHours].toSorted((a, b) => a - b);
@@ -846,6 +897,7 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
       format: formatDuration,
       floor: 1 / 60,
     }),
+    ...firstReviewCards,
     buildHeatmapCard({
       title: 'When your PRs merge',
       subtitle: 'PRs merged, weekday × hour, local time',
