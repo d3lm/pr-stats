@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.9](https://github.com/d3lm/pr-stats/releases/tag/v0.2.9) - 2026-08-29
+
+### Features
+
+- feat: add JSON export through --json and the settings dialog ([fed6c06](https://github.com/d3lm/pr-stats/commit/fed6c0690711e6e4781b59c82d29657586a57d93))
+- feat: chart review time against PR size on the review tab ([916e119](https://github.com/d3lm/pr-stats/commit/916e11995863f955f00b5d899bdf34ddc7da0384))
+- feat: measure time to first review received ([eb38b17](https://github.com/d3lm/pr-stats/commit/eb38b170145dabaff60965059a13d5ee2740366a))
+
 ## [0.2.8](https://github.com/d3lm/pr-stats/releases/tag/v0.2.8) - 2026-08-28
 
 ### Features
