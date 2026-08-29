@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@d3lm/lint-preset':
-        specifier: ^1.1.7
-        version: 1.1.7(@stylistic/eslint-plugin@5.10.0(eslint@10.8.1))(@typescript-eslint/eslint-plugin@8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1)(typescript@6.0.3))(eslint@10.8.1)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint-plugin-jsdoc@64.2.1(eslint@10.8.1))(eslint-plugin-oxlint@1.79.0(oxlint@1.79.0(oxlint-tsgolint@7.0.2001)))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint@10.8.1)(prettier@3.9.6))(eslint-plugin-react-hooks@7.1.1(eslint@10.8.1))(eslint-plugin-unicorn@73.0.0(eslint@10.8.1))(eslint@10.8.1)(oxlint-tsgolint@7.0.2001)(oxlint@1.79.0(oxlint-tsgolint@7.0.2001))(typescript-eslint@8.67.0(eslint@10.8.1)(typescript@6.0.3))
+        specifier: ^1.2.0
+        version: 1.2.0(@stylistic/eslint-plugin@5.10.0(eslint@10.8.1))(@typescript-eslint/eslint-plugin@8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1)(typescript@6.0.3))(eslint@10.8.1)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint-plugin-jsdoc@64.2.1(eslint@10.8.1))(eslint-plugin-oxlint@1.79.0(oxlint@1.79.0(oxlint-tsgolint@7.0.2001)))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint@10.8.1)(prettier@3.9.6))(eslint-plugin-react-hooks@7.1.1(eslint@10.8.1))(eslint-plugin-unicorn@73.0.0(eslint@10.8.1))(eslint@10.8.1)(oxlint-tsgolint@7.0.2001)(oxlint@1.79.0(oxlint-tsgolint@7.0.2001))(typescript-eslint@8.67.0(eslint@10.8.1)(typescript@6.0.3))
       '@opentui/core':
         specifier: ^0.5.8
         version: 0.5.8(typescript@6.0.3)(web-tree-sitter@0.25.10)
@@ -133,8 +133,8 @@ packages:
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
 
-  '@d3lm/lint-preset@1.1.7':
-    resolution: {integrity: sha512-mXNPQgihYgcPYMK5cChwGNsnTnlhNO7+cDILgu5T4WZflyMl8E7uQ8aYz/wtT5GjsN5zRX6AyE5ZQ7zjqvi0Ew==}
+  '@d3lm/lint-preset@1.2.0':
+    resolution: {integrity: sha512-uxPYj9VSJqlATIc5EELrHD6pnP2SSamJ2X2gXL3K/vdWJORPh1Yvju/drB36repOy+B+MYLyZrjmxE42dkchpw==}
     peerDependencies:
       '@stylistic/eslint-plugin': '>=5.0.0'
       '@typescript-eslint/eslint-plugin': '>=8.0.0'
@@ -1576,7 +1576,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@d3lm/lint-preset@1.1.7(@stylistic/eslint-plugin@5.10.0(eslint@10.8.1))(@typescript-eslint/eslint-plugin@8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1)(typescript@6.0.3))(eslint@10.8.1)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint-plugin-jsdoc@64.2.1(eslint@10.8.1))(eslint-plugin-oxlint@1.79.0(oxlint@1.79.0(oxlint-tsgolint@7.0.2001)))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint@10.8.1)(prettier@3.9.6))(eslint-plugin-react-hooks@7.1.1(eslint@10.8.1))(eslint-plugin-unicorn@73.0.0(eslint@10.8.1))(eslint@10.8.1)(oxlint-tsgolint@7.0.2001)(oxlint@1.79.0(oxlint-tsgolint@7.0.2001))(typescript-eslint@8.67.0(eslint@10.8.1)(typescript@6.0.3))':
+  '@d3lm/lint-preset@1.2.0(@stylistic/eslint-plugin@5.10.0(eslint@10.8.1))(@typescript-eslint/eslint-plugin@8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1)(typescript@6.0.3))(eslint@10.8.1)(typescript@6.0.3))(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint-plugin-jsdoc@64.2.1(eslint@10.8.1))(eslint-plugin-oxlint@1.79.0(oxlint@1.79.0(oxlint-tsgolint@7.0.2001)))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.8.1))(eslint@10.8.1)(prettier@3.9.6))(eslint-plugin-react-hooks@7.1.1(eslint@10.8.1))(eslint-plugin-unicorn@73.0.0(eslint@10.8.1))(eslint@10.8.1)(oxlint-tsgolint@7.0.2001)(oxlint@1.79.0(oxlint-tsgolint@7.0.2001))(typescript-eslint@8.67.0(eslint@10.8.1)(typescript@6.0.3))':
     dependencies:
       '@stylistic/eslint-plugin': 5.10.0(eslint@10.8.1)
       '@typescript-eslint/eslint-plugin': 8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1)(typescript@6.0.3))(eslint@10.8.1)(typescript@6.0.3)

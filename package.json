@@ -43,7 +43,7 @@
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {
-    "@d3lm/lint-preset": "^1.1.7",
+    "@d3lm/lint-preset": "^1.2.0",
     "@opentui/core": "^0.5.8",
     "@opentui/react": "^0.5.8",
     "asciichart": "^1.5.25",

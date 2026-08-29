@@ -341,7 +341,7 @@ function queueTabOf(context: KeymapContext) {
 function handleQueueKey(key: KeyEvent, context: KeymapContext): void {
   const { key: tab, view, repos, scope } = queueTabOf(context);
 
-  if (scope !== null && scope.view === 'list') {
+  if (scope?.view === 'list') {
     switch (key.name) {
       case 'up':
       case 'k': {
@@ -463,7 +463,7 @@ function statsTabOf(context: KeymapContext) {
 function handleStatsKey(key: KeyEvent, context: KeymapContext): void {
   const { key: tab, repos, scope, view } = statsTabOf(context);
 
-  if (scope !== null && scope.view === 'list') {
+  if (scope?.view === 'list') {
     switch (key.name) {
       case 'up':
       case 'k': {

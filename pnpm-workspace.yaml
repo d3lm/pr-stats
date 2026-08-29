@@ -10,3 +10,5 @@ peerDependencyRules:
 # trust weakens between updates.
 minimumReleaseAge: 10080
 trustPolicy: no-downgrade
+minimumReleaseAgeExclude:
+  - '@d3lm/*'
