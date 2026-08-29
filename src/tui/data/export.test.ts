@@ -22,6 +22,7 @@ const options: OptionsState = {
    */
   wallClock: true,
   includeDrafts: false,
+  reviewTypes: '',
 };
 
 function reviewPr(number: number, state = 'closed') {
@@ -114,6 +115,7 @@ test('builds the report with durations, targets, and per-PR entries', () => {
     expect(report.since).toBe('2026-06-01');
     expect(report.options.reviewTarget).toBe('2h');
     expect(report.options.wallClock).toBe(true);
+    expect(report.options.reviewTypes).toBeNull();
 
     expect(report.review.counts).toEqual({
       reviewed: 2,

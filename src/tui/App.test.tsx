@@ -30,6 +30,7 @@ const initial: OptionsState = {
   tz: 'Europe/Berlin',
   wallClock: false,
   includeDrafts: false,
+  reviewTypes: '',
 };
 
 interface Setup {
@@ -931,6 +932,80 @@ test('labels the save state in the options modal and saves with s', async () => 
     configureCache(false);
     delete process.env.PR_STATS_CACHE_DIR;
     rmSync(dir, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test('the review types row opens a checklist dropdown that toggles what counts as a review', async () => {
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+
+  try {
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    setup.mockInput.pressKey('o');
+
+    await waitForText(setup, 'Review types');
+
+    // the empty value shows the every-type placeholder
+    expect(setup.captureCharFrame()).toContain('(every type)');
+
+    /**
+     * The selection starts on Since, and four moves land on the review
+     * types row, whose hint names the dropdown. The reducer applies
+     * each move in order, so the presses need no waits in between.
+     */
+    for (let press = 0; press < 4; press++) {
+      setup.mockInput.pressArrow('down');
+    }
+
+    await waitForText(setup, 'enter opens the type list');
+
+    setup.mockInput.pressEnter();
+
+    // the empty value expands to a fully checked list
+    await waitForText(setup, '[x] approve');
+
+    const dropdownFrame = setup.captureCharFrame();
+
+    expect(dropdownFrame).toContain('[x] comment');
+    expect(dropdownFrame).toContain('[x] request-changes');
+
+    /**
+     * Enter on the highlighted approve row unchecks it, which narrows
+     * the value to the remaining two types and keeps the list open for
+     * more toggles.
+     */
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, '[ ] approve');
+
+    expect(setup.captureCharFrame()).toContain('comment,request-changes');
+
+    // escape closes the list, and the narrowed value stays on the row
+    setup.mockInput.pressEscape();
+
+    await waitForTextGone(setup, '[ ] approve');
+
+    expect(setup.captureCharFrame()).toContain('comment,request-changes');
+
+    /**
+     * Reopening the list and checking approve again completes the set,
+     * which collapses back to the every-type placeholder.
+     */
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, '[ ] approve');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, '[x] approve');
+
+    setup.mockInput.pressEscape();
+
+    await waitForTextGone(setup, '[x] approve');
+
+    expect(setup.captureCharFrame()).toContain('(every type)');
+  } finally {
+    destroyApp(setup);
   }
 }, 30_000);
 

@@ -8,7 +8,7 @@ import {
   type ReviewResult,
   type SizeEntry,
 } from '../../data';
-import { parseSince } from '../../flags';
+import { parseReviewTypes, parseSince } from '../../flags';
 import { resolveRepos, searchPrs } from '../../github';
 import type { FetchParams } from '../state/options';
 
@@ -88,7 +88,9 @@ function reviveRawData(data: RawData): RawData {
  * Returns the snapshot of the last successful load when the requested
  * options can be served from it, so the TUI can render instantly on
  * startup while the real load runs in the background. The repos, user,
- * and drafts options must match exactly. The since window may be narrower
+ * drafts, and review-types options must match exactly, because the
+ * review-types filter is baked into the classified results the snapshot
+ * stores. The since window may be narrower
  * than the stored one, because a narrower window is a subset that gets cut
  * from the snapshot by PR creation date. This also trims relative values
  * like 2w to the current day when the snapshot is from an earlier day.
@@ -106,7 +108,8 @@ export function loadSnapshot(options: FetchParams): RawData | null {
   if (
     params.repos !== options.repos ||
     params.user !== options.user ||
-    params.includeDrafts !== options.includeDrafts
+    params.includeDrafts !== options.includeDrafts ||
+    params.reviewTypes !== options.reviewTypes
   ) {
     return null;
   }
@@ -181,6 +184,7 @@ export function saveSnapshot(options: FetchParams, data: RawData): void {
     repos: options.repos,
     user: options.user,
     includeDrafts: options.includeDrafts,
+    reviewTypes: options.reviewTypes,
   };
 
   writeCacheFile('snapshot', { params, data } satisfies Snapshot);
@@ -242,6 +246,8 @@ export async function loadData(
 
   report();
 
+  const countedStates = options.reviewTypes === '' ? undefined : parseReviewTypes(options.reviewTypes);
+
   const [review, size] = await Promise.all([
     reviewPrs.length === 0
       ? { results: [], cacheHits: 0 }
@@ -252,7 +258,7 @@ export async function loadData(
             progress.review = done;
             report();
           },
-          { bypassCache },
+          { bypassCache, countedStates },
         ),
     authoredPrs.length === 0
       ? { sizes: [], cacheHits: 0 }

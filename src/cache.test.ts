@@ -85,6 +85,7 @@ const SAVED_OPTIONS: OptionsState = {
   tz: 'Europe/Berlin',
   wallClock: false,
   includeDrafts: true,
+  reviewTypes: 'approve',
 };
 
 test('saved options round-trip and lose to explicit flags', () => {
@@ -108,10 +109,11 @@ test('saved options round-trip and lose to explicit flags', () => {
   expect(values['work-hours']).toBe('9-17');
   expect(values.tz).toBe('Europe/Berlin');
   expect(values['include-drafts']).toBe(true);
+  expect(values['review-types']).toBe('approve');
 });
 
 test('empty saved fields stay unset when merged into the CLI values', () => {
-  writeSavedOptions({ ...SAVED_OPTIONS, repos: '', user: '', target: '', sizeTarget: '', tz: '' });
+  writeSavedOptions({ ...SAVED_OPTIONS, repos: '', user: '', target: '', sizeTarget: '', tz: '', reviewTypes: '' });
 
   const { values, explicit } = parseCliArgs([]);
 
@@ -122,7 +124,18 @@ test('empty saved fields stay unset when merged into the CLI values', () => {
   expect(values.target).toBeUndefined();
   expect(values['size-target']).toBeUndefined();
   expect(values.tz).toBeUndefined();
+  expect(values['review-types']).toBeUndefined();
   expect(values['work-hours']).toBe('9-17');
+});
+
+test('a save written before the review-types field loads with the empty default', () => {
+  const legacy = { ...SAVED_OPTIONS } as Partial<OptionsState>;
+
+  delete legacy.reviewTypes;
+
+  writeSavedOptions(legacy as OptionsState);
+
+  expect(readSavedOptions()).toEqual({ ...SAVED_OPTIONS, reviewTypes: '' });
 });
 
 test('discards a saved options file that fails the shape or value checks', () => {
@@ -272,7 +285,7 @@ test('ignores an expired cached login', async () => {
   expect(await resolveUser('')).toBe('testuser');
 });
 
-const SNAPSHOT_OPTIONS = { since: '2026-06-01', repos: '', user: '', includeDrafts: false };
+const SNAPSHOT_OPTIONS = { since: '2026-06-01', repos: '', user: '', includeDrafts: false, reviewTypes: '' };
 
 const SNAPSHOT_DATA: RawData = {
   user: 'testuser',
@@ -357,6 +370,7 @@ test('snapshot round-trips with revived dates for the same options', () => {
 
   expect(loadSnapshot({ ...SNAPSHOT_OPTIONS, user: 'someone' })).toBeNull();
   expect(loadSnapshot({ ...SNAPSHOT_OPTIONS, includeDrafts: true })).toBeNull();
+  expect(loadSnapshot({ ...SNAPSHOT_OPTIONS, reviewTypes: 'approve' })).toBeNull();
 
   configureCache(false);
 

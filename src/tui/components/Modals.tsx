@@ -21,6 +21,7 @@ export function Modals({
   onDraft,
   onSubmitField,
   onSubmitThemeColor,
+  onToggleReviewType,
 }: {
   ui: UiState;
   options: OptionsState;
@@ -31,6 +32,7 @@ export function Modals({
   onDraft: (value: string) => void;
   onSubmitField: () => void;
   onSubmitThemeColor: () => void;
+  onToggleReviewType: (type: string) => void;
 }) {
   if (ui.modal === 'options') {
     return (
@@ -42,6 +44,7 @@ export function Modals({
         fieldError={ui.fieldError}
         onDraft={onDraft}
         onSubmit={onSubmitField}
+        onToggleReviewType={onToggleReviewType}
       />
     );
   }

@@ -273,10 +273,18 @@ export function collectReviewPrs(requested: SearchPrItem[], reviewed: SearchPrIt
  * second cycle, and a review at the same instant as a request still counts
  * for it. A final unanswered request becomes a pending result, which keeps
  * a PR that was reviewed and then re-requested in the pending queue.
- * Exported for the classification tests, the fetch pipeline is the only
- * production caller.
+ * A countedStates set restricts which GitHub review states count as a
+ * review at all, so an uncounted review neither closes a cycle nor puts
+ * the PR on the reviewing queue, and a PR whose only reviews are uncounted
+ * drops out entirely when no request names you. Exported for the
+ * classification tests, the fetch pipeline is the only production caller.
  */
-export function classifyPr(pr: ReviewPr, details: PrDetails | null, user: string): ReviewResult[] {
+export function classifyPr(
+  pr: ReviewPr,
+  details: PrDetails | null,
+  user: string,
+  countedStates?: ReadonlySet<string>,
+): ReviewResult[] {
   if (!details) {
     return [{ kind: 'inaccessible', pr }];
   }
@@ -286,7 +294,9 @@ export function classifyPr(pr: ReviewPr, details: PrDetails | null, user: string
   );
 
   const reviews = details.reviews.nodes.flatMap((node) =>
-    node?.author?.login === user && node.submittedAt ? [{ at: new Date(node.submittedAt), state: node.state }] : [],
+    node?.author?.login === user && node.submittedAt && (countedStates === undefined || countedStates.has(node.state))
+      ? [{ at: new Date(node.submittedAt), state: node.state }]
+      : [],
   );
 
   if (requests.length === 0) {
@@ -379,6 +389,14 @@ export interface ReviewFetch {
   cacheHits: number;
 }
 
+export interface ReviewFetchOptions extends FetchOptions {
+  /**
+   * Restricts which GitHub review states count as a review during
+   * classification. An absent set counts every submitted review.
+   */
+  countedStates?: ReadonlySet<string>;
+}
+
 /**
  * Fetches the review timeline for every PR and classifies each one into
  * its request cycles, so the result list can be longer than the PR list.
@@ -387,12 +405,15 @@ export interface ReviewFetch {
  * never cached, so a transient failure cannot hide a PR permanently.
  * The onProgress callback receives the number of processed PRs and
  * the total, first for the cache hits and then after every batch.
+ * The countedStates option narrows which review states classify as a
+ * review, and the raw timelines cache independently of it, so changing
+ * the filter only reruns the classification against cached data.
  */
 export async function fetchReviewRaw(
   prs: ReviewPr[],
   user: string,
   onProgress?: ProgressCallback,
-  options: FetchOptions = {},
+  options: ReviewFetchOptions = {},
 ): Promise<ReviewFetch> {
   const cache = new PrCache<PrDetails>('details');
   const { found, misses } = partitionCached(prs, cache, options.bypassCache === true);
@@ -407,7 +428,9 @@ export async function fetchReviewRaw(
   cache.save();
 
   return {
-    results: prs.flatMap((pr) => classifyPr(pr, found.get(prKey(pr.repo, pr.number)) ?? null, user)),
+    results: prs.flatMap((pr) =>
+      classifyPr(pr, found.get(prKey(pr.repo, pr.number)) ?? null, user, options.countedStates),
+    ),
     cacheHits,
   };
 }

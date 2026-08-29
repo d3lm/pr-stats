@@ -27,7 +27,7 @@ pr-stats
 
 Without flags, it looks at PRs from the last 90 days across all repositories you can access. The tabs hold these views.
 
-- The queue tab, which it opens on, shows two lists. The open PRs awaiting your review come first with how long each has been waiting, and below them sit the open PRs you already reviewed or commented on with how long ago that was, so a PR stays visible until it merges or closes. A fresh review request moves a PR from the reviewing list back into the awaiting one.
+- The queue tab, which it opens on, shows two lists. The open PRs awaiting your review come first with how long each has been waiting, and below them sit the open PRs you already reviewed or commented on with how long ago that was, so a PR stays visible until it merges or closes. A fresh review request moves a PR from the reviewing list back into the awaiting one. The `--review-types` flag narrows what counts as a review to a subset of `approve`, `comment`, and `request-changes`, so with `--review-types approve,request-changes` a comment alone no longer answers a request and the PR stays in the awaiting list.
 - The Your PRs tab has two sub-tabs, which the `t` key switches. The first lists your own authored PRs that are still open with their age and size. The second reports how your authored PRs got created, merged, and closed, telling a merge apart from a close without one. It charts time-to-merge percentiles, a histogram and trend, a merge-time heatmap, and a scatter of merge time against PR size. It also measures how long your PRs wait for their first review from someone else, with a histogram and trend of the time from creation to that review and a histogram of how long the open PRs still without one have waited. It also plots a merge-rate trend over the concluded PRs, cumulative created and merged lines whose gap shows the backlog, weekly created and merged volumes, an outcome gauge, and the most recently merged and closed PRs. A reviewer leaderboard ranks who reviews your PRs by distinct PRs reviewed, and a review-coverage gauge counts the merged PRs that never received a review. Your own replies to review threads never count as a review for any of them.
 - The time-to-review report pairs its histogram, trend, heatmap, and weekly volume with a scatter of review time against PR size, the completed review cycles per PR, and a verdict gauge splitting approvals from change requests. It also shows the age of the requests still waiting on you, how old PRs already were when the request reached you, and an off-hours gauge that splits weekdays into work hours and after hours once `--work-hours` is set. On the aggregate view it additionally compares median review times by repo.
 - The PR size report carries the same histogram, trend, heatmap, and weekly volume for PR sizes and adds a net-lines trend that sums additions minus deletions per week.
@@ -48,6 +48,9 @@ pr-stats --work-hours 9-17 --target 1d
 
 # Report how many authored PRs stayed under 400 changed lines
 pr-stats --size-target 400
+
+# Count only approvals and change requests as reviews
+pr-stats --review-types approve,request-changes
 
 # Authenticate with an access token instead of the gh CLI
 pr-stats --token your-access-token

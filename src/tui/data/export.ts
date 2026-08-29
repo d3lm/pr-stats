@@ -58,6 +58,7 @@ export interface StatsReport {
     timezone: string;
     wallClock: boolean;
     includeDrafts: boolean;
+    reviewTypes: string | null;
     reviewTarget: string | null;
     sizeTarget: string | null;
   };
@@ -246,6 +247,7 @@ export function buildStatsReport(raw: RawData, options: OptionsState): StatsRepo
       timezone,
       wallClock: options.wallClock,
       includeDrafts: options.includeDrafts,
+      reviewTypes: options.reviewTypes === '' ? null : options.reviewTypes,
       reviewTarget: targetLabel ?? null,
       sizeTarget: options.sizeTarget === '' ? null : options.sizeTarget,
     },

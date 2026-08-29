@@ -94,6 +94,15 @@ function handleOptionsModalKey(key: KeyEvent, context: KeymapContext): void {
         context.setOptions((previous) => {
           return { ...previous, [field.key]: !previous[field.key] };
         });
+      } else if (field.kind === 'multi') {
+        /**
+         * Opens the checklist dropdown in the shared edit mode. The
+         * focused select handles the keys from here, and escape falls
+         * back to the edit-cancel path like a text input.
+         */
+        if (key.name === 'return' || key.name === 'space') {
+          context.dispatchUi({ type: 'editStarted' });
+        }
       } else if (key.name === 'return') {
         context.beginEdit(String(context.options[field.key]));
       }

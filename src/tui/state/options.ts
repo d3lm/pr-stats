@@ -1,5 +1,13 @@
 import { readCacheFile, writeCacheFile } from '../../cache';
-import { parseSince, parseSizeTarget, parseTarget, parseWorkHours, resolveTimezone, type CliValues } from '../../flags';
+import {
+  parseReviewTypes,
+  parseSince,
+  parseSizeTarget,
+  parseTarget,
+  parseWorkHours,
+  resolveTimezone,
+  type CliValues,
+} from '../../flags';
 import { CliError } from '../../utils';
 
 /**
@@ -16,17 +24,23 @@ export interface OptionsState {
   tz: string;
   wallClock: boolean;
   includeDrafts: boolean;
+  reviewTypes: string;
 }
 
 export interface FieldSpec {
   key: keyof OptionsState;
   label: string;
   hint: string;
-  kind: 'text' | 'toggle';
   /**
-   * Marks options that change what GitHub returns. Editing one of these
-   * requires a reload, while the others recompute instantly from the cached
-   * data.
+   * Picks the row's editor. A text field opens an inline input, a toggle
+   * flips in place, and a multi field opens the checklist dropdown that
+   * toggles one value per row.
+   */
+  kind: 'text' | 'toggle' | 'multi';
+  /**
+   * Marks options that need a reload to apply, because they change what
+   * GitHub returns or how the fetched timelines classify. The others
+   * recompute instantly from the cached data.
    */
   fetch: boolean;
 }
@@ -58,6 +72,13 @@ export const FIELDS: FieldSpec[] = [
     label: 'Include drafts',
     hint: 'include PRs that are currently drafts',
     kind: 'toggle',
+    fetch: true,
+  },
+  {
+    key: 'reviewTypes',
+    label: 'Review types',
+    hint: 'enter opens the type list, checked types count as a review',
+    kind: 'multi',
     fetch: true,
   },
   {
@@ -98,6 +119,51 @@ export const FIELDS: FieldSpec[] = [
 ];
 
 /**
+ * The review types the checklist dropdown lists, in the canonical order
+ * the reviewTypes value serializes in.
+ */
+export const REVIEW_TYPE_CHOICES = ['approve', 'comment', 'request-changes'] as const;
+
+/**
+ * Expands a reviewTypes value into the set of checked types. The empty
+ * value means every submitted review counts, so it expands to the full
+ * set. Tokens normalize the way the CLI parser does, so a value typed
+ * with spaces or capitals checks the same boxes.
+ */
+export function checkedReviewTypes(value: string): Set<string> {
+  if (value.trim() === '') {
+    return new Set(REVIEW_TYPE_CHOICES);
+  }
+
+  return new Set(value.split(',').map((part) => part.trim().toLowerCase()));
+}
+
+/**
+ * Flips one review type in the comma-separated reviewTypes value and
+ * returns the new value in canonical order. A full selection collapses
+ * back to the empty value, which counts every submitted review, and the
+ * last checked type never unchecks, because a filter that counts nothing
+ * would keep every PR pending forever.
+ */
+export function toggleReviewType(value: string, type: string): string {
+  const checked = checkedReviewTypes(value);
+
+  if (checked.has(type)) {
+    checked.delete(type);
+  } else {
+    checked.add(type);
+  }
+
+  const next = REVIEW_TYPE_CHOICES.filter((choice) => checked.has(choice));
+
+  if (next.length === 0) {
+    return value;
+  }
+
+  return next.length === REVIEW_TYPE_CHOICES.length ? '' : next.join(',');
+}
+
+/**
  * Validates a single text field by running the matching CLI parser, which
  * throws a CliError with a readable message on bad input.
  */
@@ -132,6 +198,11 @@ export function validateField(key: keyof OptionsState, value: string): void {
 
       break;
     }
+    case 'reviewTypes': {
+      parseReviewTypes(value);
+
+      break;
+    }
   }
 }
 
@@ -158,6 +229,13 @@ export function readSavedOptions(): OptionsState | null {
   }
 
   const record = value as Record<string, unknown>;
+
+  /**
+   * Saves written before the review-types field existed lack the key, so
+   * it defaults to the empty string instead of discarding the whole save.
+   */
+  record.reviewTypes ??= '';
+
   const options = {} as OptionsState;
 
   for (const field of FIELDS) {
@@ -251,14 +329,19 @@ export function applySavedOptions(values: CliValues, explicit: Set<string>): Opt
     values['include-drafts'] = saved.includeDrafts;
   }
 
+  if (!explicit.has('review-types') && saved.reviewTypes !== '') {
+    values['review-types'] = saved.reviewTypes;
+  }
+
   return saved;
 }
 
 /**
- * The subset of the options that changes what GitHub returns, which is all
- * the fetch pipeline needs to know.
+ * The subset of the options a load bakes into its results, the search
+ * inputs plus the review-types filter the classification applies, so a
+ * change to any of them needs a fresh load.
  */
-export type FetchParams = Pick<OptionsState, 'since' | 'repos' | 'user' | 'includeDrafts'>;
+export type FetchParams = Pick<OptionsState, 'since' | 'repos' | 'user' | 'includeDrafts' | 'reviewTypes'>;
 
 /**
  * Serializes the options that require a refetch when they change. Comparing
@@ -266,7 +349,7 @@ export type FetchParams = Pick<OptionsState, 'since' | 'repos' | 'user' | 'inclu
  * startup snapshot uses it as its cache key.
  */
 export function fetchParamsKey(options: FetchParams): string {
-  return JSON.stringify([options.since, options.repos, options.user, options.includeDrafts]);
+  return JSON.stringify([options.since, options.repos, options.user, options.includeDrafts, options.reviewTypes]);
 }
 
 /**

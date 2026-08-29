@@ -1,4 +1,11 @@
-import { FIELDS, sameOptions, type FieldSpec, type OptionsState } from '../state/options';
+import {
+  checkedReviewTypes,
+  FIELDS,
+  REVIEW_TYPE_CHOICES,
+  sameOptions,
+  type FieldSpec,
+  type OptionsState,
+} from '../state/options';
 import { theme } from '../theme';
 import { ModalFrame, ModalRow } from './ModalFrame';
 
@@ -8,6 +15,7 @@ const EMPTY_PLACEHOLDERS: Partial<Record<keyof OptionsState, string>> = {
   target: '(none)',
   sizeTarget: '(none)',
   tz: '(system)',
+  reviewTypes: '(every type)',
 };
 
 /**
@@ -36,6 +44,7 @@ export function OptionsModal({
   fieldError,
   onDraft,
   onSubmit,
+  onToggleReviewType,
 }: {
   options: OptionsState;
   saved: OptionsState | null;
@@ -44,6 +53,7 @@ export function OptionsModal({
   fieldError: string | null;
   onDraft: (value: string) => void;
   onSubmit: () => void;
+  onToggleReviewType: (type: string) => void;
 }) {
   const savedState = savedLine(options, saved);
 
@@ -63,9 +73,10 @@ export function OptionsModal({
                 field={field}
                 options={options}
                 isSelected={index === selected}
-                isEditing={index === selected && editing && field.kind === 'text'}
+                isEditing={index === selected && editing && field.kind !== 'toggle'}
                 onDraft={onDraft}
                 onSubmit={onSubmit}
+                onToggleType={onToggleReviewType}
               />
             );
           })}
@@ -119,7 +130,9 @@ function displayValue(key: keyof OptionsState, value: string | boolean): { text:
 /**
  * Renders one option row. The value slot right-aligns the current value,
  * turns into an input while editing, and gets arrows around toggle values
- * on the selected row to show that left and right cycle them.
+ * on the selected row to show that left and right cycle them. A multi
+ * row keeps its value on the row and opens the checklist dropdown below
+ * it instead of an input.
  */
 function FieldRow({
   field,
@@ -128,6 +141,7 @@ function FieldRow({
   isEditing,
   onDraft,
   onSubmit,
+  onToggleType,
 }: {
   field: FieldSpec;
   options: OptionsState;
@@ -135,9 +149,23 @@ function FieldRow({
   isEditing: boolean;
   onDraft: (value: string) => void;
   onSubmit: () => void;
+  onToggleType: (type: string) => void;
 }) {
   const value = displayValue(field.key, options[field.key]);
   const valueColor = value.isPlaceholder ? (isSelected ? theme.muted : theme.dim) : theme.muted;
+
+  if (isEditing && field.kind === 'multi') {
+    return (
+      <box flexDirection="column">
+        <ModalRow label={field.label} isSelected={isSelected}>
+          <text wrapMode="none">
+            <b fg={value.isPlaceholder ? theme.muted : theme.text}>{value.text}</b>
+          </text>
+        </ModalRow>
+        <TypeChecklist value={String(options[field.key])} onToggle={onToggleType} />
+      </box>
+    );
+  }
 
   return (
     <ModalRow label={field.label} isSelected={isSelected}>
@@ -173,5 +201,45 @@ function FieldRow({
         </text>
       )}
     </ModalRow>
+  );
+}
+
+/**
+ * The dropdown under the review-types row, a focused checklist built on
+ * OpenTUI's select. Enter toggles the highlighted type through the App's
+ * toggle handler, which rewrites the option value, and the fresh value
+ * renders back into the checkbox glyphs, so the list stays open for more
+ * toggles. Escape leaves the edit mode through the keymap, like a text
+ * input.
+ */
+function TypeChecklist({ value, onToggle }: { value: string; onToggle: (type: string) => void }) {
+  const checked = checkedReviewTypes(value);
+
+  return (
+    <box alignSelf="flex-end" width={30} height={REVIEW_TYPE_CHOICES.length} marginRight={2}>
+      <select
+        focused
+        width="100%"
+        height={REVIEW_TYPE_CHOICES.length}
+        options={REVIEW_TYPE_CHOICES.map((choice) => {
+          return { name: `[${checked.has(choice) ? 'x' : ' '}] ${choice}`, description: '', value: choice };
+        })}
+        showDescription={false}
+        showScrollIndicator={false}
+        showSelectionIndicator={false}
+        wrapSelection
+        backgroundColor={theme.inputBg}
+        focusedBackgroundColor={theme.inputFocusedBg}
+        textColor={theme.muted}
+        focusedTextColor={theme.muted}
+        selectedBackgroundColor={theme.selectedBg}
+        selectedTextColor={theme.text}
+        onSelect={(_index, option) => {
+          if (option !== null) {
+            onToggle(option.value as string);
+          }
+        }}
+      />
+    </box>
   );
 }

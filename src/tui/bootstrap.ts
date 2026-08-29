@@ -80,6 +80,7 @@ export function bootstrap(): BootstrapResult {
       tz: values.tz ?? '',
       wallClock: values['wall-clock'],
       includeDrafts: values['include-drafts'],
+      reviewTypes: values['review-types'] ?? '',
     };
 
     for (const field of FIELDS) {

@@ -28,6 +28,7 @@ export interface CliValues {
   'work-hours': string;
   'wall-clock': boolean;
   'include-drafts': boolean;
+  'review-types'?: string;
   'no-cache': boolean;
   json: boolean;
   debug?: string;
@@ -114,6 +115,12 @@ const OPTIONS: OptionSpec[] = [
     type: 'boolean',
     default: false,
     help: 'Include PRs that are currently drafts. Excluded by default.',
+  },
+  {
+    name: 'review-types',
+    type: 'string',
+    placeholder: '<list>',
+    help: 'Count only these review types as a review. Accepts a comma-separated list of `approve`, `comment`, and `request-changes`, for example `approve,request-changes`. A review of another type never answers a request, so the PR stays in the awaiting queue until a counted review lands. Without this flag, every submitted review counts.',
   },
   {
     name: 'no-cache',
@@ -360,6 +367,36 @@ export function parseSizeTarget(input: string): SizeTarget {
   }
 
   return target;
+}
+
+/**
+ * Maps the --review-types tokens onto the GitHub review states the
+ * classification compares against.
+ */
+const REVIEW_TYPES = new Map([
+  ['approve', 'APPROVED'],
+  ['comment', 'COMMENTED'],
+  ['request-changes', 'CHANGES_REQUESTED'],
+]);
+
+/**
+ * Parses a --review-types value like "approve,request-changes" into
+ * the set of GitHub review states that count as a review.
+ */
+export function parseReviewTypes(input: string): Set<string> {
+  const states = new Set<string>();
+
+  for (const part of input.split(',')) {
+    const state = REVIEW_TYPES.get(part.trim().toLowerCase());
+
+    if (state === undefined) {
+      throw new CliError(`invalid --review-types value "${part.trim()}", use approve, comment, or request-changes`);
+    }
+
+    states.add(state);
+  }
+
+  return states;
 }
 
 /**

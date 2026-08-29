@@ -147,3 +147,50 @@ test('other people on the timeline never count toward your cycles', () => {
 test('missing details classify as inaccessible', () => {
   expect(classifyPr(pr, null, 'me')).toEqual([{ kind: 'inaccessible', pr }]);
 });
+
+test('an uncounted review never closes a cycle, the next counted one does', () => {
+  const timeline = details(
+    ['2026-07-01T09:00:00Z'],
+    [{ at: '2026-07-01T15:00:00Z', state: 'COMMENTED' }, '2026-07-02T15:00:00Z'],
+  );
+
+  expect(classifyPr(pr, timeline, 'me', new Set(['APPROVED']))).toEqual([
+    {
+      kind: 'reviewed',
+      pr,
+      requestedAt: new Date('2026-07-01T09:00:00Z'),
+      reviewedAt: new Date('2026-07-02T15:00:00Z'),
+      verdict: 'APPROVED',
+      lines: 150,
+    },
+  ]);
+});
+
+test('a request answered only by an uncounted review stays pending', () => {
+  const timeline = details(['2026-07-01T09:00:00Z'], [{ at: '2026-07-01T15:00:00Z', state: 'COMMENTED' }]);
+
+  expect(classifyPr(pr, timeline, 'me', new Set(['APPROVED', 'CHANGES_REQUESTED']))).toEqual([
+    { kind: 'pending', pr, requestedAt: new Date('2026-07-01T09:00:00Z') },
+  ]);
+});
+
+test('a PR with only uncounted reviews and no request drops out entirely', () => {
+  const timeline = details([], [{ at: '2026-07-01T15:00:00Z', state: 'COMMENTED' }]);
+
+  expect(classifyPr(pr, timeline, 'me', new Set(['APPROVED']))).toEqual([{ kind: 'inaccessible', pr }]);
+});
+
+test('without a configured set every submitted review state counts', () => {
+  const timeline = details(['2026-07-01T09:00:00Z'], [{ at: '2026-07-01T15:00:00Z', state: 'COMMENTED' }]);
+
+  expect(classifyPr(pr, timeline, 'me')).toEqual([
+    {
+      kind: 'reviewed',
+      pr,
+      requestedAt: new Date('2026-07-01T09:00:00Z'),
+      reviewedAt: new Date('2026-07-01T15:00:00Z'),
+      verdict: 'COMMENTED',
+      lines: 150,
+    },
+  ]);
+});
