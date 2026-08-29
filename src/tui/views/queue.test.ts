@@ -36,6 +36,7 @@ function reviewedResult(repo: string, number: number, reviewedAt: string, state 
     requestedAt: new Date('2026-06-15T00:00:00Z'),
     reviewedAt: new Date(reviewedAt),
     verdict: 'APPROVED',
+    lines: 15,
   };
 }
 

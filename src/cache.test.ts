@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clearCache, configureCache, PrCache, prKey, readCachedLogin, writeCachedLogin } from './cache';
-import { parseCliArgs } from './flags';
 import { collectAuthoredPrs, collectReviewPrs, fetchReviewRaw, fetchSizeRaw, resolveUser } from './data';
+import { parseCliArgs } from './flags';
 import { authFingerprint, configureAuth, searchPrs, type PrDetails } from './github';
 import { loadSnapshot, saveSnapshot, type RawData } from './tui/data/load';
 import { applySavedOptions, readSavedOptions, writeSavedOptions, type OptionsState } from './tui/state/options';
@@ -130,7 +130,7 @@ test('discards a saved options file that fails the shape or value checks', () =>
 
   expect(readSavedOptions()).toBeNull();
 
-  writeFileSync(join(dir, 'options.json'), JSON.stringify({ version: 3, value: { since: 42 } }));
+  writeFileSync(join(dir, 'options.json'), JSON.stringify({ version: 4, value: { since: 42 } }));
 
   expect(readSavedOptions()).toBeNull();
 
@@ -190,7 +190,8 @@ test('serves closed review PRs from the cache and repairs entries on bypass', as
    */
   const store = new PrCache<PrDetails>('details');
 
-  store.set(prKey('acme/api', 1), { timelineItems: { nodes: [] }, reviews: { nodes: [] } });
+  store.set(prKey('acme/api', 1), { additions: 0, deletions: 0, timelineItems: { nodes: [] }, reviews: { nodes: [] } });
+
   store.save();
 
   const poisoned = await fetchReviewRaw(prs, 'testuser');
@@ -215,7 +216,8 @@ test('drops a stale cache entry when a PR shows up open again', async () => {
   const store = new PrCache<PrDetails>('details');
 
   // acme/web#3 is open in the canned searches, so this entry is stale
-  store.set(prKey('acme/web', 3), { timelineItems: { nodes: [] }, reviews: { nodes: [] } });
+  store.set(prKey('acme/web', 3), { additions: 0, deletions: 0, timelineItems: { nodes: [] }, reviews: { nodes: [] } });
+
   store.save();
 
   const { results, cacheHits } = await fetchReviewRaw(prs, 'testuser');
@@ -263,7 +265,7 @@ test('ignores an expired cached login', async () => {
 
   writeFileSync(
     join(dir, 'user.json'),
-    JSON.stringify({ version: 3, value: { login: 'stale', auth, cachedAt: '2020-01-01T00:00:00Z' } }),
+    JSON.stringify({ version: 4, value: { login: 'stale', auth, cachedAt: '2020-01-01T00:00:00Z' } }),
   );
 
   expect(readCachedLogin(auth)).toBeNull();
@@ -290,6 +292,7 @@ const SNAPSHOT_DATA: RawData = {
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T15:00:00Z'),
       verdict: 'APPROVED',
+      lines: 190,
     },
     {
       kind: 'pending',

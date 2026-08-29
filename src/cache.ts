@@ -5,10 +5,11 @@ import { dirname, join } from 'node:path';
 /**
  * Version of the on-disk format. A file written with a different version
  * is discarded, so schema changes only need a bump here. Version 2 added
- * the merge and close timestamps to the size entries. Version 3 added
- * the review authors to the size entries.
+ * the merge and close timestamps to the size entries. Version 3 added the
+ * review authors to the size entries. Version 4 added the PR size to the
+ * review details.
  */
-const VERSION = 3;
+const VERSION = 4;
 
 let enabled = false;
 

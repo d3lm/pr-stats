@@ -40,7 +40,14 @@ export interface ReviewNode {
   state: string;
 }
 
+/**
+ * Review timeline and size of one PR on your reviewing plate. The
+ * additions and deletions ride along for the review-time-vs-size
+ * scatter and hold the PR's size at fetch time, not at review time.
+ */
 export interface PrDetails {
+  additions: number;
+  deletions: number;
   timelineItems: { nodes: (TimelineNode | null)[] };
   reviews: { nodes: (ReviewNode | null)[] };
 }
@@ -404,8 +411,8 @@ export async function searchPrs({ user, sinceIso, repos, includeDrafts, mode }: 
 }
 
 /**
- * Fetches review requests and reviews for a batch of PRs with one GraphQL
- * call. Aliases keep the batch inside a single query.
+ * Fetches review requests, reviews, and the size for a batch of PRs
+ * with one GraphQL call. Aliases keep the batch inside a single query.
  */
 export async function fetchPrDetails(prs: PrRef[]): Promise<(PrDetails | null)[]> {
   const parts = prs.map((pr, i) => {
@@ -414,6 +421,8 @@ export async function fetchPrDetails(prs: PrRef[]): Promise<(PrDetails | null)[]
     return `
       pr${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) {
         pullRequest(number: ${pr.number}) {
+          additions
+          deletions
           timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], first: 100) {
             nodes {
               ... on ReviewRequestedEvent {

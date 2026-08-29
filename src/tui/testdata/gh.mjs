@@ -9,34 +9,50 @@ const args = process.argv.slice(2);
 
 const REVIEW_TIMELINES = {
   'acme/api#1': {
+    additions: 150,
+    deletions: 40,
     requests: [{ at: '2026-07-01T09:00:00Z', login: 'testuser' }],
     reviews: [{ login: 'testuser', at: '2026-07-01T15:00:00Z', state: 'APPROVED' }],
   },
   'acme/api#2': {
+    additions: 600,
+    deletions: 100,
     requests: [{ at: '2026-07-03T10:00:00Z', login: 'testuser' }],
     reviews: [{ login: 'testuser', at: '2026-07-06T10:00:00Z', state: 'CHANGES_REQUESTED' }],
   },
   'acme/web#3': {
+    additions: 250,
+    deletions: 30,
     requests: [{ at: '2026-08-23T09:00:00Z', login: 'testuser' }],
     reviews: [],
   },
   'acme/web#4': {
+    additions: 400,
+    deletions: 200,
     requests: [{ at: '2026-06-20T09:00:00Z', login: 'testuser' }],
     reviews: [{ login: 'otheruser', at: '2026-06-21T09:00:00Z', state: 'APPROVED' }],
   },
   'acme/api#5': {
+    additions: 80,
+    deletions: 10,
     requests: [{ at: '2026-07-04T09:00:00Z', login: 'someoneelse' }],
     reviews: [{ login: 'testuser', at: '2026-07-05T12:00:00Z', state: 'COMMENTED' }],
   },
   'acme/web#6': {
+    additions: 2,
+    deletions: 2,
     requests: [{ at: '2026-07-15T13:30:00Z', login: 'testuser' }],
     reviews: [{ login: 'testuser', at: '2026-07-15T13:45:00Z', state: 'APPROVED' }],
   },
   'acme/api#7': {
+    additions: 900,
+    deletions: 700,
     requests: [{ at: '2026-08-20T09:00:00Z', login: 'testuser' }],
     reviews: [],
   },
   'acme/api#8': {
+    additions: 120,
+    deletions: 15,
     requests: [],
     reviews: [{ login: 'testuser', at: '2026-08-24T09:00:00Z', state: 'COMMENTED' }],
   },
@@ -152,7 +168,12 @@ const SEARCHES = {
 
 function handleGraphql(query) {
   const aliasPattern = /pr(\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\)\s*\{\s*pullRequest\(number: (\d+)\)/g;
-  const wantsSizes = query.includes('additions');
+
+  /**
+   * Both queries fetch additions and deletions, so the size query is the
+   * one asking for the changed-files counter.
+   */
+  const wantsSizes = query.includes('changedFiles');
   const data = {};
 
   for (const match of query.matchAll(aliasPattern)) {
@@ -173,6 +194,8 @@ function handleGraphql(query) {
 
     data[alias] = {
       pullRequest: {
+        additions: timeline.additions,
+        deletions: timeline.deletions,
         timelineItems: {
           nodes: timeline.requests.map((request) => {
             return {

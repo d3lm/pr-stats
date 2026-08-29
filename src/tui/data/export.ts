@@ -72,7 +72,13 @@ export interface StatsReport {
     verdicts: { approved: number; changesRequested: number; commented: number; other: number };
     target: { label: string; hours: number; inside: number; over: number; pendingOverdue: number } | null;
     byRepo: { repo: string; reviews: number; p50Hours: number }[];
-    reviewed: (PrRef & { requestedAt: string; reviewedAt: string; hours: number; verdict: string })[];
+    reviewed: (PrRef & {
+      requestedAt: string;
+      reviewedAt: string;
+      hours: number;
+      verdict: string;
+      totalLines: number;
+    })[];
     pending: (PrRef & { requestedAt: string; hours: number })[];
     reviewing: (PrRef & { reviewedAt: string; hours: number })[];
   };
@@ -272,6 +278,7 @@ export function buildStatsReport(raw: RawData, options: OptionsState): StatsRepo
           reviewedAt: entry.reviewedAt.toISOString(),
           hours: round(entry.hours),
           verdict: entry.verdict,
+          totalLines: entry.lines,
         };
       }),
       pending: review.pending.map((entry) => {

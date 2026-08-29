@@ -12,6 +12,11 @@ export interface ReviewedEntry {
    * APPROVED or CHANGES_REQUESTED.
    */
   verdict: string;
+  /**
+   * Holds the total lines the PR changed, additions plus deletions,
+   * measured at fetch time rather than at review time.
+   */
+  lines: number;
 }
 
 export interface PendingEntry {
@@ -72,6 +77,7 @@ export function computeReviewStats(
         reviewedAt: result.reviewedAt,
         hours: durationHours(result.requestedAt, result.reviewedAt),
         verdict: result.verdict,
+        lines: result.lines,
       });
     } else if (result.kind === 'pending' && result.pr.state === 'open') {
       pending.push({ pr: result.pr, requestedAt: result.requestedAt, hours: durationHours(result.requestedAt, now) });

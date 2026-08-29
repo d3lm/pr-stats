@@ -64,6 +64,7 @@ const reviewResults: ReviewResult[] = [
     requestedAt: new Date('2026-07-01T00:00:00Z'),
     reviewedAt: new Date('2026-07-01T01:00:00Z'),
     verdict: 'APPROVED',
+    lines: 50,
   },
   {
     kind: 'reviewed',
@@ -71,6 +72,7 @@ const reviewResults: ReviewResult[] = [
     requestedAt: new Date('2026-07-01T00:00:00Z'),
     reviewedAt: new Date('2026-07-01T04:00:00Z'),
     verdict: 'CHANGES_REQUESTED',
+    lines: 200,
   },
   { kind: 'pending', pr: reviewPr(3, 'open'), requestedAt: new Date('2026-07-09T00:00:00Z') },
 ];
@@ -140,6 +142,7 @@ test('builds the report with durations, targets, and per-PR entries', () => {
       reviewedAt: '2026-07-01T01:00:00.000Z',
       hours: 1,
       verdict: 'APPROVED',
+      totalLines: 50,
     });
 
     expect(report.review.pending[0].hours).toBe(24);
@@ -283,6 +286,7 @@ test('the --json flag prints the full report to stdout', async () => {
   // the same three cycles the review tab headlines as p50 6h and mean 10.1h
   expect(report.review.reviewTimeHours).toEqual({ count: 3, mean: 10.08, p50: 6, p90: 24, min: 0.25, max: 24 });
   expect(report.review.verdicts).toEqual({ approved: 2, changesRequested: 1, commented: 0, other: 0 });
+  expect(report.review.reviewed.map((entry) => entry.totalLines)).toEqual([190, 700, 4]);
   expect(report.review.target).toEqual({ label: '1d', hours: 24, inside: 3, over: 0, pendingOverdue: 2 });
 
   expect(report.review.byRepo).toEqual([

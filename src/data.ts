@@ -27,13 +27,15 @@ export interface ReviewPr {
  * recompute durations without refetching anything. Unrequested results
  * carry the time of your latest review, which feeds the reviewing queue.
  * Reviewed results also carry the verdict of the review that closed the
- * cycle, a GitHub review state like APPROVED or CHANGES_REQUESTED.
+ * cycle, a GitHub review state like APPROVED or CHANGES_REQUESTED, and
+ * the total lines the PR changed, which feeds the review-time-vs-size
+ * scatter.
  */
 export type ReviewResult =
   | { kind: 'inaccessible'; pr: ReviewPr }
   | { kind: 'unrequested'; pr: ReviewPr; reviewedAt: Date }
   | { kind: 'pending'; pr: ReviewPr; requestedAt: Date }
-  | { kind: 'reviewed'; pr: ReviewPr; requestedAt: Date; reviewedAt: Date; verdict: string };
+  | { kind: 'reviewed'; pr: ReviewPr; requestedAt: Date; reviewedAt: Date; verdict: string; lines: number };
 
 export interface AuthoredPr {
   repo: string;
@@ -303,6 +305,7 @@ export function classifyPr(pr: ReviewPr, details: PrDetails | null, user: string
   ].toSorted((a, b) => a.at.getTime() - b.at.getTime() || Number(b.isRequest) - Number(a.isRequest));
 
   const results: ReviewResult[] = [];
+  const lines = details.additions + details.deletions;
 
   let openedAt: Date | null = null;
 
@@ -310,7 +313,7 @@ export function classifyPr(pr: ReviewPr, details: PrDetails | null, user: string
     if (event.isRequest) {
       openedAt ??= event.at;
     } else if (openedAt !== null) {
-      results.push({ kind: 'reviewed', pr, requestedAt: openedAt, reviewedAt: event.at, verdict: event.state });
+      results.push({ kind: 'reviewed', pr, requestedAt: openedAt, reviewedAt: event.at, verdict: event.state, lines });
       openedAt = null;
     }
   }

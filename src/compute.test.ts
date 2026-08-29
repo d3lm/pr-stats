@@ -123,6 +123,8 @@ test('splits the merged PRs by review coverage, where self-replies never count',
 /**
  * Builds one completed review cycle on the given PR with the given
  * verdict, so the cycle and verdict tests can vary just those two.
+ * The PR size derives from the number, so the size pass-through is
+ * visible per PR.
  */
 function reviewedResult(number: number, verdict: string): ReviewResult {
   return {
@@ -138,10 +140,11 @@ function reviewedResult(number: number, verdict: string): ReviewResult {
     requestedAt: new Date('2026-07-01T09:00:00Z'),
     reviewedAt: new Date('2026-07-01T15:00:00Z'),
     verdict,
+    lines: number * 100,
   };
 }
 
-test('counts the completed cycles per PR and carries the verdicts through', () => {
+test('counts the completed cycles per PR and carries the verdicts and sizes through', () => {
   const stats = computeReviewStats([
     reviewedResult(1, 'CHANGES_REQUESTED'),
     reviewedResult(1, 'APPROVED'),
@@ -150,4 +153,5 @@ test('counts the completed cycles per PR and carries the verdicts through', () =
 
   expect(stats.cycles).toEqual([2, 1]);
   expect(stats.reviewed.map((entry) => entry.verdict)).toEqual(['CHANGES_REQUESTED', 'APPROVED', 'COMMENTED']);
+  expect(stats.reviewed.map((entry) => entry.lines)).toEqual([100, 100, 200]);
 });

@@ -387,6 +387,15 @@ export function buildReviewView(
       legend: 'reviews in that hour',
     }),
     buildVolumeCard('Reviews completed per week', reviewDates),
+    buildScatterCard({
+      title: 'Review time vs size',
+      subtitle: 'time to review against lines changed, log scale',
+      points: stats.reviewed.map((entry) => {
+        return { x: entry.lines, y: entry.hours };
+      }),
+      formatX: count,
+      formatY: formatDuration,
+    }),
     buildHistogramCard({
       title: 'Review cycles per PR',
       subtitle: 'completed request → review rounds per PR',

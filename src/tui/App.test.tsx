@@ -237,10 +237,11 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     /**
      * The remaining charts sit below the fold, so scroll the review pane
-     * down card by card in the grid's fill order. The cycles histogram
-     * counts every canned PR as one-and-done, and the verdict gauge
-     * splits the three completed reviews into two approvals and one
-     * change request.
+     * down card by card in the grid's fill order. The scatter plots the
+     * three completed reviews against their PR sizes, the cycles
+     * histogram counts every canned PR as one-and-done, and the verdict
+     * gauge splits the three completed reviews into two approvals and
+     * one change request.
      */
     await scrollToText(setup, 'Review time trend');
     await scrollToText(setup, 'reviews in that hour');
@@ -248,6 +249,7 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(setup.captureCharFrame()).toContain('Reviews completed per week');
 
+    await scrollToText(setup, 'Review time vs size');
     await scrollToText(setup, 'Review cycles per PR');
     await scrollToText(setup, '← p50 1 ');
     await scrollToText(setup, 'PR age at request');
@@ -1453,8 +1455,8 @@ test('lays the review charts out in two columns on wide terminals', async () => 
     /**
      * The two card columns fit side by side at this width, so the first
      * card titles of both columns share a frame line, and the following
-     * rows pair the heatmap with the volume chart and the cycles
-     * histogram with the age-at-request histogram.
+     * rows pair the heatmap with the volume chart and the review-time
+     * scatter with the cycles histogram.
      */
     const frame = setup.captureCharFrame();
     const lines = frame.split('\n');
@@ -1463,7 +1465,7 @@ test('lays the review charts out in two columns on wide terminals', async () => 
     expect(frame).toContain('When you review');
     expect(frame).toContain('Reviews completed per week');
 
-    expect(lines.some((line) => line.includes('Review cycles per PR') && line.includes('PR age at request'))).toBe(
+    expect(lines.some((line) => line.includes('Review time vs size') && line.includes('Review cycles per PR'))).toBe(
       true,
     );
 

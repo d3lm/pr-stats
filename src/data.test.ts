@@ -14,10 +14,14 @@ const pr: ReviewPr = {
 /**
  * Builds a PrDetails timeline from request and review timestamps, all
  * attributed to the given user unless a login is passed explicitly,
- * and all approvals unless a state overrides it.
+ * and all approvals unless a state overrides it. The size stays fixed
+ * at 120 added and 30 removed lines, so every reviewed cycle carries
+ * 150 lines.
  */
 function details(requests: string[], reviews: (string | { at: string; login?: string; state?: string })[]): PrDetails {
   return {
+    additions: 120,
+    deletions: 30,
     timelineItems: {
       nodes: requests.map((at) => {
         return { createdAt: at, requestedReviewer: { login: 'me' } };
@@ -41,6 +45,7 @@ test('classifies a single answered request as one reviewed cycle', () => {
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T15:00:00Z'),
       verdict: 'APPROVED',
+      lines: 150,
     },
   ]);
 });
@@ -55,6 +60,7 @@ test('a re-request after a review yields the completed cycle plus a pending one'
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T15:00:00Z'),
       verdict: 'APPROVED',
+      lines: 150,
     },
     { kind: 'pending', pr, requestedAt: new Date('2026-07-02T09:00:00Z') },
   ]);
@@ -70,6 +76,7 @@ test('a nudge before any review stays inside the first cycle', () => {
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-03T15:00:00Z'),
       verdict: 'APPROVED',
+      lines: 150,
     },
   ]);
 });
@@ -91,6 +98,7 @@ test('two answered requests yield two reviewed cycles, each with its own verdict
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T15:00:00Z'),
       verdict: 'CHANGES_REQUESTED',
+      lines: 150,
     },
     {
       kind: 'reviewed',
@@ -98,6 +106,7 @@ test('two answered requests yield two reviewed cycles, each with its own verdict
       requestedAt: new Date('2026-07-02T09:00:00Z'),
       reviewedAt: new Date('2026-07-02T15:00:00Z'),
       verdict: 'APPROVED',
+      lines: 150,
     },
   ]);
 });
@@ -110,6 +119,7 @@ test('a review at the exact request timestamp closes that cycle', () => {
       requestedAt: new Date('2026-07-01T09:00:00Z'),
       reviewedAt: new Date('2026-07-01T09:00:00Z'),
       verdict: 'APPROVED',
+      lines: 150,
     },
   ]);
 });
