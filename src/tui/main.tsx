@@ -2,8 +2,19 @@ import { createCliRenderer } from '@opentui/core';
 import { createRoot } from '@opentui/react';
 import { App } from './App';
 import { bootstrap } from './bootstrap';
+import { runJsonStats } from './data/export';
 
-const { initial, saved, noCache, copyLinks, theme } = bootstrap();
+const { initial, saved, noCache, copyLinks, theme, json } = bootstrap();
+
+/**
+ * The --json flag replaces the TUI with one load that prints the stats
+ * report to stdout, so the screen never flips to the alternate buffer
+ * and the output pipes cleanly. runJsonStats exits the process either
+ * way, so nothing below it runs.
+ */
+if (json) {
+  await runJsonStats(initial, noCache);
+}
 
 /**
  * OpenTUI's default exitSignals includes SIGPIPE and registers a process

@@ -2,6 +2,8 @@ import type { KeyEvent } from '@opentui/core';
 import type { Dispatch, SetStateAction } from 'react';
 import { clearCache } from '../cache';
 import { resetSettings, saveCopyLinks, saveNoCache, saveTheme } from '../settings';
+import { exportStatsFile } from './data/export';
+import type { RawData } from './data/load';
 import type { AppViews } from './hooks/useViewModel';
 import type { BrowseAction, BrowseState, QueueTabKey, StatsTabKey } from './state/browse';
 import { FIELDS, writeSavedOptions, type OptionsState } from './state/options';
@@ -25,6 +27,13 @@ export interface KeymapContext {
   themeState: ThemeState;
   options: OptionsState;
   views: AppViews | null;
+
+  /**
+   * Holds the loaded data, or null before the first load finishes. The
+   * JSON export in the settings dialog reads it, so the export matches
+   * what the tabs currently show.
+   */
+  raw: RawData | null;
 
   dispatchUi: Dispatch<UiAction>;
   dispatchBrowse: Dispatch<BrowseAction>;
@@ -215,6 +224,30 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
             });
           } else {
             context.dispatchUi({ type: 'cacheActionReported', action: 'resetConfirm' });
+          }
+
+          break;
+        }
+        case 'exportJson': {
+          if (key.name !== 'return') {
+            break;
+          }
+
+          /**
+           * The export writes the stats of the data on screen, so it
+           * needs a finished load. An unwritable target directory is the
+           * one expected failure, which the message slot reports.
+           */
+          if (context.raw === null) {
+            context.dispatchUi({ type: 'cacheActionReported', action: 'exportNoData' });
+            break;
+          }
+
+          try {
+            exportStatsFile(context.raw, context.options);
+            context.dispatchUi({ type: 'cacheActionReported', action: 'exported' });
+          } catch {
+            context.dispatchUi({ type: 'cacheActionReported', action: 'exportFailed' });
           }
 
           break;

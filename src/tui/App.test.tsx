@@ -646,6 +646,19 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await waitForText(setup, 'nothing to reset');
 
+    /**
+     * The export row sits last and shows the file it would write, next
+     * to the same-report hint. The enter press stays untested here
+     * because it would write pr-stats.json into the repo, and the export
+     * itself is covered by the export tests.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'writes the loaded stats to this file');
+
+    expect(setup.captureCharFrame()).toContain('Export stats as JSON');
+    expect(setup.captureCharFrame()).toContain('pr-stats.json');
+
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'esc back');

@@ -32,6 +32,11 @@ export interface BootstrapResult {
    * custom colors.
    */
   theme: ThemeState;
+  /**
+   * Mirrors the --json flag. While it is set, the entry point prints the
+   * stats report to stdout instead of starting the TUI.
+   */
+  json: boolean;
 }
 
 /**
@@ -85,7 +90,14 @@ export function bootstrap(): BootstrapResult {
       }
     }
 
-    return { initial, saved, noCache: values['no-cache'], copyLinks: settings.copyLinks === true, theme };
+    return {
+      initial,
+      saved,
+      noCache: values['no-cache'],
+      copyLinks: settings.copyLinks === true,
+      theme,
+      json: values.json,
+    };
   } catch (error) {
     if (error instanceof CliError) {
       fail(error.message);

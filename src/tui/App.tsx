@@ -250,6 +250,7 @@ export function App({
       themeState,
       options,
       views,
+      raw,
       dispatchUi,
       dispatchBrowse,
       setOptions,

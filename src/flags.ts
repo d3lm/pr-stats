@@ -29,6 +29,7 @@ export interface CliValues {
   'wall-clock': boolean;
   'include-drafts': boolean;
   'no-cache': boolean;
+  json: boolean;
   debug?: string;
   help: boolean;
 }
@@ -119,6 +120,12 @@ const OPTIONS: OptionSpec[] = [
     type: 'boolean',
     default: false,
     help: 'Refetch every PR instead of reading the local disk cache. Closed PRs are normally served from a per-PR cache because their timelines and sizes no longer change. Fresh results still update the cache. The TUI settings dialog can save this behavior for every run, and the flag wins over the saved setting.',
+  },
+  {
+    name: 'json',
+    type: 'boolean',
+    default: false,
+    help: 'Print every stat as JSON to stdout instead of starting the TUI, so the output can be piped into jq or redirected to a file. The report holds the review, size, merge, reviewer, and comment stats with one entry per PR, and every other flag applies to it the same way. Progress renders on stderr, so a piped stdout stays pure JSON.',
   },
   {
     name: 'debug',

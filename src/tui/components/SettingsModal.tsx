@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { cacheDir } from '../../cache';
 import { settingsFile } from '../../settings';
+import { exportFile } from '../data/export';
 import { CACHE_MESSAGES, SETTINGS, type CacheAction, type SettingSpec } from '../state/settings';
 import { theme, type ThemeName } from '../theme';
 import { ModalFrame, ModalRow } from './ModalFrame';
@@ -74,13 +75,14 @@ export function SettingsModal({
 }
 
 /**
- * Renders the value slot of one setting row. The disable-cache,
- * copy-links, and theme rows show a toggle value with arrows on the
- * selected row, like the toggles in the options modal. The edit-colors
- * row previews the current accent family as a swatch strip. The
- * clear-cache and reset-settings rows show the path they delete with the
- * home directory abbreviated, and flip to a confirm prompt after the
- * first enter.
+ * Renders the value slot of one setting row. The disable-cache, copy-links,
+ * and theme rows show a toggle value with arrows on the selected row, like
+ * the toggles in the options modal. The edit-colors row previews the current
+ * accent family as a swatch strip.  The clear-cache and reset-settings rows
+ * show the path they delete with the home directory abbreviated, and flip
+ * to a confirm prompt after the first enter. The export row shows the path
+ * it writes the same way, without a confirm because an export only overwrites
+ * its own file.
  */
 function SettingValue({
   setting,
@@ -124,6 +126,9 @@ function SettingValue({
     case 'resetSettings': {
       return <PathValue path={settingsFile()} confirming={cacheAction === 'resetConfirm'} isSelected={isSelected} />;
     }
+    case 'exportJson': {
+      return <PathValue path={exportFile()} confirming={false} isSelected={isSelected} />;
+    }
     default: {
       return null;
     }
@@ -153,9 +158,9 @@ function ToggleValue({ value, isSelected }: { value: string; isSelected: boolean
 }
 
 /**
- * Value slot of a destructive action row. It shows the path the action
- * deletes with the home directory abbreviated, and flips to a confirm
- * prompt after the first enter.
+ * Value slot of an action row that targets a file. It shows the path with
+ * the home directory abbreviated, and the destructive rows flip it to a
+ * confirm prompt after the first enter.
  */
 function PathValue({ path, confirming, isSelected }: { path: string; confirming: boolean; isSelected: boolean }) {
   if (confirming) {

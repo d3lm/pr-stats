@@ -53,6 +53,12 @@ export const SETTINGS: SettingSpec[] = [
     label: 'Reset settings',
     hint: 'deletes the settings file with the saved cache setting and theme, so future runs start from the defaults',
   },
+  {
+    key: 'exportJson',
+    section: 'Export',
+    label: 'Export stats as JSON',
+    hint: 'writes the loaded stats to this file, the same report the --json flag prints · overwrites a previous export',
+  },
 ];
 
 /**
@@ -88,10 +94,21 @@ export const THEME_COLORS: ThemeColorSpec[] = [
  * enter on clear cache landed and the next one clears, with cleared and
  * disabled reporting how the clear went. Saved and notSaved report
  * whether a toggled setting reached settings.json. The reset states
- * mirror the clear-cache flow for the reset-settings action.
+ * mirror the clear-cache flow for the reset-settings action, and the
+ * export states report how the JSON export went.
  */
 export type CacheAction =
-  'confirm' | 'cleared' | 'disabled' | 'saved' | 'notSaved' | 'resetConfirm' | 'resetDone' | 'resetDisabled';
+  | 'confirm'
+  | 'cleared'
+  | 'disabled'
+  | 'saved'
+  | 'notSaved'
+  | 'resetConfirm'
+  | 'resetDone'
+  | 'resetDisabled'
+  | 'exported'
+  | 'exportFailed'
+  | 'exportNoData';
 
 /**
  * Bottom-line message for each action state, shown in place of the
@@ -107,4 +124,7 @@ export const CACHE_MESSAGES: Record<CacheAction, { text: string; warn?: boolean 
   resetConfirm: { text: 'press enter again to delete settings.json · esc cancels', warn: true },
   resetDone: { text: 'settings.json deleted · future runs start from the defaults' },
   resetDisabled: { text: 'the cache is disabled for this session · nothing to reset' },
+  exported: { text: 'stats exported · the same report prints to stdout with the --json flag' },
+  exportFailed: { text: 'the export failed · the file could not be written', warn: true },
+  exportNoData: { text: 'no loaded stats to export yet · export again once the load finishes', warn: true },
 };

@@ -55,6 +55,18 @@ pr-stats --token your-access-token
 
 Run `pr-stats --help` for the full list of options.
 
+## JSON export
+
+The `--json` flag prints every stat as JSON to stdout instead of starting the TUI, so the output pipes into jq or lands in a file through a redirect. Every other flag applies to the report the same way it seeds the TUI, and load progress renders on stderr, so a piped stdout stays pure JSON.
+
+```bash
+pr-stats --json | jq '.review.reviewTimeHours'
+```
+
+The report carries the same data the tabs derive. The `review` object holds the counts, the review-time summary, the verdicts, the per-repo medians, the optional target gauge, and one entry per completed, pending, and reviewing cycle. The `authored` object holds the outcome counts, the size and merge-time summaries, the optional size-target gauge, the reviewer leaderboard with the review coverage, and one entry per authored PR with its size, comment counts, reviewers, and merge or close time. The `comments` object summarizes the comments per PR. Summaries report the count, mean, p50, p90, min, and max, and every duration respects the configured time mode, so a working-hours setup reports counted hours instead of wall-clock hours.
+
+The settings dialog has an export row that writes the same report to `pr-stats.json` in the directory pr-stats was started from, built from the data currently on screen and the live options.
+
 ## Caching
 
 The expensive part of a run is fetching the per-PR review timelines and the size and comment counters, so those get cached on disk per PR. Only closed and merged PRs are cached, because their timelines and sizes no longer change. The searches and every open PR are fetched fresh on each run, which keeps the results correct while skipping most of the API calls after the first run.
