@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.10](https://github.com/d3lm/pr-stats/releases/tag/v0.2.10) - 2026-08-29
+
+### Features
+
+- feat: add --review-types to configure what counts as a review ([3ea69da](https://github.com/d3lm/pr-stats/commit/3ea69da7169a772f45c6fc1df96e57177d877211))
+
 ## [0.2.9](https://github.com/d3lm/pr-stats/releases/tag/v0.2.9) - 2026-08-29
 
 ### Features
