@@ -1,5 +1,12 @@
 import { useMemo } from 'react';
-import { parseSizeTarget, parseTarget, parseWorkHours, resolveTimezone } from '../../flags';
+import {
+  DEFAULT_TARGET_PERCENTILE,
+  parseSizeTarget,
+  parseTarget,
+  parseTargetPercentile,
+  parseWorkHours,
+  resolveTimezone,
+} from '../../flags';
 import { initBuckets } from '../../report';
 import { configureTimeMode } from '../../time';
 import type { RawData } from '../data/load';
@@ -21,7 +28,14 @@ import {
   buildSizeRepoOptions,
   type RepoOption,
 } from '../views/repos';
-import { buildCommentView, buildMergedView, buildReviewView, buildSizeView, type StatsView } from '../views/stats';
+import {
+  buildCommentView,
+  buildMergedView,
+  buildReviewView,
+  buildSizeView,
+  type ReviewTarget,
+  type StatsView,
+} from '../views/stats';
 
 /**
  * Resolves the scope a tab actually renders. Data that spans at most one
@@ -108,7 +122,20 @@ export function useViewModel(
       return null;
     }
 
-    const targetHours = options.target === '' ? undefined : parseTarget(options.target);
+    const targetLabel = targetLabelOf(options.target);
+
+    const reviewTarget: ReviewTarget | undefined =
+      targetLabel === undefined
+        ? undefined
+        : {
+            hours: parseTarget(options.target),
+            label: targetLabel,
+            percentile:
+              options.targetPercentile === ''
+                ? DEFAULT_TARGET_PERCENTILE
+                : parseTargetPercentile(options.targetPercentile),
+          };
+
     const sizeTarget = options.sizeTarget === '' ? undefined : parseSizeTarget(options.sizeTarget);
 
     const pendingRepos = buildPendingRepoOptions(raw);
@@ -126,7 +153,7 @@ export function useViewModel(
 
     const review =
       reviewScope.view === 'detail'
-        ? buildReviewView(raw, targetHours, targetLabelOf(options.target), reviewScope.repo, width, expanded.review)
+        ? buildReviewView(raw, reviewTarget, reviewScope.repo, width, expanded.review)
         : null;
 
     return {
@@ -155,6 +182,7 @@ export function useViewModel(
     options.tz,
     options.wallClock,
     options.target,
+    options.targetPercentile,
     options.sizeTarget,
     width,
     scopes.pending,

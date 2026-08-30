@@ -19,7 +19,7 @@ import { buildDistribution, COUNT_TICKS, DURATION_TICKS, type Distribution } fro
 import { buildGaugeCard } from './charts/gauge';
 import { buildHeatmapCard } from './charts/heatmap';
 import { buildHistogramCard } from './charts/histogram';
-import { formatDuration, type Card, type Line } from './charts/model';
+import { formatDuration, type Card, type Line, type Span } from './charts/model';
 import { buildScatterCard } from './charts/scatter';
 import { buildSpreadCard } from './charts/spread';
 import { buildTrendCard } from './charts/trend';
@@ -220,22 +220,53 @@ function buildVerdictCard(reviewed: ReviewedEntry[]): Card {
 }
 
 /**
+ * The configured review target the review tab reports against. The hours
+ * and label come from the review target option, and the percentile names
+ * which percentile of the review times the headline checks against the
+ * target.
+ */
+export interface ReviewTarget {
+  hours: number;
+  label: string;
+  percentile: number;
+}
+
+/**
+ * Builds the headline segment that reports how far the target percentile
+ * of the review times sits under or over the configured target. Meeting
+ * the target exactly counts as within it, matching the service-level
+ * gauge.
+ */
+function targetStatus(sorted: number[], target: ReviewTarget): Span {
+  const margin = target.hours - percentile(sorted, target.percentile);
+
+  if (margin < 0) {
+    return { text: `   ${formatDuration(-margin)} over the ${target.label} target`, fg: theme.error };
+  }
+
+  const lead = margin === 0 ? 'at' : `${formatDuration(margin)} under`;
+
+  return { text: `   ${lead} the ${target.label} target`, fg: theme.success };
+}
+
+/**
  * Builds everything the review tab renders. Call this after the time mode
- * is configured, because durations and buckets depend on it. Passing a
- * repo narrows every chart and list to that repo. The width argument sizes
- * the full-width distribution strip to the visible pane, and the expanded
- * flag lifts the row cap of the by-repo comparison.
+ * is configured, because durations and buckets depend on it. The target
+ * drives the miss list, the service-level gauge, and the headline's
+ * target status. Passing a repo narrows every chart and list to that
+ * repo. The width argument sizes the full-width distribution strip to the
+ * visible pane, and the expanded flag lifts the row cap of the by-repo
+ * comparison.
  */
 export function buildReviewView(
   raw: RawData,
-  targetHours: number | undefined,
-  targetLabel: string | undefined,
+  target: ReviewTarget | undefined,
   repo: string | null = null,
   width = 100,
   expanded = false,
 ): StatsView {
   const results = repo === null ? raw.reviewResults : raw.reviewResults.filter((result) => result.pr.repo === repo);
-  const stats = computeReviewStats(results, { targetHours, now: raw.fetchedAt });
+  const stats = computeReviewStats(results, { targetHours: target?.hours, now: raw.fetchedAt });
 
   const strip = [
     countCell(stats.reviewed.length, 'reviewed on request'),
@@ -261,9 +292,9 @@ export function buildReviewView(
 
   const lists: PrList[] = [];
 
-  if (targetHours !== undefined && stats.misses.length > 0) {
+  if (target !== undefined && stats.misses.length > 0) {
     lists.push({
-      title: `Reviews that missed the <= ${targetLabel} target`,
+      title: `Reviews that missed the <= ${target.label} target`,
       rows: toPrRows(stats.misses, stats.misses.map(durationLead)),
     });
   }
@@ -291,11 +322,29 @@ export function buildReviewView(
   const sorted = [...stats.allHours].toSorted((a, b) => a - b);
   const total = raw.reviewResults.filter((result) => result.kind === 'reviewed').length;
 
+  /**
+   * The headline pairs the median with the target percentile, which stays
+   * p90 without a target. With a target set, the percentile the target
+   * checks takes the status color and a segment spells out how far it
+   * sits under or over the target, so the pinned row answers the target
+   * question at a glance.
+   */
+  const secondPercentile = target === undefined || target.percentile === 50 ? 90 : target.percentile;
+
+  const percentileColor = (percent: number): string => {
+    if (target === undefined || percent !== target.percentile) {
+      return theme.accent;
+    }
+
+    return percentile(sorted, target.percentile) <= target.hours ? theme.success : theme.error;
+  };
+
   const headline: Line = [
     { text: 'p50 ', fg: theme.muted },
-    { text: formatDuration(percentile(sorted, 50)), fg: theme.accent },
-    { text: '   p90 ', fg: theme.muted },
-    { text: formatDuration(percentile(sorted, 90)), fg: theme.accent },
+    { text: formatDuration(percentile(sorted, 50)), fg: percentileColor(50) },
+    { text: `   p${secondPercentile} `, fg: theme.muted },
+    { text: formatDuration(percentile(sorted, secondPercentile)), fg: percentileColor(secondPercentile) },
+    ...(target === undefined ? [] : [targetStatus(sorted, target)]),
     { text: `   ${stats.reviewed.length} of ${total} reviews`, fg: theme.muted },
   ];
 
@@ -312,23 +361,24 @@ export function buildReviewView(
   );
 
   /**
-   * The service-level gauge only renders with a configured target.
-   * Pending reviews that have already waited past the target are
-   * guaranteed misses no matter when the review lands, so they join the
-   * denominator.
+   * The service-level gauge only renders with a configured target, and it
+   * leads the card grid because target adherence is the tab's headline
+   * question once a target is set. Pending reviews that have already
+   * waited past the target are guaranteed misses no matter when the
+   * review lands, so they join the denominator.
    */
   let serviceCard: Card | null = null;
 
-  if (targetHours !== undefined && targetLabel !== undefined) {
-    const inside = stats.allHours.filter((value) => value <= targetHours).length;
-    const overdue = stats.pending.filter((entry) => entry.hours > targetHours).length;
+  if (target !== undefined) {
+    const inside = stats.allHours.filter((value) => value <= target.hours).length;
+    const overdue = stats.pending.filter((entry) => entry.hours > target.hours).length;
 
     serviceCard = buildGaugeCard({
       title: 'Service level',
-      subtitle: `reviewed within ${targetLabel}`,
+      subtitle: `reviewed within ${target.label}`,
       rows: [
-        { label: `inside ${targetLabel}`, count: inside, color: theme.accent },
-        { label: `over ${targetLabel}`, count: stats.allHours.length - inside, color: theme.chartDim },
+        { label: `inside ${target.label}`, count: inside, color: theme.accent },
+        { label: `over ${target.label}`, count: stats.allHours.length - inside, color: theme.chartDim },
         ...(overdue > 0 ? [{ label: 'awaiting and already over', count: overdue, color: theme.warn }] : []),
       ],
     });
@@ -362,6 +412,7 @@ export function buildReviewView(
       : null;
 
   const cards = [
+    ...(serviceCard === null ? [] : [serviceCard]),
     buildHistogramCard({
       title: 'Time to review',
       subtitle: 'elapsed time, request → review',
@@ -414,7 +465,6 @@ export function buildReviewView(
     buildVerdictCard(stats.reviewed),
     ...(pendingCard === null ? [] : [pendingCard]),
     buildOffHoursCard('reviews submitted, local time', reviewDates),
-    ...(serviceCard === null ? [] : [serviceCard]),
     ...(byRepoCard === null ? [] : [byRepoCard]),
   ];
 

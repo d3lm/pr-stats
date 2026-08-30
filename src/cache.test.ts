@@ -80,6 +80,7 @@ const SAVED_OPTIONS: OptionsState = {
   repos: 'acme/api, acme/web',
   user: 'someone',
   target: '1d',
+  targetPercentile: 'p95',
   sizeTarget: '400l',
   workHours: '9-17',
   tz: 'Europe/Berlin',
@@ -105,6 +106,7 @@ test('saved options round-trip and lose to explicit flags', () => {
   expect(values.repo).toEqual(['acme/api', 'acme/web']);
   expect(values.user).toBe('someone');
   expect(values.target).toBe('1d');
+  expect(values['target-percentile']).toBe('p95');
   expect(values['size-target']).toBe('400l');
   expect(values['work-hours']).toBe('9-17');
   expect(values.tz).toBe('Europe/Berlin');
@@ -113,7 +115,16 @@ test('saved options round-trip and lose to explicit flags', () => {
 });
 
 test('empty saved fields stay unset when merged into the CLI values', () => {
-  writeSavedOptions({ ...SAVED_OPTIONS, repos: '', user: '', target: '', sizeTarget: '', tz: '', reviewTypes: '' });
+  writeSavedOptions({
+    ...SAVED_OPTIONS,
+    repos: '',
+    user: '',
+    target: '',
+    targetPercentile: '',
+    sizeTarget: '',
+    tz: '',
+    reviewTypes: '',
+  });
 
   const { values, explicit } = parseCliArgs([]);
 
@@ -122,20 +133,22 @@ test('empty saved fields stay unset when merged into the CLI values', () => {
   expect(values.repo).toEqual([]);
   expect(values.user).toBeUndefined();
   expect(values.target).toBeUndefined();
+  expect(values['target-percentile']).toBeUndefined();
   expect(values['size-target']).toBeUndefined();
   expect(values.tz).toBeUndefined();
   expect(values['review-types']).toBeUndefined();
   expect(values['work-hours']).toBe('9-17');
 });
 
-test('a save written before the review-types field loads with the empty default', () => {
+test('a save written before newer fields existed loads with their empty defaults', () => {
   const legacy = { ...SAVED_OPTIONS } as Partial<OptionsState>;
 
   delete legacy.reviewTypes;
+  delete legacy.targetPercentile;
 
   writeSavedOptions(legacy as OptionsState);
 
-  expect(readSavedOptions()).toEqual({ ...SAVED_OPTIONS, reviewTypes: '' });
+  expect(readSavedOptions()).toEqual({ ...SAVED_OPTIONS, reviewTypes: '', targetPercentile: '' });
 });
 
 test('discards a saved options file that fails the shape or value checks', () => {

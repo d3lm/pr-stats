@@ -23,6 +23,7 @@ export interface CliValues {
   user?: string;
   token?: string;
   target?: string;
+  'target-percentile'?: string;
   'size-target'?: string;
   tz?: string;
   'work-hours': string;
@@ -83,6 +84,12 @@ const OPTIONS: OptionSpec[] = [
     type: 'string',
     placeholder: '<value>',
     help: 'Report how many reviews finished within this time. Accepts hours (`24h` or plain `24`), minutes (`90m`), or days (`2d`). A day means 24 counted hours, or one working day when --work-hours is set. Open PRs that have already waited longer than the target count as misses.',
+  },
+  {
+    name: 'target-percentile',
+    type: 'string',
+    placeholder: '<p>',
+    help: 'Check the --target against this percentile of your review times. Accepts a whole percentile from 1 to 100, with an optional p prefix (`90` or `p90`). The default is `90`, so the review headline reports whether your p90 review time meets the target.',
   },
   {
     name: 'size-target',
@@ -340,6 +347,27 @@ export function parseTarget(input: string): number {
   }
 
   return amount;
+}
+
+/**
+ * The percentile the review target checks while --target-percentile is
+ * not given.
+ */
+export const DEFAULT_TARGET_PERCENTILE = 90;
+
+/**
+ * Parses a --target-percentile value like "90" or "p99" into the
+ * percentile of the review times the review target checks.
+ */
+export function parseTargetPercentile(input: string): number {
+  const match = /^p?(\d{1,3})$/i.exec(input);
+  const value = match === null ? Number.NaN : Number(match[1]);
+
+  if (!Number.isInteger(value) || value < 1 || value > 100) {
+    throw new CliError(`invalid --target-percentile value "${input}", use a percentile from 1 to 100 like 90 or p90`);
+  }
+
+  return value;
 }
 
 /**

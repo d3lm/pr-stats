@@ -13,6 +13,7 @@ const EMPTY_PLACEHOLDERS: Partial<Record<keyof OptionsState, string>> = {
   repos: '(all accessible)',
   user: '(authenticated user)',
   target: '(none)',
+  targetPercentile: '(p90)',
   sizeTarget: '(none)',
   tz: '(system)',
   reviewTypes: '(every type)',

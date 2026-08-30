@@ -13,6 +13,7 @@ const options: OptionsState = {
   repos: '',
   user: '',
   target: '2h',
+  targetPercentile: '',
   sizeTarget: '100l',
   workHours: '0-24',
   tz: 'UTC',

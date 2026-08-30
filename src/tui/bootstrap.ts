@@ -75,6 +75,7 @@ export function bootstrap(): BootstrapResult {
       repos: values.repo.join(','),
       user: values.user ?? '',
       target: values.target ?? '',
+      targetPercentile: values['target-percentile'] ?? '',
       sizeTarget: values['size-target'] ?? '',
       workHours: values['work-hours'],
       tz: values.tz ?? '',

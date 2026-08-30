@@ -25,6 +25,7 @@ const initial: OptionsState = {
   repos: '',
   user: '',
   target: '1d',
+  targetPercentile: '',
   sizeTarget: '400l,20f',
   workHours: '0-24',
   tz: 'Europe/Berlin',
@@ -214,27 +215,36 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     /**
      * The pinned strip above the charts summarizes how the PRs classified,
-     * and the scope row carries the headline percentiles.
+     * and the scope row carries the headline percentiles. The canned p90
+     * of 24 hours lands exactly on the one-day target, so the headline
+     * reports the target as met.
      */
     expect(reviewFrame).toContain('3 reviewed on request');
     expect(reviewFrame).toContain('2 awaiting you');
     expect(reviewFrame).toContain('1 closed unreviewed');
     expect(reviewFrame).toContain('2 reviewed unasked (excluded)');
     expect(reviewFrame).toContain('p50 6h');
+    expect(reviewFrame).toContain('p90 24h');
+    expect(reviewFrame).toContain('at the 1d target');
     expect(reviewFrame).toContain('3 of 3 reviews');
 
     /**
      * The scroll area opens with the full-width distribution strip, and
-     * the chart cards follow. The pending queue lives on its own tab, so
-     * the review tab never repeats it as a list. The terminal is too
+     * the service-level gauge leads the chart cards because a target is
+     * configured. The pending review on acme/web has waited past the
+     * one-day target, so the gauge counts it as a guaranteed miss next
+     * to the completed reviews. The pending queue lives on its own tab,
+     * so the review tab never repeats it as a list. The terminal is too
      * narrow for two chart columns here, so the cards stack and the
      * histogram marks the bucket that holds the median.
      */
     expect(reviewFrame).toContain('Review time distribution');
     expect(reviewFrame).toContain('mean 10.1h');
     expect(reviewFrame).not.toContain('Awaiting your review (n=');
+    expect(reviewFrame).toContain('Service level');
+    expect(reviewFrame).toContain('inside 1d');
+    expect(reviewFrame).toContain('awaiting and already over');
     expect(reviewFrame).toContain('← p50 6h');
-    expect(reviewFrame).toContain('When you review');
 
     /**
      * The remaining charts sit below the fold, so scroll the review pane
@@ -245,6 +255,7 @@ test('loads canned data and renders both tabs, the options modal, and the settin
      * one change request.
      */
     await scrollToText(setup, 'Review time trend');
+    await scrollToText(setup, 'When you review');
     await scrollToText(setup, 'reviews in that hour');
     await scrollToText(setup, '3 weeks · 3 total');
 
@@ -260,15 +271,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(setup.captureCharFrame()).toContain('approved');
 
     await scrollToText(setup, 'Pending request age');
-
-    /**
-     * The pending review on acme/web has waited past the one-day target,
-     * so the service-level gauge counts it as a guaranteed miss next to
-     * the completed reviews.
-     */
-    await scrollToText(setup, 'awaiting and already over');
-
-    expect(setup.captureCharFrame()).toContain('inside 1d');
 
     /**
      * The end of the pane holds the by-repo comparison, which the
@@ -1539,21 +1541,22 @@ test('lays the review charts out in two columns on wide terminals', async () => 
     await waitForText(setup, 'Time to review');
 
     /**
-     * The two card columns fit side by side at this width, so the first
-     * card titles of both columns share a frame line, and the following
-     * rows pair the heatmap with the volume chart and the review-time
-     * scatter with the cycles histogram.
+     * The two card columns fit side by side at this width, so the card
+     * titles of a row share a frame line. The service-level gauge leads
+     * the grid because the canned options set a review target, so the
+     * first row pairs it with the time-to-review histogram, and the
+     * following rows pair the trend with the heatmap and the volume
+     * chart with the review-time scatter.
      */
     const frame = setup.captureCharFrame();
     const lines = frame.split('\n');
 
-    expect(lines.some((line) => line.includes('Time to review') && line.includes('Review time trend'))).toBe(true);
-    expect(frame).toContain('When you review');
-    expect(frame).toContain('Reviews completed per week');
+    expect(lines.some((line) => line.includes('Service level') && line.includes('Time to review'))).toBe(true);
+    expect(lines.some((line) => line.includes('Review time trend') && line.includes('When you review'))).toBe(true);
 
-    expect(lines.some((line) => line.includes('Review time vs size') && line.includes('Review cycles per PR'))).toBe(
-      true,
-    );
+    expect(
+      lines.some((line) => line.includes('Reviews completed per week') && line.includes('Review time vs size')),
+    ).toBe(true);
 
     /**
      * The size tab gets the same two-column treatment. The left column's

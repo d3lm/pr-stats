@@ -4,6 +4,7 @@ import {
   parseSince,
   parseSizeTarget,
   parseTarget,
+  parseTargetPercentile,
   parseWorkHours,
   resolveTimezone,
   type CliValues,
@@ -19,6 +20,7 @@ export interface OptionsState {
   repos: string;
   user: string;
   target: string;
+  targetPercentile: string;
   sizeTarget: string;
   workHours: string;
   tz: string;
@@ -85,6 +87,13 @@ export const FIELDS: FieldSpec[] = [
     key: 'target',
     label: 'Review target',
     hint: '24h, 2d, or 90m, empty disables the target gauge',
+    kind: 'text',
+    fetch: false,
+  },
+  {
+    key: 'targetPercentile',
+    label: 'Target percentile',
+    hint: 'the percentile the review target checks, like 90 or p99, empty means p90',
     kind: 'text',
     fetch: false,
   },
@@ -183,6 +192,11 @@ export function validateField(key: keyof OptionsState, value: string): void {
 
       break;
     }
+    case 'targetPercentile': {
+      parseTargetPercentile(value);
+
+      break;
+    }
     case 'sizeTarget': {
       parseSizeTarget(value);
 
@@ -231,10 +245,12 @@ export function readSavedOptions(): OptionsState | null {
   const record = value as Record<string, unknown>;
 
   /**
-   * Saves written before the review-types field existed lack the key, so
-   * it defaults to the empty string instead of discarding the whole save.
+   * Saves written before the review-types and target-percentile fields
+   * existed lack those keys, so they default to the empty string instead
+   * of discarding the whole save.
    */
   record.reviewTypes ??= '';
+  record.targetPercentile ??= '';
 
   const options = {} as OptionsState;
 
@@ -307,6 +323,10 @@ export function applySavedOptions(values: CliValues, explicit: Set<string>): Opt
 
   if (!explicit.has('target') && saved.target !== '') {
     values.target = saved.target;
+  }
+
+  if (!explicit.has('target-percentile') && saved.targetPercentile !== '') {
+    values['target-percentile'] = saved.targetPercentile;
   }
 
   if (!explicit.has('size-target') && saved.sizeTarget !== '') {
