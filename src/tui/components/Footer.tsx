@@ -16,7 +16,7 @@ export function Footer({
   views,
   copyLinks,
   openError,
-  copyNotice,
+  successNotice,
   stale,
 }: {
   width: number;
@@ -27,17 +27,17 @@ export function Footer({
   views: AppViews | null;
   copyLinks: boolean;
   openError: string | null;
-  copyNotice: string | null;
+  successNotice: string | null;
   stale: boolean;
 }) {
   /**
-   * A failure or a copied-link notice takes the right slot over the
-   * stale notice, because it answers the action the user just made, and
-   * the next keypress brings the stale notice back. The copied-link
-   * notice carries a success checkmark in front of it.
+   * A failure or a success notice takes the right slot over the stale
+   * notice, because it answers the action the user just made, and the
+   * next keypress brings the stale notice back. The success notice
+   * carries a checkmark in front of it.
    */
-  const notice = openError ?? copyNotice ?? (stale ? 'options changed · press r to reload' : '');
-  const check = openError === null && copyNotice !== null;
+  const notice = openError ?? successNotice ?? (stale ? 'options changed · press r to reload' : '');
+  const check = openError === null && successNotice !== null;
 
   /**
    * The notice keeps its full width and the hints truncate to the
@@ -69,7 +69,9 @@ export function Footer({
         </text>
         <text wrapMode="none">
           {check && <span fg={theme.success}>✔ </span>}
-          <span fg={openError !== null ? theme.error : copyNotice !== null ? theme.muted : theme.warn}>{notice}</span>
+          <span fg={openError !== null ? theme.error : successNotice !== null ? theme.muted : theme.warn}>
+            {notice}
+          </span>
         </text>
       </box>
     </>

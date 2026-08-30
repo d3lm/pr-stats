@@ -112,7 +112,8 @@ function handleOptionsModalKey(key: KeyEvent, context: KeymapContext): void {
     case 's': {
       /**
        * Persists the current options, so later runs start from them
-       * where no flag overrides them. Debug runs keep the cache disabled,
+       * where no flag overrides them. A landed save confirms through
+       * the footer's success notice. Debug runs keep the cache disabled,
        * in which case nothing gets stored and the error slot says so.
        */
       const saved = writeSavedOptions(context.options);
@@ -503,10 +504,10 @@ function handleStatsKey(key: KeyEvent, context: KeymapContext): void {
  */
 export function handleAppKey(key: KeyEvent, context: KeymapContext): void {
   /**
-   * Any keypress dismisses a pending browser-open failure and a
-   * copied-link notice. The enter press that opens or copies a PR also
+   * Any keypress dismisses a pending browser-open failure and a success
+   * notice. The keypress that copies a PR or saves the options also
    * lands here, which is fine because a failure reports asynchronously
-   * and a fresh copy notice dispatches after the dismissal.
+   * and a fresh success notice dispatches after the dismissal.
    */
   context.dispatchUi({ type: 'noticesDismissed' });
 

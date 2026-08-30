@@ -731,9 +731,13 @@ test('labels the save state in the options modal and saves with s', async () => 
 
     await waitForText(setup, 'differs from saved options · press s to update');
 
-    // saving writes the live options to disk and the label flips back
+    /**
+     * Saving writes the live options to disk, the label flips back,
+     * and the footer confirms the save with the checkmark notice.
+     */
     setup.mockInput.pressKey('s');
 
+    await waitForText(setup, '✔ options saved');
     await waitForText(setup, 'using saved options · command-line flags override them');
 
     expect(readSavedOptions()?.wallClock).toBe(true);

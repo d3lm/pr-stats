@@ -128,23 +128,23 @@ export function App({
   };
 
   /**
-   * Expires the copied-link notice after a short dwell, so it clears on
-   * its own without a keypress. Every copy stores a fresh notice object,
-   * which restarts the timer even when the same PR gets copied again.
+   * Expires the success notice after a short dwell, so it clears on its
+   * own without a keypress. Every report stores a fresh notice object,
+   * which restarts the timer even when the same text repeats.
    */
   useEffect(() => {
-    if (ui.copyNotice === null) {
+    if (ui.successNotice === null) {
       return undefined;
     }
 
     const timer = setTimeout(() => {
-      dispatchUi({ type: 'copyNoticeExpired' });
+      dispatchUi({ type: 'successNoticeExpired' });
     }, 2500);
 
     return () => {
       clearTimeout(timer);
     };
-  }, [ui.copyNotice]);
+  }, [ui.successNotice]);
 
   const reviewScrollRef = useRef<ScrollBoxRenderable>(null);
   const sizeScrollRef = useRef<ScrollBoxRenderable>(null);
@@ -318,7 +318,7 @@ export function App({
         views={views}
         copyLinks={copyLinks}
         openError={ui.openError}
-        copyNotice={ui.copyNotice === null ? null : ui.copyNotice.text}
+        successNotice={ui.successNotice === null ? null : ui.successNotice.text}
         stale={stale}
       />
 

@@ -13,10 +13,10 @@ export type Modal = 'options' | 'settings' | 'theme' | null;
 /**
  * Everything that tracks the dialogs and their feedback, the open modal,
  * the edit mode, the selected row of each dialog, the validation errors,
- * the settings-action message, the browser-open failure, and the
- * copied-link notice. One reducer owns it all because these values move
- * together, like a selection move clearing the row's error or an escape
- * closing the dialog and its feedback at once.
+ * the settings-action message, the browser-open failure, and the success
+ * notice. One reducer owns it all because these values move together,
+ * like a selection move clearing the row's error or an escape closing
+ * the dialog and its feedback at once.
  */
 export interface UiState {
   modal: Modal;
@@ -29,11 +29,12 @@ export interface UiState {
   cacheAction: CacheAction | null;
   openError: string | null;
   /**
-   * Holds the copied-link confirmation the footer shows. Every copy
-   * stores a fresh object even when the text repeats, which restarts the
-   * App's expiry timer through the changed identity.
+   * Holds the success confirmation the footer shows with a checkmark,
+   * either a copied link or a saved options report. Every report stores
+   * a fresh object even when the text repeats, which restarts the App's
+   * expiry timer through the changed identity.
    */
-  copyNotice: { text: string } | null;
+  successNotice: { text: string } | null;
 }
 
 export const initialUiState: UiState = {
@@ -46,14 +47,14 @@ export const initialUiState: UiState = {
   themeColorError: null,
   cacheAction: null,
   openError: null,
-  copyNotice: null,
+  successNotice: null,
 };
 
 export type UiAction =
   | { type: 'noticesDismissed' }
   | { type: 'openErrorReported'; message: string }
   | { type: 'copyReported'; message: string }
-  | { type: 'copyNoticeExpired' }
+  | { type: 'successNoticeExpired' }
   | { type: 'modalOpened'; modal: 'options' | 'settings' | 'theme' }
   | { type: 'optionsModalClosed' }
   | { type: 'settingsModalEscaped' }
@@ -81,20 +82,20 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
   switch (action.type) {
     case 'noticesDismissed': {
       // returning the same state skips the re-render, and every keypress dispatches this
-      if (state.openError === null && state.copyNotice === null) {
+      if (state.openError === null && state.successNotice === null) {
         return state;
       }
 
-      return { ...state, openError: null, copyNotice: null };
+      return { ...state, openError: null, successNotice: null };
     }
     case 'openErrorReported': {
       return { ...state, openError: action.message };
     }
     case 'copyReported': {
-      return { ...state, openError: null, copyNotice: { text: action.message } };
+      return { ...state, openError: null, successNotice: { text: action.message } };
     }
-    case 'copyNoticeExpired': {
-      return { ...state, copyNotice: null };
+    case 'successNoticeExpired': {
+      return { ...state, successNotice: null };
     }
     case 'modalOpened': {
       return { ...state, modal: action.modal, fieldError: null, themeColorError: null, cacheAction: null };
@@ -144,10 +145,12 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, fieldError: action.message };
     }
     case 'optionsSaveReported': {
-      return {
-        ...state,
-        fieldError: action.saved ? null : 'the cache is disabled for this session · options not saved',
-      };
+      // a landed save confirms in the footer notice, a failed one in the modal's error slot
+      if (action.saved) {
+        return { ...state, fieldError: null, successNotice: { text: 'options saved' } };
+      }
+
+      return { ...state, fieldError: 'the cache is disabled for this session · options not saved' };
     }
     case 'themeColorCommitted': {
       return { ...state, editing: false, themeColorError: null, cacheAction: action.action };
