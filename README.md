@@ -25,13 +25,11 @@ pr-stats
 
 Without flags, it covers PRs from the last 90 days across all repositories you can access.
 
-| Tab            | Shows                                                                                                                                                                               |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Queue          | Lists the open PRs awaiting your review with their wait time, and below them the open PRs you already reviewed. A fresh review request moves a PR back into the awaiting list.      |
-| Your PRs       | Splits into your open PRs and a merged-and-closed report with merge-time, first-review, backlog, and outcome charts plus a reviewer leaderboard. The `t` key switches the sub-tabs. |
-| Time to review | Charts your review times as a histogram, trend, heatmap, and weekly volume, plus review cycles, verdicts, an off-hours gauge, and the requests still waiting on you.                |
-| PR size        | Carries the same charts for PR sizes and adds a weekly net-lines trend.                                                                                                             |
-| Comments       | Holds a histogram of comments per PR, a scatter against PR size, and the most commented PRs.                                                                                        |
+- **Queue** lists the open PRs awaiting your review with their wait time, and below them the open PRs you already reviewed. A fresh review request moves a PR back into the awaiting list.
+- **Your PRs** splits into your open PRs and a merged-and-closed report with merge-time, first-review, backlog, and outcome charts plus a reviewer leaderboard. The `t` key switches the sub-tabs.
+- **Time to review** charts your review times as a histogram, trend, heatmap, and weekly volume, plus review cycles, verdicts, an off-hours gauge, and the requests still waiting on you.
+- **PR size** carries the same charts for PR sizes and adds a weekly net-lines trend.
+- **Comments** holds a histogram of comments per PR, a scatter against PR size, and the most commented PRs.
 
 When the data spans multiple repos, every tab opens on a repo picker that drills into one repo or the aggregate. On the queue lists, `g` groups the aggregate by repo, and on stats tabs, `x` lifts the row cap on comparison cards.
 
@@ -39,24 +37,24 @@ When the data spans multiple repos, every tab opens on a repo picker that drills
 
 All flags pre-seed the options modal. Run `pr-stats --help` for full details.
 
-| Flag                      | Default   | Description                                                                                                      |
-| ------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
-| `-s, --since <value>`     | `90d`     | Only include PRs created after this point. Accepts an ISO date or a relative value like `30d`, `8w`, `6m`, `1y`. |
-| `-r, --repo <name>`       | all repos | Restrict the search to a repository, repeatable. Accepts `owner/name` or a bare name.                            |
-| `-u, --user <login>`      | you       | Compute stats for this user instead of the authenticated one.                                                    |
-| `--token <token>`         |           | Authenticate with a GitHub access token instead of the gh CLI.                                                   |
-| `-t, --target <value>`    |           | Report how many reviews finished within this time, like `24h`, `2d`, or `90m`.                                   |
-| `--target-percentile <p>` | `90`      | Check the target against this percentile of your review times, like `90` or `p90`.                               |
-| `--size-target <v>`       |           | Report how many authored PRs fit within this size, like `400`, `400l`, `20f`, or `400l,20f`.                     |
-| `--tz <zone>`             | system    | Set the IANA timezone for the weekend and working-hours math.                                                    |
-| `-w, --work-hours <v>`    | `0-24`    | Count only these working hours, like `9-17`, `8:30-16:30`, or `9am-6pm`.                                         |
-| `--wall-clock`            | off       | Measure raw elapsed time, including weekends.                                                                    |
-| `--include-drafts`        | off       | Include PRs that are currently drafts.                                                                           |
-| `--review-types <list>`   | all       | Count only these review types. Takes a comma-separated list of `approve`, `comment`, and `request-changes`.      |
-| `--no-cache`              | off       | Refetch every PR instead of reading the disk cache.                                                              |
-| `--json`                  | off       | Print every stat as JSON to stdout instead of starting the TUI.                                                  |
-| `--debug <path>`          |           | Serve canned data from a fake `gh` binary in a testdata directory.                                               |
-| `-h, --help`              |           | Show the help page.                                                                                              |
+| Flag                          | Default   | Description                                                                                                      |
+| ----------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
+| `-s, --since <value>`         | `90d`     | Only include PRs created after this point. Accepts an ISO date or a relative value like `30d`, `8w`, `6m`, `1y`. |
+| `-r, --repo <name>`           | all repos | Restrict the search to a repository, repeatable. Accepts `owner/name` or a bare name.                            |
+| `-u, --user <login>`          | you       | Compute stats for this user instead of the authenticated one.                                                    |
+| `--token <token>`             |           | Authenticate with a GitHub access token instead of the gh CLI.                                                   |
+| `-t, --target <value>`        |           | Report how many reviews finished within this time, like `24h`, `2d`, or `90m`.                                   |
+| `--target-percentile <value>` | `90`      | Check the target against this percentile of your review times, like `90` or `p90`.                               |
+| `--size-target <value>`       |           | Report how many authored PRs fit within this size, like `400`, `400l`, `20f`, or `400l,20f`.                     |
+| `--tz <zone>`                 | system    | Set the IANA timezone for the weekend and working-hours math.                                                    |
+| `-w, --work-hours <value>`    | `0-24`    | Count only these working hours, like `9-17`, `8:30-16:30`, or `9am-6pm`.                                         |
+| `--wall-clock`                | off       | Measure raw elapsed time, including weekends.                                                                    |
+| `--include-drafts`            | off       | Include PRs that are currently drafts.                                                                           |
+| `--review-types <list>`       | all       | Count only these review types. Takes a comma-separated list of `approve`, `comment`, and `request-changes`.      |
+| `--no-cache`                  | off       | Refetch every PR instead of reading the disk cache.                                                              |
+| `--json`                      | off       | Print every stat as JSON to stdout instead of starting the TUI.                                                  |
+| `--debug <path>`              |           | Serve canned data from a fake `gh` binary in a testdata directory.                                               |
+| `-h, --help`                  |           | Show the help page.                                                                                              |
 
 A few examples:
 
