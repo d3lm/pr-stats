@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.12](https://github.com/d3lm/pr-stats/releases/tag/v0.2.12) - 2026-08-30
+
+### Features
+
+- feat: show a footer checkmark notice when options are saved ([323c138](https://github.com/d3lm/pr-stats/commit/323c13863842860392195ced04c823d908d55dd3))
+
 ## [0.2.11](https://github.com/d3lm/pr-stats/releases/tag/v0.2.11) - 2026-08-30
 
 ### Features
