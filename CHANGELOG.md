@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.11](https://github.com/d3lm/pr-stats/releases/tag/v0.2.11) - 2026-08-30
+
+### Features
+
+- feat: report review target status at a configurable percentile ([a2ffa33](https://github.com/d3lm/pr-stats/commit/a2ffa33c1404d226ec1b2977ba2919c660e02586))
+
 ## [0.2.10](https://github.com/d3lm/pr-stats/releases/tag/v0.2.10) - 2026-08-29
 
 ### Features
