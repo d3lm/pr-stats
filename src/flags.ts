@@ -26,6 +26,7 @@ export interface CliValues {
   'target-percentile'?: string;
   'size-target'?: string;
   tz?: string;
+  'work-days': string;
   'work-hours': string;
   'wall-clock': boolean;
   'include-drafts': boolean;
@@ -104,12 +105,19 @@ const OPTIONS: OptionSpec[] = [
     help: 'IANA timezone for the weekend and working-hours math, for example `Europe/Berlin`. Defaults to your system timezone.',
   },
   {
+    name: 'work-days',
+    type: 'string',
+    default: 'mon-fri',
+    placeholder: '<days>',
+    help: 'Count only these days as working days. Accepts comma-separated weekday names and ranges like `mon-fri`, `sun-thu`, or `mon,wed,fri`. A range may wrap around the end of the week, so `sat-wed` works too. Days outside the set count as weekend.',
+  },
+  {
     name: 'work-hours',
     short: 'w',
     type: 'string',
     default: '0-24',
     placeholder: '<v>',
-    help: 'Count only these working hours instead of full weekdays. Accepts 24-hour ranges like `9-17` or `8:30-16:30`, 12-hour ranges like `9am-6pm` or `8:30am-4:30pm`, or several comma-separated ranges like `9-18,19:30-20:30`. Without this flag, every hour Mon-Fri counts.',
+    help: 'Count only these working hours instead of full working days. Accepts 24-hour ranges like `9-17` or `8:30-16:30`, 12-hour ranges like `9am-6pm` or `8:30am-4:30pm`, or several comma-separated ranges like `9-18,19:30-20:30`. Without this flag, every hour on a working day counts.',
   },
   {
     name: 'wall-clock',
@@ -455,6 +463,105 @@ function toMinutesOfDay(hourText: string, minuteText: string | undefined, meridi
   }
 
   return hour * 60 + minute;
+}
+
+/**
+ * The weekday names a --work-days value uses, indexed by the weekday
+ * numbers Date#getUTCDay returns.
+ */
+const WEEKDAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+/**
+ * The display capitalization of the weekday names, indexed the same way.
+ */
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * Parses a --work-days value like "mon-fri" or "mon,wed,fri" into the set
+ * of weekday numbers that count as working days. Each comma-separated
+ * part is a weekday name or an inclusive range of two, and a range may
+ * wrap around the end of the week, so "sat-wed" covers Saturday through
+ * Wednesday.
+ */
+export function parseWorkDays(input: string): Set<number> {
+  const days = new Set<number>();
+
+  for (const part of input.split(',')) {
+    const match = /^([a-z]{3})(?:-([a-z]{3}))?$/i.exec(part.trim());
+    const endName = match?.[2];
+    const start = match === null ? -1 : WEEKDAY_NAMES.indexOf(match[1].toLowerCase());
+    const end = match === null ? -1 : endName === undefined ? start : WEEKDAY_NAMES.indexOf(endName.toLowerCase());
+
+    if (start === -1 || end === -1) {
+      throw new CliError(
+        `invalid --work-days value "${part.trim()}", use weekday names and ranges like mon-fri, sun-thu, or mon,wed,fri`,
+      );
+    }
+
+    for (let day = start; ; day = (day + 1) % 7) {
+      days.add(day);
+
+      if (day === end) {
+        break;
+      }
+    }
+  }
+
+  return days;
+}
+
+function workDayRunLabel(start: number, end: number): string {
+  return start === end ? WEEKDAY_LABELS[start] : `${WEEKDAY_LABELS[start]}-${WEEKDAY_LABELS[end]}`;
+}
+
+/**
+ * Formats a set of working days into the compact form the header and the
+ * options dialog display. Contiguous days collapse into ranges that may
+ * wrap around the end of the week, single days list out, and the full
+ * week formats as Mon-Sun, so a set like Monday through Wednesday plus
+ * Friday comes out as "Mon-Wed,Fri".
+ */
+export function formatWorkDays(days: Set<number>): string {
+  if (days.size === 7) {
+    return 'Mon-Sun';
+  }
+
+  /**
+   * Scanning Monday first finds a day whose predecessor is off, which
+   * anchors the walk at a run start, so a week that wraps around its
+   * end formats from the natural start, like Sun-Thu. A non-full set
+   * always has such a day, and the walk then ends on the off day right
+   * before the anchor, which closes the last run inside the loop.
+   */
+  const monFirst = [1, 2, 3, 4, 5, 6, 0];
+  const anchor = monFirst.find((day) => days.has(day) && !days.has((day + 6) % 7)) ?? 1;
+
+  const runs: string[] = [];
+
+  let runStart = -1;
+  let runEnd = -1;
+
+  for (let step = 0; step < 7; step++) {
+    const day = (anchor + step) % 7;
+
+    if (days.has(day)) {
+      runStart = runStart === -1 ? day : runStart;
+      runEnd = day;
+    } else if (runStart !== -1) {
+      runs.push(workDayRunLabel(runStart, runEnd));
+      runStart = -1;
+    }
+  }
+
+  return runs.join(',');
+}
+
+/**
+ * Validates a --work-days value and normalizes it into the compact
+ * capitalized form the header and the options dialog display.
+ */
+export function canonicalWorkDays(input: string): string {
+  return formatWorkDays(parseWorkDays(input));
 }
 
 /**

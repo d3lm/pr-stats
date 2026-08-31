@@ -13,7 +13,7 @@ import { useLoader } from './hooks/useLoader';
 import { useViewModel } from './hooks/useViewModel';
 import { handleAppKey } from './keymap';
 import { browseReducer, initialBrowseState } from './state/browse';
-import { FIELDS, toggleReviewType, validateField, type OptionsState } from './state/options';
+import { FIELDS, toggleReviewType, toggleWorkDay, validateField, type OptionsState } from './state/options';
 import { THEME_COLORS } from './state/settings';
 import { initialUiState, uiReducer } from './state/ui';
 import {
@@ -337,6 +337,11 @@ export function App({
         onToggleReviewType={(type) => {
           setOptions((previous) => {
             return { ...previous, reviewTypes: toggleReviewType(previous.reviewTypes, type) };
+          });
+        }}
+        onToggleWorkDay={(day) => {
+          setOptions((previous) => {
+            return { ...previous, workDays: toggleWorkDay(previous.workDays, day) };
           });
         }}
       />

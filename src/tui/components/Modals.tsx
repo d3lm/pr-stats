@@ -22,6 +22,7 @@ export function Modals({
   onSubmitField,
   onSubmitThemeColor,
   onToggleReviewType,
+  onToggleWorkDay,
 }: {
   ui: UiState;
   options: OptionsState;
@@ -33,6 +34,7 @@ export function Modals({
   onSubmitField: () => void;
   onSubmitThemeColor: () => void;
   onToggleReviewType: (type: string) => void;
+  onToggleWorkDay: (day: string) => void;
 }) {
   if (ui.modal === 'options') {
     return (
@@ -45,6 +47,7 @@ export function Modals({
         onDraft={onDraft}
         onSubmit={onSubmitField}
         onToggleReviewType={onToggleReviewType}
+        onToggleWorkDay={onToggleWorkDay}
       />
     );
   }

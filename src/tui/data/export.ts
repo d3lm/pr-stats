@@ -10,7 +10,14 @@ import {
   firstReviewOf,
   type ReviewerRow,
 } from '../../compute';
-import { parseSizeTarget, parseTarget, parseWorkHours, resolveTimezone, type SizeTarget } from '../../flags';
+import {
+  parseSizeTarget,
+  parseTarget,
+  parseWorkDays,
+  parseWorkHours,
+  resolveTimezone,
+  type SizeTarget,
+} from '../../flags';
 import { configureTimeMode, durationHours } from '../../time';
 import { CliError, fail, percentile } from '../../utils';
 import { targetLabelOf, type OptionsState } from '../state/options';
@@ -54,6 +61,7 @@ export interface StatsReport {
   repos: string[];
   searchCapped: boolean;
   options: {
+    workDays: string;
     workHours: string;
     timezone: string;
     wallClock: boolean;
@@ -195,6 +203,7 @@ export function buildStatsReport(raw: RawData, options: OptionsState): StatsRepo
   configureTimeMode({
     business: !options.wallClock,
     workWindows: parseWorkHours(options.workHours),
+    workDays: parseWorkDays(options.workDays),
     tz: timezone,
   });
 
@@ -243,6 +252,7 @@ export function buildStatsReport(raw: RawData, options: OptionsState): StatsRepo
     repos: raw.repos,
     searchCapped: raw.searchCapped,
     options: {
+      workDays: options.workDays,
       workHours: options.workHours,
       timezone,
       wallClock: options.wallClock,

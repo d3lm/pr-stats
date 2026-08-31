@@ -1,3 +1,4 @@
+import { parseWorkHours } from '../../flags';
 import type { RawData } from '../data/load';
 import type { OptionsState } from '../state/options';
 import { theme } from '../theme';
@@ -65,5 +66,20 @@ function timeModeLabel(options: OptionsState): string {
 
   const tz = options.tz === '' ? Intl.DateTimeFormat().resolvedOptions().timeZone : options.tz;
 
-  return options.workHours === '0-24' ? `Mon-Fri all hours ${tz}` : `Mon-Fri ${options.workHours} ${tz}`;
+  if (options.workHours === '0-24') {
+    return `${options.workDays} all hours ${tz}`;
+  }
+
+  return `${options.workDays} ${options.workHours} (${dailyHoursLabel(options.workHours)}) ${tz}`;
+}
+
+/**
+ * Sums an already validated work-hours value into the counted hours per
+ * working day, like "8 hours" or "7.5 hours".
+ */
+function dailyHoursLabel(workHours: string): string {
+  const minutes = parseWorkHours(workHours).reduce((sum, window) => sum + (window.endMin - window.startMin), 0);
+  const hours = Math.round((minutes / 60) * 100) / 100;
+
+  return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
 }

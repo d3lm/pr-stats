@@ -1,8 +1,10 @@
 import {
   checkedReviewTypes,
+  checkedWorkDays,
   FIELDS,
   REVIEW_TYPE_CHOICES,
   sameOptions,
+  WORK_DAY_CHOICES,
   type FieldSpec,
   type OptionsState,
 } from '../state/options';
@@ -46,6 +48,7 @@ export function OptionsModal({
   onDraft,
   onSubmit,
   onToggleReviewType,
+  onToggleWorkDay,
 }: {
   options: OptionsState;
   saved: OptionsState | null;
@@ -55,6 +58,7 @@ export function OptionsModal({
   onDraft: (value: string) => void;
   onSubmit: () => void;
   onToggleReviewType: (type: string) => void;
+  onToggleWorkDay: (day: string) => void;
 }) {
   const savedState = savedLine(options, saved);
 
@@ -78,6 +82,7 @@ export function OptionsModal({
                 onDraft={onDraft}
                 onSubmit={onSubmit}
                 onToggleType={onToggleReviewType}
+                onToggleWorkDay={onToggleWorkDay}
               />
             );
           })}
@@ -143,6 +148,7 @@ function FieldRow({
   onDraft,
   onSubmit,
   onToggleType,
+  onToggleWorkDay,
 }: {
   field: FieldSpec;
   options: OptionsState;
@@ -151,6 +157,7 @@ function FieldRow({
   onDraft: (value: string) => void;
   onSubmit: () => void;
   onToggleType: (type: string) => void;
+  onToggleWorkDay: (day: string) => void;
 }) {
   const value = displayValue(field.key, options[field.key]);
   const valueColor = value.isPlaceholder ? (isSelected ? theme.muted : theme.dim) : theme.muted;
@@ -163,7 +170,19 @@ function FieldRow({
             <b fg={value.isPlaceholder ? theme.muted : theme.text}>{value.text}</b>
           </text>
         </ModalRow>
-        <TypeChecklist value={String(options[field.key])} onToggle={onToggleType} />
+        {field.key === 'reviewTypes' ? (
+          <Checklist
+            choices={REVIEW_TYPE_CHOICES}
+            checked={checkedReviewTypes(options[field.key])}
+            onToggle={onToggleType}
+          />
+        ) : (
+          <Checklist
+            choices={WORK_DAY_CHOICES}
+            checked={checkedWorkDays(String(options[field.key]))}
+            onToggle={onToggleWorkDay}
+          />
+        )}
       </box>
     );
   }
@@ -206,23 +225,29 @@ function FieldRow({
 }
 
 /**
- * The dropdown under the review-types row, a focused checklist built on
- * OpenTUI's select. Enter toggles the highlighted type through the App's
- * toggle handler, which rewrites the option value, and the fresh value
- * renders back into the checkbox glyphs, so the list stays open for more
+ * The dropdown under a multi row, a focused checklist built on OpenTUI's
+ * select. Enter toggles the highlighted choice through the App's toggle
+ * handler, which rewrites the option value, and the fresh value renders
+ * back into the checkbox glyphs, so the list stays open for more
  * toggles. Escape leaves the edit mode through the keymap, like a text
  * input.
  */
-function TypeChecklist({ value, onToggle }: { value: string; onToggle: (type: string) => void }) {
-  const checked = checkedReviewTypes(value);
-
+function Checklist({
+  choices,
+  checked,
+  onToggle,
+}: {
+  choices: readonly string[];
+  checked: Set<string>;
+  onToggle: (value: string) => void;
+}) {
   return (
-    <box alignSelf="flex-end" width={30} height={REVIEW_TYPE_CHOICES.length} marginRight={2}>
+    <box alignSelf="flex-end" width={30} height={choices.length} marginRight={2}>
       <select
         focused
         width="100%"
-        height={REVIEW_TYPE_CHOICES.length}
-        options={REVIEW_TYPE_CHOICES.map((choice) => {
+        height={choices.length}
+        options={choices.map((choice) => {
           return { name: `[${checked.has(choice) ? 'x' : ' '}] ${choice}`, description: '', value: choice };
         })}
         showDescription={false}

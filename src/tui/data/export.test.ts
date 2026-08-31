@@ -15,6 +15,7 @@ const options: OptionsState = {
   target: '2h',
   targetPercentile: '',
   sizeTarget: '100l',
+  workDays: 'Mon-Fri',
   workHours: '0-24',
   tz: 'UTC',
   /**
@@ -105,7 +106,12 @@ const raw: RawData = {
  * these tests configure never leaks into tests that run later.
  */
 function restoreTimeMode(): void {
-  configureTimeMode({ business: true, workWindows: [{ startMin: 0, endMin: 24 * 60 }], tz: 'UTC' });
+  configureTimeMode({
+    business: true,
+    workWindows: [{ startMin: 0, endMin: 24 * 60 }],
+    workDays: new Set([1, 2, 3, 4, 5]),
+    tz: 'UTC',
+  });
 }
 
 test('builds the report with durations, targets, and per-PR entries', () => {

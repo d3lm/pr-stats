@@ -27,6 +27,7 @@ const initial: OptionsState = {
   target: '1d',
   targetPercentile: '',
   sizeTarget: '400l,20f',
+  workDays: 'Mon-Fri',
   workHours: '0-24',
   tz: 'Europe/Berlin',
   wallClock: false,
@@ -1010,6 +1011,95 @@ test('the review types row opens a checklist dropdown that toggles what counts a
     await waitForTextGone(setup, '[x] approve');
 
     expect(setup.captureCharFrame()).toContain('(every type)');
+  } finally {
+    destroyApp(setup);
+  }
+}, 30_000);
+
+test('the work days checklist toggles the working week and the header counts the working hours', async () => {
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 140, height: 44 });
+
+  try {
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    // the default calendar renders without an hours count
+    expect(setup.captureCharFrame()).toContain('Mon-Fri all hours Europe/Berlin');
+
+    setup.mockInput.pressKey('o');
+
+    await waitForText(setup, 'Work days');
+
+    /**
+     * The selection starts on Since, and eight moves land on the work
+     * days row, whose hint names the checklist. The reducer applies each
+     * move in order, so the presses need no waits in between.
+     */
+    for (let press = 0; press < 8; press++) {
+      setup.mockInput.pressArrow('down');
+    }
+
+    await waitForText(setup, 'enter opens the day list');
+
+    setup.mockInput.pressEnter();
+
+    // the compact Mon-Fri value expands into one checkbox per day
+    await waitForText(setup, '[x] Mon');
+
+    const dropdownFrame = setup.captureCharFrame();
+
+    expect(dropdownFrame).toContain('[x] Fri');
+    expect(dropdownFrame).toContain('[ ] Sat');
+    expect(dropdownFrame).toContain('[ ] Sun');
+
+    /**
+     * Four moves down highlight Friday, and enter unchecks it, which
+     * narrows the week to Mon-Thu and keeps the list open.
+     */
+    for (let press = 0; press < 4; press++) {
+      setup.mockInput.pressArrow('down');
+    }
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, '[ ] Fri');
+
+    expect(setup.captureCharFrame()).toContain('Mon-Thu');
+
+    /**
+     * Two more moves highlight Sunday, and checking it wraps the week
+     * around its end, which compacts the value to Sun-Thu.
+     */
+    setup.mockInput.pressArrow('down');
+    setup.mockInput.pressArrow('down');
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, '[x] Sun');
+
+    // escape closes the list, and the header shows the new week
+    setup.mockInput.pressEscape();
+
+    await waitForTextGone(setup, '[x] Mon');
+    await waitForText(setup, 'Sun-Thu all hours Europe/Berlin');
+
+    /**
+     * Setting working hours adds the counted hours per day to the
+     * header, the three morning hours plus the five afternoon hours.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'ranges like 9-17');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'enter apply · esc cancel');
+
+    clearInput(setup.mockInput, '0-24');
+
+    await setup.mockInput.typeText('9-12,13-18');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Sun-Thu 9-12,13-18 (8 hours) Europe/Berlin');
   } finally {
     destroyApp(setup);
   }

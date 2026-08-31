@@ -4,6 +4,7 @@ import {
   parseSizeTarget,
   parseTarget,
   parseTargetPercentile,
+  parseWorkDays,
   parseWorkHours,
   resolveTimezone,
 } from '../../flags';
@@ -113,6 +114,7 @@ export function useViewModel(
     configureTimeMode({
       business: !options.wallClock,
       workWindows: parseWorkHours(options.workHours),
+      workDays: parseWorkDays(options.workDays),
       tz: resolveTimezone(options.tz === '' ? undefined : options.tz),
     });
 
@@ -178,6 +180,7 @@ export function useViewModel(
     };
   }, [
     raw,
+    options.workDays,
     options.workHours,
     options.tz,
     options.wallClock,

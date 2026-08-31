@@ -1,5 +1,5 @@
 import { configureCache } from '../cache';
-import { HELP, parseCliArgs } from '../flags';
+import { canonicalWorkDays, HELP, parseCliArgs } from '../flags';
 import { configureAuth } from '../github';
 import { applySettings } from '../settings';
 import { CliError, fail } from '../utils';
@@ -77,6 +77,7 @@ export function bootstrap(): BootstrapResult {
       target: values.target ?? '',
       targetPercentile: values['target-percentile'] ?? '',
       sizeTarget: values['size-target'] ?? '',
+      workDays: canonicalWorkDays(values['work-days']),
       workHours: values['work-hours'],
       tz: values.tz ?? '',
       wallClock: values['wall-clock'],

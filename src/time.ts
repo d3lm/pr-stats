@@ -6,6 +6,11 @@ export interface WorkWindow {
 export interface TimeMode {
   business: boolean;
   workWindows: WorkWindow[];
+  /**
+   * Holds the weekday numbers that count as working days, matching what
+   * Date#getUTCDay returns. Every other day counts as weekend.
+   */
+  workDays: Set<number>;
   dayHours: number;
   formatter: Intl.DateTimeFormat;
 }
@@ -35,6 +40,7 @@ function wallFormatter(tz: string): Intl.DateTimeFormat {
 export const timeMode: TimeMode = {
   business: true,
   workWindows: [{ startMin: 0, endMin: 24 * 60 }],
+  workDays: new Set([1, 2, 3, 4, 5]),
   dayHours: 24,
   formatter: wallFormatter('UTC'),
 };
@@ -46,24 +52,27 @@ export const timeMode: TimeMode = {
 export function configureTimeMode({
   business,
   workWindows,
+  workDays,
   tz,
 }: {
   business: boolean;
   workWindows: WorkWindow[];
+  workDays: Set<number>;
   tz: string;
 }): void {
   const workMinutesPerDay = workWindows.reduce((sum, window) => sum + (window.endMin - window.startMin), 0);
 
   timeMode.business = business;
   timeMode.workWindows = workWindows;
+  timeMode.workDays = workDays;
   timeMode.dayHours = business ? workMinutesPerDay / 60 : 24;
 
   timeMode.formatter = wallFormatter(tz);
 }
 
 /**
- * Reports whether every hour of a weekday counts, which is the default.
- * When the user sets --work-hours, only the given windows count.
+ * Reports whether every hour of a working day counts, which is the
+ * default. When the user sets --work-hours, only the given windows count.
  */
 export function isFullDayMode(): boolean {
   return timeMode.business && timeMode.dayHours === 24;
@@ -122,14 +131,15 @@ export function hasWorkWindows(): boolean {
 
 /**
  * Classifies an instant by the configured working calendar into the
- * weekend, inside the working windows, or after hours. With full-day
- * windows every weekday instant counts as work time, so after hours can
- * only appear once the user sets --work-hours.
+ * weekend, inside the working windows, or after hours. Days outside the
+ * configured working days count as weekend. With full-day windows every
+ * working-day instant counts as work time, so after hours can only
+ * appear once the user sets --work-hours.
  */
 export function classifyInstant(date: Date): 'work' | 'after' | 'weekend' {
   const { weekday, hour, minute } = zonedStamp(date);
 
-  if (weekday === 0 || weekday === 6) {
+  if (!timeMode.workDays.has(weekday)) {
     return 'weekend';
   }
 
@@ -162,7 +172,7 @@ function utcFromWall(wallTargetMs: number): number {
 
 /**
  * Sums the milliseconds between two instants that fall inside working hours
- * on weekdays in the configured timezone. Walks the interval one local
+ * on working days in the configured timezone. Walks the interval one local
  * calendar day at a time and adds the overlap with each of that day's
  * working windows.
  */
@@ -187,7 +197,7 @@ function businessMsBetween(start: Date, end: Date): number {
      */
     const weekday = new Date(localDay).getUTCDay();
 
-    if (weekday !== 0 && weekday !== 6) {
+    if (timeMode.workDays.has(weekday)) {
       for (const window of timeMode.workWindows) {
         const windowStart = utcFromWall(localDay + window.startMin * 60_000);
         const windowEnd = utcFromWall(localDay + window.endMin * 60_000);

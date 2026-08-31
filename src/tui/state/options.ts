@@ -1,10 +1,12 @@
 import { readCacheFile, writeCacheFile } from '../../cache';
 import {
+  formatWorkDays,
   parseReviewTypes,
   parseSince,
   parseSizeTarget,
   parseTarget,
   parseTargetPercentile,
+  parseWorkDays,
   parseWorkHours,
   resolveTimezone,
   type CliValues,
@@ -22,6 +24,7 @@ export interface OptionsState {
   target: string;
   targetPercentile: string;
   sizeTarget: string;
+  workDays: string;
   workHours: string;
   tz: string;
   wallClock: boolean;
@@ -105,6 +108,13 @@ export const FIELDS: FieldSpec[] = [
     fetch: false,
   },
   {
+    key: 'workDays',
+    label: 'Work days',
+    hint: 'enter opens the day list, checked days count as working days',
+    kind: 'multi',
+    fetch: false,
+  },
+  {
     key: 'workHours',
     label: 'Work hours',
     hint: 'ranges like 9-17 or 8:30-16:30,19-20, 0-24 counts every hour',
@@ -132,6 +142,44 @@ export const FIELDS: FieldSpec[] = [
  * the reviewTypes value serializes in.
  */
 export const REVIEW_TYPE_CHOICES = ['approve', 'comment', 'request-changes'] as const;
+
+/**
+ * The days the work-days checklist lists, in the Monday-first order the
+ * workDays value serializes in.
+ */
+export const WORK_DAY_CHOICES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+
+/**
+ * Expands a workDays value into the set of checked day labels, so the
+ * checklist renders a compact value like "Mon-Fri" as one checkbox per
+ * day.
+ */
+export function checkedWorkDays(value: string): Set<string> {
+  return new Set([...parseWorkDays(value)].map((day) => WORK_DAY_CHOICES[(day + 6) % 7]));
+}
+
+/**
+ * Flips one day in the workDays value and returns the new value in the
+ * compact canonical form, so a toggle reformats the ranges on the fly.
+ * The last checked day never unchecks, because a week without working
+ * days would count no time at all.
+ */
+export function toggleWorkDay(value: string, day: string): string {
+  const days = parseWorkDays(value);
+  const number = (WORK_DAY_CHOICES.indexOf(day as (typeof WORK_DAY_CHOICES)[number]) + 1) % 7;
+
+  if (days.has(number)) {
+    days.delete(number);
+  } else {
+    days.add(number);
+  }
+
+  if (days.size === 0) {
+    return value;
+  }
+
+  return formatWorkDays(days);
+}
 
 /**
  * Expands a reviewTypes value into the set of checked types. The empty
@@ -177,7 +225,7 @@ export function toggleReviewType(value: string, type: string): string {
  * throws a CliError with a readable message on bad input.
  */
 export function validateField(key: keyof OptionsState, value: string): void {
-  if (value === '' && key !== 'workHours' && key !== 'since') {
+  if (value === '' && key !== 'workHours' && key !== 'workDays' && key !== 'since') {
     return;
   }
 
@@ -199,6 +247,11 @@ export function validateField(key: keyof OptionsState, value: string): void {
     }
     case 'sizeTarget': {
       parseSizeTarget(value);
+
+      break;
+    }
+    case 'workDays': {
+      parseWorkDays(value);
 
       break;
     }
@@ -245,12 +298,13 @@ export function readSavedOptions(): OptionsState | null {
   const record = value as Record<string, unknown>;
 
   /**
-   * Saves written before the review-types and target-percentile fields
-   * existed lack those keys, so they default to the empty string instead
-   * of discarding the whole save.
+   * Saves written before the review-types, target-percentile, and
+   * work-days fields existed lack those keys, so they default to their
+   * unset values instead of discarding the whole save.
    */
   record.reviewTypes ??= '';
   record.targetPercentile ??= '';
+  record.workDays ??= 'Mon-Fri';
 
   const options = {} as OptionsState;
 
@@ -331,6 +385,10 @@ export function applySavedOptions(values: CliValues, explicit: Set<string>): Opt
 
   if (!explicit.has('size-target') && saved.sizeTarget !== '') {
     values['size-target'] = saved.sizeTarget;
+  }
+
+  if (!explicit.has('work-days')) {
+    values['work-days'] = saved.workDays;
   }
 
   if (!explicit.has('work-hours')) {

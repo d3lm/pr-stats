@@ -82,6 +82,7 @@ const SAVED_OPTIONS: OptionsState = {
   target: '1d',
   targetPercentile: 'p95',
   sizeTarget: '400l',
+  workDays: 'Sun-Thu',
   workHours: '9-17',
   tz: 'Europe/Berlin',
   wallClock: false,
@@ -108,6 +109,7 @@ test('saved options round-trip and lose to explicit flags', () => {
   expect(values.target).toBe('1d');
   expect(values['target-percentile']).toBe('p95');
   expect(values['size-target']).toBe('400l');
+  expect(values['work-days']).toBe('Sun-Thu');
   expect(values['work-hours']).toBe('9-17');
   expect(values.tz).toBe('Europe/Berlin');
   expect(values['include-drafts']).toBe(true);
@@ -145,10 +147,11 @@ test('a save written before newer fields existed loads with their empty defaults
 
   delete legacy.reviewTypes;
   delete legacy.targetPercentile;
+  delete legacy.workDays;
 
   writeSavedOptions(legacy as OptionsState);
 
-  expect(readSavedOptions()).toEqual({ ...SAVED_OPTIONS, reviewTypes: '', targetPercentile: '' });
+  expect(readSavedOptions()).toEqual({ ...SAVED_OPTIONS, reviewTypes: '', targetPercentile: '', workDays: 'Mon-Fri' });
 });
 
 test('discards a saved options file that fails the shape or value checks', () => {

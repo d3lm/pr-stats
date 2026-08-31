@@ -47,6 +47,7 @@ All flags pre-seed the options modal. Run `pr-stats --help` for full details.
 | `--target-percentile <value>` | `90`      | Check the target against this percentile of your review times, like `90` or `p90`.                               |
 | `--size-target <value>`       |           | Report how many authored PRs fit within this size, like `400`, `400l`, `20f`, or `400l,20f`.                     |
 | `--tz <zone>`                 | system    | Set the IANA timezone for the weekend and working-hours math.                                                    |
+| `--work-days <days>`          | `mon-fri` | Count only these days as working days, like `mon-fri`, `sun-thu`, or `mon,wed,fri`.                              |
 | `-w, --work-hours <value>`    | `0-24`    | Count only these working hours, like `9-17`, `8:30-16:30`, or `9am-6pm`.                                         |
 | `--wall-clock`                | off       | Measure raw elapsed time, including weekends.                                                                    |
 | `--include-drafts`            | off       | Include PRs that are currently drafts.                                                                           |
