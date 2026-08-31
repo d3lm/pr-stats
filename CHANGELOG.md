@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.13](https://github.com/d3lm/pr-stats/releases/tag/v0.2.13) - 2026-08-31
+
+### Features
+
+- feat: add --work-days to configure which days count as working days ([f660697](https://github.com/d3lm/pr-stats/commit/f6606975c2b5d6775f6ed34aee427a2d51a9726a))
+
 ## [0.2.12](https://github.com/d3lm/pr-stats/releases/tag/v0.2.12) - 2026-08-30
 
 ### Features
