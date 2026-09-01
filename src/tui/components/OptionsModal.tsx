@@ -9,7 +9,7 @@ import {
   type OptionsState,
 } from '../state/options';
 import { theme } from '../theme';
-import { ModalFrame, ModalRow } from './ModalFrame';
+import { ModalFrame, ModalInput, ModalRow } from './ModalFrame';
 
 const EMPTY_PLACEHOLDERS: Partial<Record<keyof OptionsState, string>> = {
   repos: '(all accessible)',
@@ -190,21 +190,7 @@ function FieldRow({
   return (
     <ModalRow label={field.label} isSelected={isSelected}>
       {isEditing ? (
-        <input
-          width={32}
-          value={String(options[field.key])}
-          focused
-          onInput={(next: unknown) => {
-            onDraft(String(next));
-          }}
-          onSubmit={() => {
-            onSubmit();
-          }}
-          backgroundColor={theme.inputBg}
-          focusedBackgroundColor={theme.inputFocusedBg}
-          textColor={theme.text}
-          cursorColor={theme.accent}
-        />
+        <ModalInput width={32} value={String(options[field.key])} onDraft={onDraft} onSubmit={onSubmit} />
       ) : isSelected && field.kind === 'toggle' ? (
         <text wrapMode="none">
           <span fg={theme.muted}>‹ </span>

@@ -88,6 +88,17 @@ The cache lives in `~/Library/Caches/pr-stats` on macOS and in `$XDG_CACHE_HOME/
 
 The options modal saves the current options to the cache directory with the `s` key. Later runs start from the saved options wherever no flag was given, and flags always take precedence.
 
+## Auto Reload
+
+The `r` key reloads the data by hand, and `R` refetches everything past the cache. The TUI can also keep itself fresh while it stays open. The Auto reload row in the settings dialog turns background reloads on, and the Reload interval row below it sets how long the TUI waits after one load finishes before the next one starts, as a value in seconds, minutes, or hours like `30s`, `10m`, or `2h`. The header shows the interval next to the refresh time while it is on. Both settings persist in `settings.json` in the cache directory.
+
+```json
+{
+  "autoReload": true,
+  "reloadInterval": "10m"
+}
+```
+
 ## Theming
 
 The TUI ships five built-in themes, the warm amber default plus green, blue, purple, and yellow variants. The Theme row in the settings dialog cycles through them, and the Edit colors row below it edits individual colors, which creates a custom theme that joins the cycle as a sixth entry. Everything persists in a `theme` object in `settings.json` in the cache directory, which you can also edit by hand.

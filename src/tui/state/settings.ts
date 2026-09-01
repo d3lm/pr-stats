@@ -30,6 +30,18 @@ export const SETTINGS: SettingSpec[] = [
     hint: 'deletes the cached PR data at this path, so the next reload refetches everything',
   },
   {
+    key: 'autoReload',
+    section: 'Reload',
+    label: 'Auto reload',
+    hint: 'reloads the data in the background on the interval below, so the charts stay fresh while the TUI keeps running',
+  },
+  {
+    key: 'reloadInterval',
+    section: 'Reload',
+    label: 'Reload interval',
+    hint: 'time between the background reloads while auto reload is on, like 30s, 10m, or 2h · enter edits the value',
+  },
+  {
     key: 'copyLinks',
     section: 'Links',
     label: 'Copy instead of open',

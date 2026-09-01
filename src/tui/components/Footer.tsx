@@ -111,7 +111,7 @@ function hintsFor(
   }
 
   if (modal === 'settings') {
-    return '↑/↓ select · enter apply · ←/→ toggle · esc close · q quit';
+    return editing ? 'enter apply · esc cancel' : '↑/↓ select · enter apply · ←/→ toggle · esc close · q quit';
   }
 
   if (modal === 'theme') {

@@ -1,6 +1,6 @@
 import { CACHE_MESSAGES, THEME_COLORS, type CacheAction, type ThemeColorSpec } from '../state/settings';
 import { theme, themeColorText, type Palette } from '../theme';
-import { ModalFrame, ModalRow } from './ModalFrame';
+import { ModalFrame, ModalInput, ModalRow } from './ModalFrame';
 
 /**
  * Centered modal listing every theme color with a swatch and its current
@@ -81,21 +81,7 @@ function ColorRow({
   return (
     <ModalRow label={color.key} isSelected={isSelected}>
       {isEditing ? (
-        <input
-          width={36}
-          value={value}
-          focused
-          onInput={(next: unknown) => {
-            onDraft(String(next));
-          }}
-          onSubmit={() => {
-            onSubmit();
-          }}
-          backgroundColor={theme.inputBg}
-          focusedBackgroundColor={theme.inputFocusedBg}
-          textColor={theme.text}
-          cursorColor={theme.accent}
-        />
+        <ModalInput width={36} value={value} onDraft={onDraft} onSubmit={onSubmit} />
       ) : (
         <text wrapMode="none">
           {Array.isArray(swatch) ? (

@@ -22,11 +22,66 @@ export interface Settings {
    */
   copyLinks?: boolean;
   /**
+   * Keeps the TUI reloading its data in the background while it runs,
+   * with the reloadInterval setting naming the cadence.
+   */
+  autoReload?: boolean;
+  /**
+   * Names how long the TUI waits after one load finishes before the
+   * next background reload starts, like 30s, 10m, or 2h. The interval
+   * only applies while autoReload is set.
+   */
+  reloadInterval?: string;
+  /**
    * Holds the theme, the active preset (a built-in name or custom) plus
    * the colors that form the custom theme. The theme module validates
    * and applies it.
    */
   theme?: unknown;
+}
+
+/**
+ * Interval the auto-reload setting runs on until the user picks one.
+ */
+export const DEFAULT_RELOAD_INTERVAL = '10m';
+
+/**
+ * Longest interval the auto-reload setting accepts. A timer delay must
+ * fit in a 32-bit signed integer, and a day sits well inside that while
+ * still covering any cadence a TUI left running would want.
+ */
+const MAX_RELOAD_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Converts a reload interval like 30s, 10m, or 2h into milliseconds, or
+ * returns null for anything else, including intervals shorter than a
+ * second or longer than a day.
+ */
+export function reloadIntervalMs(input: string): number | null {
+  const match = /^(\d+)([smh])$/.exec(input);
+
+  if (match === null) {
+    return null;
+  }
+
+  const ms = Number(match[1]) * (match[2] === 'h' ? 3_600_000 : match[2] === 'm' ? 60_000 : 1000);
+
+  return ms >= 1000 && ms <= MAX_RELOAD_INTERVAL_MS ? ms : null;
+}
+
+/**
+ * Parses a reload interval into milliseconds, throwing a CliError that
+ * names the accepted forms for anything reloadIntervalMs refuses. The
+ * settings dialog validates interval edits with it.
+ */
+export function parseReloadInterval(input: string): number {
+  const ms = reloadIntervalMs(input);
+
+  if (ms === null) {
+    throw new CliError(`invalid reload interval "${input}", use a value from 1s to 24h like 30s, 10m, or 2h`);
+  }
+
+  return ms;
 }
 
 /**
@@ -38,10 +93,26 @@ export function settingsFile(): string {
 }
 
 /**
- * Holds the settings the last loadSettings call read, so saveNoCache can
- * rewrite the file without dropping the other keys it holds.
+ * Holds the settings the last loadSettings call read, so the save
+ * functions can rewrite the file without dropping the other keys it
+ * holds.
  */
 let current: Settings = {};
+
+/**
+ * Writes the current settings to settings.json. Returns false without
+ * writing while the cache is disabled, which keeps debug runs from
+ * writing settings.
+ */
+function writeCurrent(): boolean {
+  if (!cacheEnabled()) {
+    return false;
+  }
+
+  writeFileAtomic(settingsFile(), `${JSON.stringify(current, null, 2)}\n`);
+
+  return true;
+}
 
 /**
  * Reads settings.json from the cache directory. Returns empty settings
@@ -87,6 +158,19 @@ export function loadSettings(): Settings {
     throw new CliError(`"copyLinks" in ${settingsFile()} must be true or false`);
   }
 
+  if (settings.autoReload !== undefined && typeof settings.autoReload !== 'boolean') {
+    throw new CliError(`"autoReload" in ${settingsFile()} must be true or false`);
+  }
+
+  if (
+    settings.reloadInterval !== undefined &&
+    (typeof settings.reloadInterval !== 'string' || reloadIntervalMs(settings.reloadInterval) === null)
+  ) {
+    throw new CliError(
+      `"reloadInterval" in ${settingsFile()} must be an interval from 1s to 24h like "30s", "10m", or "2h"`,
+    );
+  }
+
   current = settings;
 
   return current;
@@ -101,13 +185,7 @@ export function loadSettings(): Settings {
 export function saveNoCache(on: boolean): boolean {
   current = { ...current, noCache: on };
 
-  if (!cacheEnabled()) {
-    return false;
-  }
-
-  writeFileAtomic(settingsFile(), `${JSON.stringify(current, null, 2)}\n`);
-
-  return true;
+  return writeCurrent();
 }
 
 /**
@@ -118,13 +196,30 @@ export function saveNoCache(on: boolean): boolean {
 export function saveCopyLinks(on: boolean): boolean {
   current = { ...current, copyLinks: on };
 
-  if (!cacheEnabled()) {
-    return false;
-  }
+  return writeCurrent();
+}
 
-  writeFileAtomic(settingsFile(), `${JSON.stringify(current, null, 2)}\n`);
+/**
+ * Persists the auto-reload toggle to settings.json, keeping every other
+ * key the file holds, the saved interval included, so turning the reload
+ * back on resumes the cadence it had. Returns false without writing while
+ * the cache is disabled, which keeps debug runs from writing settings.
+ */
+export function saveAutoReload(on: boolean): boolean {
+  current = { ...current, autoReload: on };
 
-  return true;
+  return writeCurrent();
+}
+
+/**
+ * Persists an already validated reload interval to settings.json, keeping
+ * every other key the file holds. Returns false without writing while the
+ * cache is disabled, which keeps debug runs from writing settings.
+ */
+export function saveReloadInterval(value: string): boolean {
+  current = { ...current, reloadInterval: value };
+
+  return writeCurrent();
 }
 
 /**
@@ -143,13 +238,7 @@ export function saveTheme(value: unknown): boolean {
     current.theme = value;
   }
 
-  if (!cacheEnabled()) {
-    return false;
-  }
-
-  writeFileAtomic(settingsFile(), `${JSON.stringify(current, null, 2)}\n`);
-
-  return true;
+  return writeCurrent();
 }
 
 /**

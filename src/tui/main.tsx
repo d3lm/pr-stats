@@ -4,7 +4,7 @@ import { App } from './App';
 import { bootstrap } from './bootstrap';
 import { runJsonStats } from './data/export';
 
-const { initial, saved, noCache, copyLinks, theme, json } = bootstrap();
+const { initial, saved, noCache, autoReload, reloadInterval, copyLinks, theme, json } = bootstrap();
 
 /**
  * The --json flag replaces the TUI with one load that prints the stats
@@ -44,6 +44,8 @@ createRoot(renderer).render(
     initial={initial}
     initialSaved={saved}
     initialNoCache={noCache}
+    initialAutoReload={autoReload}
+    initialReloadInterval={reloadInterval}
     initialCopyLinks={copyLinks}
     initialTheme={theme}
     onQuit={() => {

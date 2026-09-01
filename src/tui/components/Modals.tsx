@@ -16,10 +16,13 @@ export function Modals({
   options,
   saved,
   noCache,
+  autoReload,
+  reloadInterval,
   copyLinks,
   themeState,
   onDraft,
   onSubmitField,
+  onSubmitReloadInterval,
   onSubmitThemeColor,
   onToggleReviewType,
   onToggleWorkDay,
@@ -28,10 +31,13 @@ export function Modals({
   options: OptionsState;
   saved: OptionsState | null;
   noCache: boolean;
+  autoReload: boolean;
+  reloadInterval: string;
   copyLinks: boolean;
   themeState: ThemeState;
   onDraft: (value: string) => void;
   onSubmitField: () => void;
+  onSubmitReloadInterval: () => void;
   onSubmitThemeColor: () => void;
   onToggleReviewType: (type: string) => void;
   onToggleWorkDay: (day: string) => void;
@@ -56,10 +62,16 @@ export function Modals({
     return (
       <SettingsModal
         selected={ui.selectedSetting}
+        editing={ui.editing}
+        error={ui.settingError}
         cacheAction={ui.cacheAction}
         noCache={noCache}
+        autoReload={autoReload}
+        reloadInterval={reloadInterval}
         copyLinks={copyLinks}
         preset={themeState.preset}
+        onDraft={onDraft}
+        onSubmit={onSubmitReloadInterval}
       />
     );
   }

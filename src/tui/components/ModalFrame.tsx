@@ -89,3 +89,39 @@ export function ModalRow({ label, isSelected, children }: { label: string; isSel
     </box>
   );
 }
+
+/**
+ * Focused text input that replaces the value slot of a row while it is
+ * being edited. It reports every keystroke through onDraft and the enter
+ * press through onSubmit, with the dialogs' commit handlers reading the
+ * final draft.
+ */
+export function ModalInput({
+  width,
+  value,
+  onDraft,
+  onSubmit,
+}: {
+  width: number;
+  value: string;
+  onDraft: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <input
+      width={width}
+      value={value}
+      focused
+      onInput={(next: unknown) => {
+        onDraft(String(next));
+      }}
+      onSubmit={() => {
+        onSubmit();
+      }}
+      backgroundColor={theme.inputBg}
+      focusedBackgroundColor={theme.inputFocusedBg}
+      textColor={theme.text}
+      cursorColor={theme.accent}
+    />
+  );
+}

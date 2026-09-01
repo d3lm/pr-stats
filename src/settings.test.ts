@@ -4,7 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configureCache } from './cache';
 import { parseCliArgs } from './flags';
-import { applySettings, loadSettings, resetSettings, saveCopyLinks, saveNoCache, saveTheme } from './settings';
+import {
+  applySettings,
+  loadSettings,
+  parseReloadInterval,
+  reloadIntervalMs,
+  resetSettings,
+  saveAutoReload,
+  saveCopyLinks,
+  saveNoCache,
+  saveReloadInterval,
+  saveTheme,
+} from './settings';
 import {
   applyTheme,
   applyThemeState,
@@ -91,6 +102,69 @@ test('saveCopyLinks persists the toggle and keeps hand-written keys', () => {
   expect((JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { copyLinks: boolean }).copyLinks).toBe(true);
 });
 
+test('saveAutoReload and saveReloadInterval persist next to each other and keep hand-written keys', () => {
+  writeSettingsFile({ theme: { accent: '#89b4f0' }, noCache: true });
+  loadSettings();
+
+  expect(saveAutoReload(true)).toBe(true);
+  expect(saveReloadInterval('10m')).toBe(true);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+    theme: { accent: '#89b4f0' },
+    noCache: true,
+    autoReload: true,
+    reloadInterval: '10m',
+  });
+
+  // turning the reload off keeps the interval, so turning it back on resumes the cadence
+  expect(saveAutoReload(false)).toBe(true);
+
+  expect(loadSettings()).toEqual({
+    theme: { accent: '#89b4f0' },
+    noCache: true,
+    autoReload: false,
+    reloadInterval: '10m',
+  });
+
+  // a disabled cache stores nothing, the way debug runs stay isolated
+  configureCache(false);
+
+  expect(saveAutoReload(true)).toBe(false);
+  expect(saveReloadInterval('1h')).toBe(false);
+
+  const stored = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as {
+    autoReload: boolean;
+    reloadInterval: string;
+  };
+
+  expect(stored.autoReload).toBe(false);
+  expect(stored.reloadInterval).toBe('10m');
+});
+
+test('parses reload intervals in seconds, minutes, and hours within a day', () => {
+  expect(reloadIntervalMs('1s')).toBe(1000);
+  expect(reloadIntervalMs('30s')).toBe(30_000);
+  expect(reloadIntervalMs('10m')).toBe(600_000);
+  expect(reloadIntervalMs('2h')).toBe(7_200_000);
+  expect(reloadIntervalMs('24h')).toBe(86_400_000);
+  expect(reloadIntervalMs('1440m')).toBe(86_400_000);
+
+  // anything outside 1s to 24h or not in the amount-unit form is refused
+  for (const input of ['', '0s', '0m', '25h', '1441m', '86401s', '10', 'm', '1d', '1.5h', ' 1s', '1s ', '1S', '-1s']) {
+    expect(reloadIntervalMs(input)).toBeNull();
+  }
+
+  expect(parseReloadInterval('10m')).toBe(600_000);
+
+  expect(() => {
+    parseReloadInterval('1d');
+  }).toThrow(CliError);
+
+  expect(() => {
+    parseReloadInterval('1d');
+  }).toThrow('invalid reload interval "1d"');
+});
+
 test('resetSettings deletes the file only while the cache is enabled', () => {
   writeSettingsFile({ theme: { accent: '#89b4f0' }, noCache: true });
   loadSettings();
@@ -154,6 +228,23 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
   writeSettingsFile({ copyLinks: 'yes' });
 
   expect(() => loadSettings()).toThrow(CliError);
+
+  writeSettingsFile({ autoReload: 'yes' });
+
+  expect(() => loadSettings()).toThrow(CliError);
+
+  writeSettingsFile({ reloadInterval: 600 });
+
+  expect(() => loadSettings()).toThrow('"reloadInterval"');
+
+  // a hand-written interval goes through the same parser as an edit in the dialog
+  writeSettingsFile({ reloadInterval: '1d' });
+
+  expect(() => loadSettings()).toThrow('"reloadInterval"');
+
+  writeSettingsFile({ autoReload: true, reloadInterval: '2h' });
+
+  expect(loadSettings()).toEqual({ autoReload: true, reloadInterval: '2h' });
 });
 
 test('applies hand-written colors as the active custom theme', () => {

@@ -1,7 +1,7 @@
 import { configureCache } from '../cache';
 import { canonicalWorkDays, HELP, parseCliArgs } from '../flags';
 import { configureAuth } from '../github';
-import { applySettings } from '../settings';
+import { applySettings, DEFAULT_RELOAD_INTERVAL } from '../settings';
 import { CliError, fail } from '../utils';
 import { applySavedOptions, FIELDS, validateField, type OptionsState } from './state/options';
 import { applyTheme, type ThemeState } from './theme';
@@ -20,6 +20,16 @@ export interface BootstrapResult {
    * refetches everything and rewrites the cached entries.
    */
   noCache: boolean;
+  /**
+   * Mirrors the auto-reload setting from settings.json. While it is set,
+   * the TUI reloads its data in the background every reload interval.
+   */
+  autoReload: boolean;
+  /**
+   * Holds the reload interval from settings.json, already validated
+   * by loadSettings, or the default while the file names none.
+   */
+  reloadInterval: string;
   /**
    * Mirrors the copy-links setting from settings.json. While it is set,
    * enter and a click on a PR reference copy the PR's link to the
@@ -97,6 +107,8 @@ export function bootstrap(): BootstrapResult {
       initial,
       saved,
       noCache: values['no-cache'],
+      autoReload: settings.autoReload === true,
+      reloadInterval: settings.reloadInterval ?? DEFAULT_RELOAD_INTERVAL,
       copyLinks: settings.copyLinks === true,
       theme,
       json: values.json,

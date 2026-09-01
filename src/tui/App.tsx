@@ -1,13 +1,20 @@
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { saveTheme } from '../settings';
+import {
+  DEFAULT_RELOAD_INTERVAL,
+  parseReloadInterval,
+  reloadIntervalMs,
+  saveReloadInterval,
+  saveTheme,
+} from '../settings';
 import { CliError } from '../utils';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { MainPanel } from './components/MainPanel';
 import { Modals } from './components/Modals';
 import { TabBar } from './components/TabBar';
+import { useAutoReload } from './hooks/useAutoReload';
 import { useDeferredLoading } from './hooks/useDeferredLoading';
 import { useLoader } from './hooks/useLoader';
 import { useViewModel } from './hooks/useViewModel';
@@ -49,6 +56,18 @@ interface AppProps {
    */
   initialNoCache?: boolean;
   /**
+   * Seeds the auto-reload state from the saved setting. While it is on,
+   * the data reloads in the background every reload interval. The
+   * settings dialog toggles it at runtime.
+   */
+  initialAutoReload?: boolean;
+  /**
+   * Seeds the reload interval from the saved setting, a value like 30s,
+   * 10m, or 2h that bootstrap already validated. The settings dialog
+   * edits it at runtime.
+   */
+  initialReloadInterval?: string;
+  /**
    * Seeds the copy-links state from the saved setting. While it is on,
    * enter and a click on a PR reference copy the PR's link to the
    * clipboard instead of opening it. The settings dialog toggles it at
@@ -89,6 +108,8 @@ export function App({
   initial,
   initialSaved = null,
   initialNoCache = false,
+  initialAutoReload = false,
+  initialReloadInterval = DEFAULT_RELOAD_INTERVAL,
   initialCopyLinks = false,
   initialTheme = defaultThemeState(),
   openUrl = openInBrowser,
@@ -111,6 +132,8 @@ export function App({
   const [options, setOptions] = useState(initial);
   const [saved, setSaved] = useState(initialSaved);
   const [noCache, setNoCache] = useState(initialNoCache);
+  const [autoReload, setAutoReload] = useState(initialAutoReload);
+  const [reloadInterval, setReloadInterval] = useState(initialReloadInterval);
   const [copyLinks, setCopyLinks] = useState(initialCopyLinks);
   const [themeState, setThemeState] = useState(initialTheme);
 
@@ -172,6 +195,13 @@ export function App({
     });
   });
 
+  /**
+   * A background reload starts one interval after the last load finished
+   * while the setting is on. The interval state always holds a value the
+   * parser accepted, so the null branch only covers the off state.
+   */
+  useAutoReload(autoReload ? reloadIntervalMs(reloadInterval) : null, loading, reload);
+
   const views = useViewModel(raw, options, width, browse.scopes, browse.grouped, browse.expanded, themeState);
 
   /**
@@ -203,6 +233,31 @@ export function App({
     } catch (error) {
       if (error instanceof CliError) {
         dispatchUi({ type: 'fieldErrorReported', message: error.message });
+        return;
+      }
+
+      throw error;
+    }
+  };
+
+  /**
+   * Commits an edited reload interval from the settings dialog. A valid
+   * value takes effect on the running timer right away and persists to
+   * settings.json, with the message slot reporting whether the save
+   * landed. A bad value keeps the edit open and shows the error instead
+   * of the row hint.
+   */
+  const commitReloadInterval = () => {
+    const value = draftRef.current.trim();
+
+    try {
+      parseReloadInterval(value);
+
+      setReloadInterval(value);
+      dispatchUi({ type: 'settingCommitted', action: saveReloadInterval(value) ? 'saved' : 'notSaved' });
+    } catch (error) {
+      if (error instanceof CliError) {
+        dispatchUi({ type: 'settingErrorReported', message: error.message });
         return;
       }
 
@@ -246,6 +301,8 @@ export function App({
       ui,
       browse,
       noCache,
+      autoReload,
+      reloadInterval,
       copyLinks,
       themeState,
       options,
@@ -256,6 +313,7 @@ export function App({
       setOptions,
       setSaved,
       setNoCache,
+      setAutoReload,
       setCopyLinks,
       setThemeState,
       quit: onQuit,
@@ -288,7 +346,13 @@ export function App({
 
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={theme.bg}>
-      <Header options={options} raw={raw} error={error} spinning={showLoad} />
+      <Header
+        options={options}
+        raw={raw}
+        error={error}
+        spinning={showLoad}
+        reloadEvery={autoReload ? reloadInterval : null}
+      />
 
       <TabBar tab={browse.tab} />
 
@@ -327,12 +391,15 @@ export function App({
         options={options}
         saved={saved}
         noCache={noCache}
+        autoReload={autoReload}
+        reloadInterval={reloadInterval}
         copyLinks={copyLinks}
         themeState={themeState}
         onDraft={(value) => {
           draftRef.current = value;
         }}
         onSubmitField={commitField}
+        onSubmitReloadInterval={commitReloadInterval}
         onSubmitThemeColor={commitThemeColor}
         onToggleReviewType={(type) => {
           setOptions((previous) => {

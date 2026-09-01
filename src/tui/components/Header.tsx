@@ -13,11 +13,18 @@ export function Header({
   raw,
   error,
   spinning,
+  reloadEvery,
 }: {
   options: OptionsState;
   raw: RawData | null;
   error: string | null;
   spinning: boolean;
+  /**
+   * Holds the auto-reload interval while the setting is on, which the
+   * status slot shows next to the refresh time so a running TUI tells
+   * that it keeps refreshing on its own, or null while it is off.
+   */
+  reloadEvery: string | null;
 }) {
   const context = [
     raw ? `@${raw.user}` : options.user !== '' ? `@${options.user}` : '@...',
@@ -39,7 +46,7 @@ export function Header({
   const rightStatus = raw
     ? error !== null
       ? 'reload failed · press r to retry'
-      : `refreshed ${raw.fetchedAt.toLocaleTimeString()}`
+      : `refreshed ${raw.fetchedAt.toLocaleTimeString()}${reloadEvery === null ? '' : ` · every ${reloadEvery}`}`
     : '';
 
   return (

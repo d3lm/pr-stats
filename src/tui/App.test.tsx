@@ -161,6 +161,69 @@ async function scrollToText(setup: AppSetup, text: string, maxPresses = 120): Pr
 }
 
 /**
+ * Returns the frame line that holds the given text, so an assertion can
+ * check a row's value without matching the same text elsewhere on the
+ * screen, like a chart label behind a dialog.
+ */
+function lineWith(frame: string, text: string): string {
+  const line = frame.split('\n').find((candidate) => candidate.includes(text));
+
+  if (line === undefined) {
+    throw new Error(`no line holds ${JSON.stringify(text)}, last frame:\n${frame}`);
+  }
+
+  return line;
+}
+
+/**
+ * Reads the refresh time the header shows, or null while the spinner or
+ * an error covers the status slot. The locale decides between a 12-hour
+ * and a 24-hour clock, so the pattern accepts both.
+ */
+function refreshedAt(frame: string): string | null {
+  return /refreshed (\d{1,2}:\d{2}:\d{2}(?: [AP]M)?)/.exec(frame)?.[1] ?? null;
+}
+
+/**
+ * Waits for the header to show a refresh time and returns it. The
+ * spinner covers the slot while a load runs, so this settles on an idle
+ * header.
+ */
+async function waitForRefresh(setup: Setup): Promise<string> {
+  await waitForText(setup, 'refreshed ');
+
+  const time = refreshedAt(setup.captureCharFrame());
+
+  if (time === null) {
+    throw new Error(`the header shows no refresh time, last frame:\n${setup.captureCharFrame()}`);
+  }
+
+  return time;
+}
+
+/**
+ * Polls the frame until the header shows a refresh time other than the
+ * given one, which proves a load finished in the meantime.
+ */
+async function waitForRefreshAfter(setup: Setup, previous: string, timeoutMs = 15_000): Promise<string> {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    await setup.renderOnce();
+
+    const current = refreshedAt(setup.captureCharFrame());
+
+    if (current !== null && current !== previous) {
+      return current;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(`timed out waiting for a refresh after ${previous}, last frame:\n${setup.captureCharFrame()}`);
+}
+
+/**
  * Presses enter once and returns the URL the injected opener recorded
  * for it, polling render passes until the record lands.
  */
@@ -573,7 +636,25 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await waitForText(setup, 'nothing to clear');
 
-    // the copy-links toggle sits between the cache rows and the theme rows
+    /**
+     * The reload rows sit between the cache rows and the copy-links
+     * toggle. Auto reload starts off, and the interval row below it
+     * shows the default cadence a toggle would start with.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'reloads the data in the background');
+
+    expect(setup.captureCharFrame()).toContain('Auto reload');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'time between the background reloads');
+
+    expect(lineWith(setup.captureCharFrame(), 'Reload interval')).toContain('10m');
+
+    // the copy-links toggle sits between the reload rows and the theme rows
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'clipboard');
@@ -779,6 +860,14 @@ test('labels the save state in the options modal and saves with s', async () => 
 
     setup.mockInput.pressArrow('down');
 
+    await waitForText(setup, 'reloads the data in the background');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'time between the background reloads');
+
+    setup.mockInput.pressArrow('down');
+
     await waitForText(setup, 'clipboard');
 
     setup.mockInput.pressArrow('down');
@@ -936,6 +1025,163 @@ test('labels the save state in the options modal and saves with s', async () => 
   } finally {
     destroyApp(setup);
     applyThemeState(defaultThemeState());
+    configureCache(false);
+    delete process.env.PR_STATS_CACHE_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test('reloads in the background on the configured interval while auto reload is on', async () => {
+  /**
+   * Persisting the reload settings needs an enabled cache, so this test
+   * points the cache at a temp directory like the save-state test above
+   * and loads the empty settings the way bootstrap would. The wider
+   * terminal keeps the header status, which grows by the cadence, clear
+   * of the data context on its left.
+   */
+  const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
+
+  process.env.PR_STATS_CACHE_DIR = dir;
+  configureCache(true);
+  loadSettings();
+
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 140, height: 44 });
+
+  try {
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    /**
+     * Nothing reloads on its own while the setting is off, so the
+     * refresh time of the first load stays put until the toggle flips,
+     * and the header names no cadence.
+     */
+    const firstRefresh = await waitForRefresh(setup);
+
+    expect(setup.captureCharFrame()).not.toContain('· every');
+
+    /**
+     * The auto-reload toggle persists right away, and the interval row
+     * below it keeps showing the default cadence the toggle starts on.
+     */
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'Disable cache');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'deletes the cached PR data');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'reloads the data in the background');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'saved to settings.json');
+
+    expect(setup.captureCharFrame()).toContain('‹ yes ›');
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ autoReload: true });
+
+    /**
+     * Enter edits the interval in place. A value the parser refuses
+     * keeps the edit open and shows the error in the hint slot, and a
+     * valid one applies, persists, and restarts the timer on the new
+     * cadence.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'time between the background reloads');
+
+    expect(lineWith(setup.captureCharFrame(), 'Reload interval')).toContain('10m');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'enter apply · esc cancel');
+
+    clearInput(setup.mockInput, '10m');
+
+    await setup.mockInput.typeText('1d');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'invalid reload interval "1d"');
+
+    expect(setup.captureCharFrame()).toContain('enter apply · esc cancel');
+
+    clearInput(setup.mockInput, '1d');
+
+    await setup.mockInput.typeText('1s');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'saved to settings.json');
+
+    expect(lineWith(setup.captureCharFrame(), 'Reload interval')).toContain('1s');
+    expect(setup.captureCharFrame()).toContain('↑/↓ select · enter apply');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      autoReload: true,
+      reloadInterval: '1s',
+    });
+
+    /**
+     * Back on the queue, the one-second cadence brings fresh refresh
+     * times without any keypress, and the header names the cadence next
+     * to the time.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'r reload');
+
+    const secondRefresh = await waitForRefreshAfter(setup, firstRefresh);
+
+    expect(setup.captureCharFrame()).toContain('· every 1s');
+
+    await waitForRefreshAfter(setup, secondRefresh);
+
+    /**
+     * Turning the reload off stops the timer and keeps the interval in
+     * the file, so turning it back on later resumes the same cadence. A
+     * load that was in flight at the toggle still finishes, so the check
+     * waits that out before it pins the refresh time and confirms that
+     * no later load moves it. The dialog reopens on the interval row it
+     * closed on, so one move up lands on the toggle.
+     */
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'time between the background reloads');
+
+    setup.mockInput.pressArrow('up');
+
+    await waitForText(setup, 'reloads the data in the background');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'saved to settings.json');
+
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      autoReload: false,
+      reloadInterval: '1s',
+    });
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'r reload');
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const settledRefresh = await waitForRefresh(setup);
+
+    expect(setup.captureCharFrame()).not.toContain('· every');
+
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await setup.renderOnce();
+
+    expect(refreshedAt(setup.captureCharFrame())).toBe(settledRefresh);
+  } finally {
+    destroyApp(setup);
     configureCache(false);
     delete process.env.PR_STATS_CACHE_DIR;
     rmSync(dir, { recursive: true, force: true });
@@ -1483,9 +1729,9 @@ test('copies the PR link instead of opening it while the copy-links setting is o
     expect(copied).toEqual([]);
 
     /**
-     * The copy-links toggle sits below the cache rows in the settings
-     * dialog. Toggling it flips the value right away, and the debug run
-     * cannot persist it, which the message slot reports.
+     * The copy-links toggle sits below the cache and reload rows in the
+     * settings dialog. Toggling it flips the value right away, and the
+     * debug run cannot persist it, which the message slot reports.
      */
     setup.mockInput.pressKey('s');
 
@@ -1494,6 +1740,14 @@ test('copies the PR link instead of opening it while the copy-links setting is o
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'deletes the cached PR data');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'reloads the data in the background');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'time between the background reloads');
 
     setup.mockInput.pressArrow('down');
 

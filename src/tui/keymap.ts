@@ -1,7 +1,7 @@
 import type { KeyEvent } from '@opentui/core';
 import type { Dispatch, SetStateAction } from 'react';
 import { clearCache } from '../cache';
-import { resetSettings, saveCopyLinks, saveNoCache, saveTheme } from '../settings';
+import { resetSettings, saveAutoReload, saveCopyLinks, saveNoCache, saveTheme } from '../settings';
 import { exportStatsFile } from './data/export';
 import type { RawData } from './data/load';
 import type { AppViews } from './hooks/useViewModel';
@@ -14,15 +14,22 @@ import { queueRows } from './views/queue';
 
 /**
  * Everything the key handlers read and drive. The committed state comes
- * straight from the App component's hooks, which useKeyboard keeps
- * current through useEffectEvent. The handlers translate keys into
- * dispatched actions on the ui and browse reducers, plus the few setters
- * and side-effect actions that live outside them.
+ * straight from the App component's hooks, which useKeyboard keeps current
+ * through useEffectEvent. The handlers translate keys into dispatched actions
+ * on the ui and browse reducers, plus the few setters and side-effect actions
+ * that live outside them.
  */
 export interface KeymapContext {
   ui: UiState;
   browse: BrowseState;
   noCache: boolean;
+  autoReload: boolean;
+  /**
+   * Holds the reload interval the timer runs on while auto reload is on.
+   * Enter on its row seeds the edit with it, and the App's commit handler
+   * validates and stores the edited value.
+   */
+  reloadInterval: string;
   copyLinks: boolean;
   themeState: ThemeState;
   options: OptionsState;
@@ -40,6 +47,7 @@ export interface KeymapContext {
   setOptions: Dispatch<SetStateAction<OptionsState>>;
   setSaved: Dispatch<SetStateAction<OptionsState | null>>;
   setNoCache: Dispatch<SetStateAction<boolean>>;
+  setAutoReload: Dispatch<SetStateAction<boolean>>;
   setCopyLinks: Dispatch<SetStateAction<boolean>>;
   setThemeState: Dispatch<SetStateAction<ThemeState>>;
   quit: () => void;
@@ -178,6 +186,30 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
           } else {
             context.dispatchUi({ type: 'cacheActionReported', action: 'confirm' });
           }
+
+          break;
+        }
+        case 'autoReload': {
+          /**
+           * The toggle flips the session state and persists it right
+           * away, like the cache toggle above. The reload timer in the
+           * App follows the state, so the first background reload starts
+           * one interval after the toggle.
+           */
+          const next = !context.autoReload;
+
+          context.setAutoReload(next);
+          context.dispatchUi({ type: 'cacheActionReported', action: saveAutoReload(next) ? 'saved' : 'notSaved' });
+
+          break;
+        }
+        case 'reloadInterval': {
+          if (key.name !== 'return') {
+            break;
+          }
+
+          // the interval edits in the shared edit mode, whose commit validates and persists it
+          context.beginEdit(context.reloadInterval);
 
           break;
         }

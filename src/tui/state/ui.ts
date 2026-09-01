@@ -25,6 +25,12 @@ export interface UiState {
   selectedSetting: number;
   selectedThemeColor: number;
   fieldError: string | null;
+  /**
+   * Holds the validation error of the reload interval edit in the
+   * settings dialog, shown in place of the row hint until the next edit,
+   * selection move, or escape.
+   */
+  settingError: string | null;
   themeColorError: string | null;
   cacheAction: CacheAction | null;
   openError: string | null;
@@ -44,6 +50,7 @@ export const initialUiState: UiState = {
   selectedSetting: 0,
   selectedThemeColor: 0,
   fieldError: null,
+  settingError: null,
   themeColorError: null,
   cacheAction: null,
   openError: null,
@@ -67,6 +74,8 @@ export type UiAction =
   | { type: 'fieldCommitted' }
   | { type: 'fieldErrorReported'; message: string }
   | { type: 'optionsSaveReported'; saved: boolean }
+  | { type: 'settingCommitted'; action: CacheAction }
+  | { type: 'settingErrorReported'; message: string }
   | { type: 'themeColorCommitted'; action: CacheAction }
   | { type: 'themeColorErrorReported'; message: string }
   | { type: 'cacheActionReported'; action: CacheAction };
@@ -98,7 +107,14 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, successNotice: null };
     }
     case 'modalOpened': {
-      return { ...state, modal: action.modal, fieldError: null, themeColorError: null, cacheAction: null };
+      return {
+        ...state,
+        modal: action.modal,
+        fieldError: null,
+        settingError: null,
+        themeColorError: null,
+        cacheAction: null,
+      };
     }
     case 'optionsModalClosed': {
       return { ...state, modal: null, fieldError: null };
@@ -109,7 +125,7 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
         return { ...state, cacheAction: null };
       }
 
-      return { ...state, modal: null, cacheAction: null };
+      return { ...state, modal: null, settingError: null, cacheAction: null };
     }
     case 'themeModalClosed': {
       return { ...state, modal: 'settings', themeColorError: null, cacheAction: null };
@@ -121,6 +137,7 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return {
         ...state,
         selectedSetting: cycled(state.selectedSetting, action.delta, SETTINGS.length),
+        settingError: null,
         cacheAction: null,
       };
     }
@@ -133,10 +150,10 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       };
     }
     case 'editStarted': {
-      return { ...state, editing: true, fieldError: null, themeColorError: null };
+      return { ...state, editing: true, fieldError: null, settingError: null, themeColorError: null };
     }
     case 'editCancelled': {
-      return { ...state, editing: false, fieldError: null, themeColorError: null };
+      return { ...state, editing: false, fieldError: null, settingError: null, themeColorError: null };
     }
     case 'fieldCommitted': {
       return { ...state, editing: false, fieldError: null };
@@ -151,6 +168,12 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       }
 
       return { ...state, fieldError: 'the cache is disabled for this session · options not saved' };
+    }
+    case 'settingCommitted': {
+      return { ...state, editing: false, settingError: null, cacheAction: action.action };
+    }
+    case 'settingErrorReported': {
+      return { ...state, settingError: action.message };
     }
     case 'themeColorCommitted': {
       return { ...state, editing: false, themeColorError: null, cacheAction: action.action };
