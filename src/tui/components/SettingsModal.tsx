@@ -5,7 +5,7 @@ import { settingsFile, type NotifyChannel } from '../../settings';
 import { exportFile } from '../data/export';
 import { CACHE_MESSAGES, SETTINGS, type CacheAction, type SettingSpec } from '../state/settings';
 import { theme, type ThemeName } from '../theme';
-import { notificationChannel, notificationTool } from '../utils/notify';
+import { notificationBoundary, notificationCaveat, notificationChannel, notificationTool } from '../utils/notify';
 import { ModalFrame, ModalInput, ModalRow } from './ModalFrame';
 
 /**
@@ -66,11 +66,28 @@ export function SettingsModal({
    * row shows the setting, with the command value named by its platform
    * command, and the test row names the channel a send would take right
    * now. The dialog re-renders on every keypress, so the auto value
-   * catches up once the terminal detection finishes after startup.
+   * catches up once the terminal detection finishes after startup. On a
+   * terminal known to swallow the notification sequence, the test row
+   * trades its hint for the caveat naming what the terminal needs,
+   * because the send itself reports no failure there.
    */
-  const renderer = useRenderer();
+  const renderer = notificationBoundary(useRenderer());
   const channelValue = notifyChannel === 'command' ? (notificationTool() ?? 'unsupported') : notifyChannel;
   const deliveryValue = notificationChannel(renderer, notifyChannel) ?? 'unsupported';
+  const caveat = SETTINGS[selected].key === 'testNotification' ? notificationCaveat(renderer, notifyChannel) : null;
+
+  /**
+   * Picks the bottom line, where an error beats a pending or finished
+   * action, which beats the caveat, which beats the plain hint.
+   */
+  const bottomLine =
+    error !== null
+      ? { text: error, fg: theme.error }
+      : message !== null
+        ? { text: message.text, fg: message.warn ? theme.warn : theme.muted }
+        : caveat !== null
+          ? { text: caveat, fg: theme.warn }
+          : { text: SETTINGS[selected].hint, fg: theme.muted };
 
   return (
     <ModalFrame title="Settings">
@@ -105,14 +122,8 @@ export function SettingsModal({
           })}
         </box>
       ))}
-      <text
-        wrapMode="word"
-        height={2}
-        fg={error !== null ? theme.error : message?.warn ? theme.warn : theme.muted}
-        marginLeft={2}
-        marginRight={2}
-      >
-        {error ?? message?.text ?? SETTINGS[selected].hint}
+      <text wrapMode="word" height={2} fg={bottomLine.fg} marginLeft={2} marginRight={2}>
+        {bottomLine.text}
       </text>
     </ModalFrame>
   );
@@ -124,7 +135,7 @@ export function SettingsModal({
  * on the selected row, like the toggles in the options modal. The
  * reload-interval row shows the interval, dimmed while auto reload is off,
  * and turns into an input while editing. The notification-channel row
- * cycles auto, terminal, and the platform command, and the
+ * cycles auto, terminal, the platform command, and bell, and the
  * test-notification row names the channel the next send takes, or
  * unsupported where none exists. The edit-colors row previews the current accent
  * family as a swatch strip. The clear-cache and reset-settings rows show

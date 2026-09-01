@@ -287,10 +287,14 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
 
   expect(() => loadSettings()).toThrow('"notifications"');
 
-  // only the three known channel names pass, anything else is a typo
+  // only the four known channel names pass, anything else is a typo
   writeSettingsFile({ notifyChannel: 'osascript' });
 
   expect(() => loadSettings()).toThrow('"notifyChannel"');
+
+  writeSettingsFile({ notifyChannel: 'bell' });
+
+  expect(loadSettings().notifyChannel).toBe('bell');
 
   writeSettingsFile({ reloadInterval: 600 });
 

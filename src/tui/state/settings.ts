@@ -51,7 +51,7 @@ export const SETTINGS: SettingSpec[] = [
     key: 'notifyChannel',
     section: 'Notifications',
     label: 'Notification channel',
-    hint: 'auto posts through the terminal and falls back to the platform command · the other values force one channel',
+    hint: 'auto tries the terminal, then the platform command · the others force one path · bell rings the terminal bell',
   },
   {
     key: 'testNotification',

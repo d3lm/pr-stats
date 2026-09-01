@@ -1,4 +1,4 @@
-import { KeyCodes } from '@opentui/core/testing';
+import { KeyCodes, setRendererCapabilities } from '@opentui/core/testing';
 import { testRender } from '@opentui/react/test-utils';
 import { expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -670,7 +670,7 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     setup.mockInput.pressArrow('down');
 
-    await waitForText(setup, 'auto posts through the terminal');
+    await waitForText(setup, 'auto tries the terminal');
 
     expect(setup.captureCharFrame()).toContain('Notification channel');
     expect(setup.captureCharFrame()).toContain('‹ auto ›');
@@ -899,7 +899,7 @@ test('labels the save state in the options modal and saves with s', async () => 
 
     setup.mockInput.pressArrow('down');
 
-    await waitForText(setup, 'auto posts through the terminal');
+    await waitForText(setup, 'auto tries the terminal');
 
     setup.mockInput.pressArrow('down');
 
@@ -1297,13 +1297,14 @@ test('sends notifications through the injected notifier and keeps the first load
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ notifications: true });
 
     /**
-     * The channel row below the toggle cycles auto, terminal, and the
-     * platform command, and persists each step. The cycle ends back on
-     * auto, so the send below keeps the default routing.
+     * The channel row below the toggle cycles auto, terminal, the
+     * platform command, and bell with wrap-around, and persists each
+     * step. The cycle ends back on auto, so the send below keeps the
+     * default routing.
      */
     setup.mockInput.pressArrow('down');
 
-    await waitForText(setup, 'auto posts through the terminal');
+    await waitForText(setup, 'auto tries the terminal');
 
     expect(setup.captureCharFrame()).toContain('‹ auto ›');
 
@@ -1320,10 +1321,66 @@ test('sends notifications through the injected notifier and keeps the first load
 
     await waitForText(setup, '‹ auto ›');
 
+    // left from the first value wraps around to the bell at the end of the cycle
+    setup.mockInput.pressArrow('left');
+
+    await waitForText(setup, '‹ bell ›');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      notifications: true,
+      notifyChannel: 'bell',
+    });
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ auto ›');
+
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
       notifications: true,
       notifyChannel: 'auto',
     });
+
+    /**
+     * With the renderer posing as iTerm2, the test row names the
+     * terminal as the channel a send takes and trades its hint for the
+     * caveat about the profile setting iTerm2 gates the sequence behind,
+     * because the send itself would report no failure there. The bell
+     * channel never sends the sequence, so the plain hint returns with
+     * it, and the cycle ends back on auto for the send below.
+     */
+    setRendererCapabilities(setup.renderer, { notifications: true, terminal: { name: 'iTerm2', version: '3.6.0' } });
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'Notification Center Alerts');
+
+    expect(lineWith(setup.captureCharFrame(), 'Send test notification')).toContain('terminal');
+    expect(setup.captureCharFrame()).not.toContain('sends a sample notification');
+
+    // the caveat wraps onto the second line of the hint slot instead of clipping
+    expect(setup.captureCharFrame()).toContain('Profiles › Terminal');
+
+    setup.mockInput.pressArrow('up');
+
+    await waitForText(setup, 'auto tries the terminal');
+
+    setup.mockInput.pressArrow('left');
+
+    await waitForText(setup, '‹ bell ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'sends a sample notification');
+
+    expect(lineWith(setup.captureCharFrame(), 'Send test notification')).toContain('bell');
+
+    setup.mockInput.pressArrow('up');
+
+    await waitForText(setup, 'auto tries the terminal');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ auto ›');
 
     /**
      * Enter on the test row sends the sample notification through the
@@ -1333,7 +1390,7 @@ test('sends notifications through the injected notifier and keeps the first load
      */
     setup.mockInput.pressArrow('down');
 
-    await waitForText(setup, 'sends a sample notification');
+    await waitForText(setup, 'Notification Center Alerts');
 
     setup.mockInput.pressEnter();
 
@@ -1937,7 +1994,7 @@ test('copies the PR link instead of opening it while the copy-links setting is o
 
     setup.mockInput.pressArrow('down');
 
-    await waitForText(setup, 'auto posts through the terminal');
+    await waitForText(setup, 'auto tries the terminal');
 
     setup.mockInput.pressArrow('down');
 

@@ -251,7 +251,7 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
         }
         case 'notifyChannel': {
           /**
-           * Cycles auto, terminal, and the platform command, and
+           * Cycles auto, terminal, the platform command, and bell, and
            * persists the choice like the toggles above. The notifier
            * the App builds follows the state right away, so the next
            * send and the test row already use the new channel.

@@ -42,7 +42,7 @@ import {
 } from './theme';
 import { openInBrowser } from './utils/browser';
 import { createClipboardCopier } from './utils/clipboard';
-import { createNotifier, type Notifier } from './utils/notify';
+import { createNotifier, notificationBoundary, type Notifier } from './utils/notify';
 import {
   buildCommentRepoOptions,
   buildMergedRepoOptions,
@@ -176,9 +176,14 @@ export function App({
    * Falls back to the channel-following notifier when no notify override
    * came in. On auto it asks the terminal to post the notification and
    * only shells out to the platform command where the terminal cannot,
-   * and the forced channels take one path directly.
+   * the forced channels take one path directly, and bell rings the
+   * terminal bell instead.
    */
-  const defaultNotify = useMemo(() => createNotifier(renderer, notifyChannel), [renderer, notifyChannel]);
+  const defaultNotify = useMemo(
+    () => createNotifier(notificationBoundary(renderer), notifyChannel),
+    [renderer, notifyChannel],
+  );
+
   const notifier = notify ?? defaultNotify;
 
   /**

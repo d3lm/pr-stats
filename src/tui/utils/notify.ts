@@ -1,3 +1,4 @@
+import type { CliRenderer } from '@opentui/core';
 import { spawn } from 'node:child_process';
 import type { NotifyChannel } from '../../settings';
 
@@ -10,13 +11,77 @@ import type { NotifyChannel } from '../../settings';
 export type Notifier = (title: string, body: string, onError: (message: string) => void) => void;
 
 /**
- * The slice of OpenTUI's renderer the notifier reads, the trigger that
- * asks the terminal to post a notification and the capability flag that
- * reports whether a notification protocol was detected.
+ * Describes the slice of OpenTUI's renderer the notifier reads.
+ * The trigger asks the terminal to post a notification, the capabilities
+ * carry the flag that reports whether a notification protocol was
+ * selected and the name of the detected terminal, and writeOut puts
+ * raw bytes on the renderer's output path, which the bell channel uses.
  */
 export interface RendererNotificationBoundary {
-  readonly capabilities: { notifications: boolean } | null;
+  readonly capabilities: { notifications: boolean; terminal: { name: string } } | null;
   triggerNotification(message: string, title?: string): boolean;
+  writeOut(data: string): void;
+}
+
+/**
+ * Narrows OpenTUI's renderer to the boundary the notifier reads. The
+ * renderer keeps writeOut private in its typings while using it itself
+ * for the terminal title and the background reset, so this is the one
+ * place that reaches past the typings. Going through it matters because
+ * the native output thread writes the frames, and a bell written
+ * straight to stdout could land inside a frame, where the BEL byte ends
+ * an OSC 8 hyperlink early. Should a later OpenTUI drop the method, the
+ * bell falls back to stdout instead of throwing.
+ */
+export function notificationBoundary(renderer: CliRenderer): RendererNotificationBoundary {
+  const raw = renderer as unknown as { writeOut?: (data: string) => unknown };
+
+  return {
+    get capabilities() {
+      return renderer.capabilities;
+    },
+    triggerNotification: (message, title) => renderer.triggerNotification(message, title),
+    writeOut: (data) => {
+      if (typeof raw.writeOut === 'function') {
+        raw.writeOut(data);
+      } else {
+        process.stdout.write(data);
+      }
+    },
+  };
+}
+
+/**
+ * Holds the BEL control byte, which every terminal turns into its bell.
+ */
+const BELL = '\u0007';
+
+type TerminalQuirk = 'iterm' | 'apple-terminal';
+
+/**
+ * Names the terminals that handle the notification sequence in a way
+ * OpenTUI cannot see, or returns null for a terminal that behaves the
+ * way its detection reports. iTerm2 accepts OSC 9 but drops it unless
+ * the profile has Notification Center Alerts turned on, which is off by
+ * default, and it advertises notification support either way. Apple
+ * Terminal gets the same sequence selected for it from its name while
+ * it never implemented the notification, so the sequence vanishes there
+ * without a trace. The name comes from the XTVERSION reply or from
+ * TERM_PROGRAM, so it reads iTerm2 or iTerm.app for the one and
+ * Apple_Terminal for the other.
+ */
+function terminalQuirk(renderer: RendererNotificationBoundary): TerminalQuirk | null {
+  const name = renderer.capabilities?.terminal.name ?? '';
+
+  if (/iterm/i.test(name)) {
+    return 'iterm';
+  }
+
+  if (/apple_terminal|terminal\.app/i.test(name)) {
+    return 'apple-terminal';
+  }
+
+  return null;
 }
 
 /**
@@ -30,19 +95,30 @@ export interface RendererNotificationBoundary {
  * because the terminal has none or because detection is still running
  * right after startup. On auto the send then falls back to the platform
  * command, while a forced terminal channel reports the miss instead,
- * because the user chose that path over the fallback. Editor terminals
- * like the one in VS Code render the terminal path as an in-window
- * toast, so forcing the command channel there buys a real system
- * notification.
+ * because the user chose that path over the fallback. Auto also skips
+ * the terminal on Apple Terminal, which swallows the sequence OpenTUI
+ * picks for it, so the command is the only path that shows anything
+ * there. Editor terminals like the one in VS Code render the terminal
+ * path as an in-window toast, so forcing the command channel there buys
+ * a real system notification. The bell channel rings the terminal bell
+ * instead of posting text, which reaches every terminal, including the
+ * ones that swallow notifications, and leaves the details to the queue.
  */
 export function createNotifier(renderer: RendererNotificationBoundary, channel: NotifyChannel): Notifier {
   return (title, body, onError) => {
-    if (channel !== 'command' && renderer.triggerNotification(body, title)) {
+    if (channel === 'bell') {
+      renderer.writeOut(BELL);
+      return;
+    }
+
+    const tryTerminal = channel === 'terminal' || (channel === 'auto' && terminalQuirk(renderer) !== 'apple-terminal');
+
+    if (tryTerminal && renderer.triggerNotification(body, title)) {
       return;
     }
 
     if (channel === 'terminal') {
-      onError('the terminal has no notification support, switch the channel to auto or the platform command');
+      onError('the terminal has no notification support, switch the channel to auto, the platform command, or bell');
       return;
     }
 
@@ -52,17 +128,53 @@ export function createNotifier(renderer: RendererNotificationBoundary, channel: 
 
 /**
  * Names the channel a send would take right now given the channel
- * setting, terminal or the platform command, or null where the send
- * would land on a platform without a command. The settings dialog shows
- * it on the test row. Detection runs asynchronously after startup, so
- * the auto value can flip to terminal shortly after launch.
+ * setting, terminal, bell, or the platform command, or null where the
+ * send would land on a platform without a command. The settings dialog
+ * shows it on the test row. Detection runs asynchronously after startup,
+ * so the auto value can flip to terminal shortly after launch.
  */
 export function notificationChannel(renderer: RendererNotificationBoundary, channel: NotifyChannel): string | null {
-  if (channel === 'terminal' || (channel === 'auto' && renderer.capabilities?.notifications === true)) {
+  if (channel === 'bell' || channel === 'terminal') {
+    return channel;
+  }
+
+  if (
+    channel === 'auto' &&
+    renderer.capabilities?.notifications === true &&
+    terminalQuirk(renderer) !== 'apple-terminal'
+  ) {
     return 'terminal';
   }
 
   return notificationTool();
+}
+
+/**
+ * Explains what stands between the terminal path and a visible
+ * notification on this terminal, or null where nothing is known to. The
+ * settings dialog shows it in place of the test row's hint, because a
+ * send through these terminals looks successful to OpenTUI and to the
+ * footer while nothing appears. The command and bell channels never
+ * touch the notification sequence, so they carry no caveat.
+ */
+export function notificationCaveat(renderer: RendererNotificationBoundary, channel: NotifyChannel): string | null {
+  if (channel === 'command' || channel === 'bell') {
+    return null;
+  }
+
+  switch (terminalQuirk(renderer)) {
+    case 'iterm': {
+      return 'iTerm2 shows these only once Notification Center Alerts is on under Settings › Profiles › Terminal';
+    }
+    case 'apple-terminal': {
+      return channel === 'auto'
+        ? 'Terminal.app ignores terminal notifications, so auto takes the platform command here'
+        : 'Terminal.app ignores terminal notifications · switch the channel to auto, command, or bell';
+    }
+    default: {
+      return null;
+    }
+  }
 }
 
 /**

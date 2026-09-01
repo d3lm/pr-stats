@@ -6,11 +6,12 @@ import { CliError } from './utils';
 
 /**
  * Channels a desktop notification can go through. Auto asks the terminal
- * to post the notification and falls back to the platform command, and
- * the other two values force one of the paths. The settings dialog
- * cycles through them in this order.
+ * to post the notification and falls back to the platform command,
+ * terminal and command force one of those paths, and bell rings the
+ * terminal bell instead of posting any text. The settings dialog cycles
+ * through them in this order.
  */
-export const NOTIFY_CHANNELS = ['auto', 'terminal', 'command'] as const;
+export const NOTIFY_CHANNELS = ['auto', 'terminal', 'command', 'bell'] as const;
 
 export type NotifyChannel = (typeof NOTIFY_CHANNELS)[number];
 
@@ -51,8 +52,9 @@ export interface Settings {
   /**
    * Picks the channel the notifications go through. With auto the TUI
    * asks the terminal to post them and falls back to the platform
-   * command, terminal forces the terminal path, and command forces the
-   * platform command, osascript on macOS and notify-send on Linux.
+   * command, terminal forces the terminal path, command forces the
+   * platform command, osascript on macOS and notify-send on Linux, and
+   * bell rings the terminal bell instead of posting any text.
    */
   notifyChannel?: NotifyChannel;
   /**
@@ -199,7 +201,7 @@ export function loadSettings(): Settings {
   }
 
   if (settings.notifyChannel !== undefined && !NOTIFY_CHANNELS.includes(settings.notifyChannel)) {
-    throw new CliError(`"notifyChannel" in ${settingsFile()} must be "auto", "terminal", or "command"`);
+    throw new CliError(`"notifyChannel" in ${settingsFile()} must be "auto", "terminal", "command", or "bell"`);
   }
 
   current = settings;
