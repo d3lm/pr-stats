@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.14](https://github.com/d3lm/pr-stats/releases/tag/v0.2.14) - 2026-09-01
+
+### Features
+
+- feat: add auto reload on a configurable interval ([157ffa8](https://github.com/d3lm/pr-stats/commit/157ffa853242d254b2c81eeec3037dcfd9076cf3))
+- feat: add desktop notifications for new and re-requested reviews ([35095f6](https://github.com/d3lm/pr-stats/commit/35095f6ec54e81454198cf63fea7bcbc6c743332))
+
 ## [0.2.13](https://github.com/d3lm/pr-stats/releases/tag/v0.2.13) - 2026-08-31
 
 ### Features

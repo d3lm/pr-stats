@@ -1,6 +1,6 @@
 {
   "name": "@d3lm/pr-stats",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "GitHub PR stats in an interactive terminal UI, via the gh CLI or an access token",
   "type": "module",
   "author": "Dominic Elm",
