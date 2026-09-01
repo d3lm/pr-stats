@@ -5,6 +5,16 @@ import type { CliValues } from './flags';
 import { CliError } from './utils';
 
 /**
+ * Channels a desktop notification can go through. Auto asks the terminal
+ * to post the notification and falls back to the platform command, and
+ * the other two values force one of the paths. The settings dialog
+ * cycles through them in this order.
+ */
+export const NOTIFY_CHANNELS = ['auto', 'terminal', 'command'] as const;
+
+export type NotifyChannel = (typeof NOTIFY_CHANNELS)[number];
+
+/**
  * Shape of settings.json in the cache directory. Unlike the cached data
  * and the saved options, the file is meant to be edited by hand, so it
  * carries no version wrapper and a rewrite preserves keys this interface
@@ -32,6 +42,19 @@ export interface Settings {
    * only applies while autoReload is set.
    */
   reloadInterval?: string;
+  /**
+   * Sends a desktop notification when a load finds a PR newly awaiting
+   * your review or a review re-requested from you. The first load of a
+   * session only records what is already waiting.
+   */
+  notifications?: boolean;
+  /**
+   * Picks the channel the notifications go through. With auto the TUI
+   * asks the terminal to post them and falls back to the platform
+   * command, terminal forces the terminal path, and command forces the
+   * platform command, osascript on macOS and notify-send on Linux.
+   */
+  notifyChannel?: NotifyChannel;
   /**
    * Holds the theme, the active preset (a built-in name or custom) plus
    * the colors that form the custom theme. The theme module validates
@@ -171,6 +194,14 @@ export function loadSettings(): Settings {
     );
   }
 
+  if (settings.notifications !== undefined && typeof settings.notifications !== 'boolean') {
+    throw new CliError(`"notifications" in ${settingsFile()} must be true or false`);
+  }
+
+  if (settings.notifyChannel !== undefined && !NOTIFY_CHANNELS.includes(settings.notifyChannel)) {
+    throw new CliError(`"notifyChannel" in ${settingsFile()} must be "auto", "terminal", or "command"`);
+  }
+
   current = settings;
 
   return current;
@@ -218,6 +249,28 @@ export function saveAutoReload(on: boolean): boolean {
  */
 export function saveReloadInterval(value: string): boolean {
   current = { ...current, reloadInterval: value };
+
+  return writeCurrent();
+}
+
+/**
+ * Persists the notifications toggle to settings.json, keeping every
+ * other key the file holds. Returns false without writing while the
+ * cache is disabled, which keeps debug runs from writing settings.
+ */
+export function saveNotifications(on: boolean): boolean {
+  current = { ...current, notifications: on };
+
+  return writeCurrent();
+}
+
+/**
+ * Persists the notification channel to settings.json, keeping every
+ * other key the file holds. Returns false without writing while the
+ * cache is disabled, which keeps debug runs from writing settings.
+ */
+export function saveNotifyChannel(channel: NotifyChannel): boolean {
+  current = { ...current, notifyChannel: channel };
 
   return writeCurrent();
 }

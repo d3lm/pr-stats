@@ -1,9 +1,11 @@
+import { useRenderer } from '@opentui/react';
 import { homedir } from 'node:os';
 import { cacheDir } from '../../cache';
-import { settingsFile } from '../../settings';
+import { settingsFile, type NotifyChannel } from '../../settings';
 import { exportFile } from '../data/export';
 import { CACHE_MESSAGES, SETTINGS, type CacheAction, type SettingSpec } from '../state/settings';
 import { theme, type ThemeName } from '../theme';
+import { notificationChannel, notificationTool } from '../utils/notify';
 import { ModalFrame, ModalInput, ModalRow } from './ModalFrame';
 
 /**
@@ -36,6 +38,8 @@ export function SettingsModal({
   noCache,
   autoReload,
   reloadInterval,
+  notifications,
+  notifyChannel,
   copyLinks,
   preset,
   onDraft,
@@ -48,12 +52,25 @@ export function SettingsModal({
   noCache: boolean;
   autoReload: boolean;
   reloadInterval: string;
+  notifications: boolean;
+  notifyChannel: NotifyChannel;
   copyLinks: boolean;
   preset: ThemeName;
   onDraft: (value: string) => void;
   onSubmit: () => void;
 }) {
   const message = cacheAction === null ? null : CACHE_MESSAGES[cacheAction];
+
+  /**
+   * Resolves the display values of the notification rows. The channel
+   * row shows the setting, with the command value named by its platform
+   * command, and the test row names the channel a send would take right
+   * now. The dialog re-renders on every keypress, so the auto value
+   * catches up once the terminal detection finishes after startup.
+   */
+  const renderer = useRenderer();
+  const channelValue = notifyChannel === 'command' ? (notificationTool() ?? 'unsupported') : notifyChannel;
+  const deliveryValue = notificationChannel(renderer, notifyChannel) ?? 'unsupported';
 
   return (
     <ModalFrame title="Settings">
@@ -75,6 +92,9 @@ export function SettingsModal({
                   noCache={noCache}
                   autoReload={autoReload}
                   reloadInterval={reloadInterval}
+                  notifications={notifications}
+                  channelValue={channelValue}
+                  deliveryValue={deliveryValue}
                   copyLinks={copyLinks}
                   preset={preset}
                   onDraft={onDraft}
@@ -100,14 +120,18 @@ export function SettingsModal({
 
 /**
  * Renders the value slot of one setting row. The disable-cache, auto-reload,
- * copy-links, and theme rows show a toggle value with arrows on the selected
- * row, like the toggles in the options modal. The reload-interval row shows
- * the interval, dimmed while auto reload is off, and turns into an input
- * while editing. The edit-colors row previews the current accent family as
- * a swatch strip. The clear-cache and reset-settings rows show the path they
- * delete with the home directory abbreviated, and flip to a confirm prompt
- * after the first enter. The export row shows the path it writes the same
- * way, without a confirm because an export only overwrites its own file.
+ * notifications, copy-links, and theme rows show a toggle value with arrows
+ * on the selected row, like the toggles in the options modal. The
+ * reload-interval row shows the interval, dimmed while auto reload is off,
+ * and turns into an input while editing. The notification-channel row
+ * cycles auto, terminal, and the platform command, and the
+ * test-notification row names the channel the next send takes, or
+ * unsupported where none exists. The edit-colors row previews the current accent
+ * family as a swatch strip. The clear-cache and reset-settings rows show
+ * the path they delete with the home directory abbreviated, and flip to a
+ * confirm prompt after the first enter. The export row shows the path it
+ * writes the same way, without a confirm because an export only overwrites
+ * its own file.
  */
 function SettingValue({
   setting,
@@ -117,6 +141,9 @@ function SettingValue({
   noCache,
   autoReload,
   reloadInterval,
+  notifications,
+  channelValue,
+  deliveryValue,
   copyLinks,
   preset,
   onDraft,
@@ -129,6 +156,9 @@ function SettingValue({
   noCache: boolean;
   autoReload: boolean;
   reloadInterval: string;
+  notifications: boolean;
+  channelValue: string;
+  deliveryValue: string;
   copyLinks: boolean;
   preset: ThemeName;
   onDraft: (value: string) => void;
@@ -150,6 +180,19 @@ function SettingValue({
       }
 
       return <IntervalValue value={reloadInterval} active={autoReload} isSelected={isSelected} />;
+    }
+    case 'notifications': {
+      return <ToggleValue value={notifications ? 'yes' : 'no'} isSelected={isSelected} />;
+    }
+    case 'notifyChannel': {
+      return <ToggleValue value={channelValue} isSelected={isSelected} />;
+    }
+    case 'testNotification': {
+      return (
+        <text wrapMode="none" fg={isSelected ? theme.text : theme.muted}>
+          {deliveryValue}
+        </text>
+      );
     }
     case 'copyLinks': {
       return <ToggleValue value={copyLinks ? 'yes' : 'no'} isSelected={isSelected} />;

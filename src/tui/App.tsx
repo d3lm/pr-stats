@@ -7,6 +7,7 @@ import {
   reloadIntervalMs,
   saveReloadInterval,
   saveTheme,
+  type NotifyChannel,
 } from '../settings';
 import { CliError } from '../utils';
 import { Footer } from './components/Footer';
@@ -17,10 +18,18 @@ import { TabBar } from './components/TabBar';
 import { useAutoReload } from './hooks/useAutoReload';
 import { useDeferredLoading } from './hooks/useDeferredLoading';
 import { useLoader } from './hooks/useLoader';
+import { useReviewNotifications } from './hooks/useReviewNotifications';
 import { useViewModel } from './hooks/useViewModel';
 import { handleAppKey } from './keymap';
 import { browseReducer, initialBrowseState } from './state/browse';
-import { FIELDS, toggleReviewType, toggleWorkDay, validateField, type OptionsState } from './state/options';
+import {
+  fetchParamsKey,
+  FIELDS,
+  toggleReviewType,
+  toggleWorkDay,
+  validateField,
+  type OptionsState,
+} from './state/options';
 import { THEME_COLORS } from './state/settings';
 import { initialUiState, uiReducer } from './state/ui';
 import {
@@ -33,6 +42,7 @@ import {
 } from './theme';
 import { openInBrowser } from './utils/browser';
 import { createClipboardCopier } from './utils/clipboard';
+import { createNotifier, type Notifier } from './utils/notify';
 import {
   buildCommentRepoOptions,
   buildMergedRepoOptions,
@@ -68,6 +78,18 @@ interface AppProps {
    */
   initialReloadInterval?: string;
   /**
+   * Seeds the notifications state from the saved setting. While it is
+   * on, every fresh load after the first sends a desktop notification
+   * for the PRs newly awaiting your review and the reviews re-requested
+   * from you. The settings dialog toggles it at runtime.
+   */
+  initialNotifications?: boolean;
+  /**
+   * Seeds the notification channel from the saved setting. The settings
+   * dialog cycles it at runtime, and the default notifier follows it.
+   */
+  initialNotifyChannel?: NotifyChannel;
+  /**
    * Seeds the copy-links state from the saved setting. While it is on,
    * enter and a click on a PR reference copy the PR's link to the
    * clipboard instead of opening it. The settings dialog toggles it at
@@ -92,6 +114,14 @@ interface AppProps {
    * activating a PR never touches the real clipboard.
    */
   copyUrl?: (url: string, onError: (message: string) => void) => void;
+  /**
+   * Sends a desktop notification and reports a failure through the
+   * third argument. When absent, the app asks the terminal to post the
+   * notification through OpenTUI's renderer and falls back to the
+   * platform command. Tests inject a recorder here so a load or the
+   * test row never reaches the real desktop.
+   */
+  notify?: Notifier;
   onQuit: () => void;
 }
 
@@ -110,10 +140,13 @@ export function App({
   initialNoCache = false,
   initialAutoReload = false,
   initialReloadInterval = DEFAULT_RELOAD_INTERVAL,
+  initialNotifications = false,
+  initialNotifyChannel = 'auto',
   initialCopyLinks = false,
   initialTheme = defaultThemeState(),
   openUrl = openInBrowser,
   copyUrl,
+  notify,
   onQuit,
 }: AppProps) {
   const { width } = useTerminalDimensions();
@@ -134,8 +167,19 @@ export function App({
   const [noCache, setNoCache] = useState(initialNoCache);
   const [autoReload, setAutoReload] = useState(initialAutoReload);
   const [reloadInterval, setReloadInterval] = useState(initialReloadInterval);
+  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifyChannel, setNotifyChannel] = useState(initialNotifyChannel);
   const [copyLinks, setCopyLinks] = useState(initialCopyLinks);
   const [themeState, setThemeState] = useState(initialTheme);
+
+  /**
+   * Falls back to the channel-following notifier when no notify override
+   * came in. On auto it asks the terminal to post the notification and
+   * only shells out to the platform command where the terminal cannot,
+   * and the forced channels take one path directly.
+   */
+  const defaultNotify = useMemo(() => createNotifier(renderer, notifyChannel), [renderer, notifyChannel]);
+  const notifier = notify ?? defaultNotify;
 
   /**
    * Copies the PR's link to the clipboard and reports the copy in the
@@ -175,11 +219,22 @@ export function App({
   const mergedScrollRef = useRef<ScrollBoxRenderable>(null);
 
   /**
+   * A failed notification reports in the footer notice slot, the same
+   * slot a failed browser open or copy uses, so a missing notify-send
+   * shows up once instead of the notifications silently doing nothing.
+   */
+  const notifyReviewChanges = useReviewNotifications(notifications, notifier, (message) => {
+    dispatchUi({ type: 'openErrorReported', message });
+  });
+
+  /**
    * Every fresh load clears an opened repo that the new data no longer
    * contains, reconciling all five scopes in one dataLoaded transition.
    * The render falls back to the picker either way, and clearing the
    * state too keeps the vanished repo from reopening on its own if a
-   * later reload brings it back.
+   * later reload brings it back. The same load feeds the notification
+   * diff, keyed by the options it fetched for, which this closure holds
+   * because the loader calls back the render that started the load.
    */
   const { raw, isSnapshot, loading, load, error, stale, reload } = useLoader(options, noCache, (data) => {
     dispatchBrowse({
@@ -193,6 +248,8 @@ export function App({
         merged: buildMergedRepoOptions(data),
       },
     });
+
+    notifyReviewChanges(fetchParamsKey(options), data.reviewResults);
   });
 
   /**
@@ -294,15 +351,23 @@ export function App({
    * OpenTUI's useKeyboard delivers keypresses to the latest committed
    * render's handler through useEffectEvent, whose ref syncs in a layout
    * effect before paint, so this closure always reads current state and
-   * no manual ref syncing is needed.
+   * no manual ref syncing is needed. Escape blurs the focused editor
+   * synchronously because React can remove its frame before destroying
+   * it, and a following key must not reach that stale renderable.
    */
   useKeyboard((key) => {
+    if (ui.editing && key.name === 'escape') {
+      renderer.currentFocusedRenderable?.blur();
+    }
+
     handleAppKey(key, {
       ui,
       browse,
       noCache,
       autoReload,
       reloadInterval,
+      notifications,
+      notifyChannel,
       copyLinks,
       themeState,
       options,
@@ -314,11 +379,14 @@ export function App({
       setSaved,
       setNoCache,
       setAutoReload,
+      setNotifications,
+      setNotifyChannel,
       setCopyLinks,
       setThemeState,
       quit: onQuit,
       reload,
       openUrl,
+      notify: notifier,
       copyRow,
       beginEdit: (value) => {
         draftRef.current = value;
@@ -393,6 +461,8 @@ export function App({
         noCache={noCache}
         autoReload={autoReload}
         reloadInterval={reloadInterval}
+        notifications={notifications}
+        notifyChannel={notifyChannel}
         copyLinks={copyLinks}
         themeState={themeState}
         onDraft={(value) => {

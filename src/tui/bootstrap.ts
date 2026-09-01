@@ -1,7 +1,7 @@
 import { configureCache } from '../cache';
 import { canonicalWorkDays, HELP, parseCliArgs } from '../flags';
 import { configureAuth } from '../github';
-import { applySettings, DEFAULT_RELOAD_INTERVAL } from '../settings';
+import { applySettings, DEFAULT_RELOAD_INTERVAL, type NotifyChannel } from '../settings';
 import { CliError, fail } from '../utils';
 import { applySavedOptions, FIELDS, validateField, type OptionsState } from './state/options';
 import { applyTheme, type ThemeState } from './theme';
@@ -30,6 +30,17 @@ export interface BootstrapResult {
    * by loadSettings, or the default while the file names none.
    */
   reloadInterval: string;
+  /**
+   * Mirrors the notifications setting from settings.json. While it is
+   * set, fresh loads after the first send desktop notifications for new
+   * and re-requested reviews.
+   */
+  notifications: boolean;
+  /**
+   * Holds the notification channel from settings.json, already
+   * validated by loadSettings, or auto while the file names none.
+   */
+  notifyChannel: NotifyChannel;
   /**
    * Mirrors the copy-links setting from settings.json. While it is set,
    * enter and a click on a PR reference copy the PR's link to the
@@ -109,6 +120,8 @@ export function bootstrap(): BootstrapResult {
       noCache: values['no-cache'],
       autoReload: settings.autoReload === true,
       reloadInterval: settings.reloadInterval ?? DEFAULT_RELOAD_INTERVAL,
+      notifications: settings.notifications === true,
+      notifyChannel: settings.notifyChannel ?? 'auto',
       copyLinks: settings.copyLinks === true,
       theme,
       json: values.json,

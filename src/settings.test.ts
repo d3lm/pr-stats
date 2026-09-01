@@ -13,6 +13,8 @@ import {
   saveAutoReload,
   saveCopyLinks,
   saveNoCache,
+  saveNotifications,
+  saveNotifyChannel,
   saveReloadInterval,
   saveTheme,
 } from './settings';
@@ -141,6 +143,54 @@ test('saveAutoReload and saveReloadInterval persist next to each other and keep 
   expect(stored.reloadInterval).toBe('10m');
 });
 
+test('saveNotifications persists the toggle and keeps hand-written keys', () => {
+  writeSettingsFile({ theme: { accent: '#89b4f0' }, autoReload: true });
+  loadSettings();
+
+  expect(saveNotifications(true)).toBe(true);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+    theme: { accent: '#89b4f0' },
+    autoReload: true,
+    notifications: true,
+  });
+
+  expect(loadSettings().notifications).toBe(true);
+
+  // a disabled cache stores nothing, the way debug runs stay isolated
+  configureCache(false);
+
+  expect(saveNotifications(false)).toBe(false);
+
+  expect(
+    (JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { notifications: boolean }).notifications,
+  ).toBe(true);
+});
+
+test('saveNotifyChannel persists the channel and keeps hand-written keys', () => {
+  writeSettingsFile({ theme: { accent: '#89b4f0' }, notifications: true });
+  loadSettings();
+
+  expect(saveNotifyChannel('terminal')).toBe(true);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+    theme: { accent: '#89b4f0' },
+    notifications: true,
+    notifyChannel: 'terminal',
+  });
+
+  expect(loadSettings().notifyChannel).toBe('terminal');
+
+  // a disabled cache stores nothing, the way debug runs stay isolated
+  configureCache(false);
+
+  expect(saveNotifyChannel('command')).toBe(false);
+
+  expect(
+    (JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { notifyChannel: string }).notifyChannel,
+  ).toBe('terminal');
+});
+
 test('parses reload intervals in seconds, minutes, and hours within a day', () => {
   expect(reloadIntervalMs('1s')).toBe(1000);
   expect(reloadIntervalMs('30s')).toBe(30_000);
@@ -232,6 +282,15 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
   writeSettingsFile({ autoReload: 'yes' });
 
   expect(() => loadSettings()).toThrow(CliError);
+
+  writeSettingsFile({ notifications: 'yes' });
+
+  expect(() => loadSettings()).toThrow('"notifications"');
+
+  // only the three known channel names pass, anything else is a typo
+  writeSettingsFile({ notifyChannel: 'osascript' });
+
+  expect(() => loadSettings()).toThrow('"notifyChannel"');
 
   writeSettingsFile({ reloadInterval: 600 });
 

@@ -1,3 +1,4 @@
+import type { NotifyChannel } from '../../settings';
 import type { OptionsState } from '../state/options';
 import type { UiState } from '../state/ui';
 import type { ThemeState } from '../theme';
@@ -18,6 +19,8 @@ export function Modals({
   noCache,
   autoReload,
   reloadInterval,
+  notifications,
+  notifyChannel,
   copyLinks,
   themeState,
   onDraft,
@@ -33,6 +36,8 @@ export function Modals({
   noCache: boolean;
   autoReload: boolean;
   reloadInterval: string;
+  notifications: boolean;
+  notifyChannel: NotifyChannel;
   copyLinks: boolean;
   themeState: ThemeState;
   onDraft: (value: string) => void;
@@ -68,6 +73,8 @@ export function Modals({
         noCache={noCache}
         autoReload={autoReload}
         reloadInterval={reloadInterval}
+        notifications={notifications}
+        notifyChannel={notifyChannel}
         copyLinks={copyLinks}
         preset={themeState.preset}
         onDraft={onDraft}

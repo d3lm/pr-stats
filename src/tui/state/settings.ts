@@ -42,6 +42,24 @@ export const SETTINGS: SettingSpec[] = [
     hint: 'time between the background reloads while auto reload is on, like 30s, 10m, or 2h · enter edits the value',
   },
   {
+    key: 'notifications',
+    section: 'Notifications',
+    label: 'Desktop notifications',
+    hint: 'notifies you when a load finds a PR newly awaiting your review or a review re-requested from you',
+  },
+  {
+    key: 'notifyChannel',
+    section: 'Notifications',
+    label: 'Notification channel',
+    hint: 'auto posts through the terminal and falls back to the platform command · the other values force one channel',
+  },
+  {
+    key: 'testNotification',
+    section: 'Notifications',
+    label: 'Send test notification',
+    hint: 'sends a sample notification through the channel shown, so you can check that your desktop displays it',
+  },
+  {
     key: 'copyLinks',
     section: 'Links',
     label: 'Copy instead of open',
@@ -106,8 +124,9 @@ export const THEME_COLORS: ThemeColorSpec[] = [
  * enter on clear cache landed and the next one clears, with cleared and
  * disabled reporting how the clear went. Saved and notSaved report
  * whether a toggled setting reached settings.json. The reset states
- * mirror the clear-cache flow for the reset-settings action, and the
- * export states report how the JSON export went.
+ * mirror the clear-cache flow for the reset-settings action, the
+ * export states report how the JSON export went, and notified reports
+ * that the test notification went out.
  */
 export type CacheAction =
   | 'confirm'
@@ -120,7 +139,8 @@ export type CacheAction =
   | 'resetDisabled'
   | 'exported'
   | 'exportFailed'
-  | 'exportNoData';
+  | 'exportNoData'
+  | 'notified';
 
 /**
  * Bottom-line message for each action state, shown in place of the
@@ -139,4 +159,5 @@ export const CACHE_MESSAGES: Record<CacheAction, { text: string; warn?: boolean 
   exported: { text: 'stats exported · the same report prints to stdout with the --json flag' },
   exportFailed: { text: 'the export failed · the file could not be written', warn: true },
   exportNoData: { text: 'no loaded stats to export yet · export again once the load finishes', warn: true },
+  notified: { text: 'test notification sent · a failure to deliver it reports in the footer' },
 };

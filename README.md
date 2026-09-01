@@ -114,6 +114,23 @@ The `r` key reloads the data by hand, and `R` refetches everything past the cach
 }
 ```
 
+## Notifications
+
+The Desktop notifications row in the settings dialog makes the TUI send a desktop notification whenever a load finds a PR newly awaiting your review or a review re-requested from you after you already reviewed the PR. Every load diffs its review requests against the load before it, so the first load of a session only records what is already waiting and never notifies about it. Manual reloads count as well, but the feature pairs naturally with auto reload, which lets the TUI watch your review queue from a spare terminal. The setting persists in `settings.json` in the cache directory.
+
+```json
+{
+  "notifications": true,
+  "notifyChannel": "auto"
+}
+```
+
+Notifications go through the terminal itself when it supports a notification escape sequence, which covers iTerm2, Kitty, Ghostty, WezTerm, and most VTE-based terminals like GNOME Terminal. The terminal posts the notification under its own notification permission and the sequence travels through SSH, so this path needs no setup. Some terminals only show the banner while their window is unfocused. Terminals without such support get the platform's own command instead, `osascript` on macOS and `notify-send` on Linux. A notification that fails to send reports in the footer, for example when `notify-send` is missing on a Linux machine.
+
+The "Notification channel" row picks the path, and the choice persists as `notifyChannel` with the values `auto`, `terminal`, and `command`. On `auto` the TUI tries the terminal first and falls back to the platform command, while the other two force one path. The dialog shows the `command` value as the command's name on this platform. Forcing the command pays off inside editor terminals like the one in VS Code, which render the terminal path as a small in-editor toast instead of a system notification. The "Send test notification" row below it names the channel the next send takes and sends a sample notification, so you can check that your desktop displays it before relying on it.
+
+The macOS fallback posts through the built-in Script Editor, and since macOS 15 those notifications stay invisible until Script Editor holds notification permission, without any prompt appearing. To grant it once, open the Script Editor app, run the one-line script `display notification "test"`, and allow the prompt that appears. Script Editor then shows up under Notifications in the System Settings like any other app.
+
 ## Theming
 
 The TUI ships five built-in themes, the warm amber default plus green, blue, purple, and yellow variants. The Theme row in the settings dialog cycles through them, and the Edit colors row below it edits individual colors, which creates a custom theme that joins the cycle as a sixth entry. Everything persists in a `theme` object in `settings.json` in the cache directory, which you can also edit by hand.

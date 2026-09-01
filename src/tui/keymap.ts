@@ -1,15 +1,27 @@
 import type { KeyEvent } from '@opentui/core';
 import type { Dispatch, SetStateAction } from 'react';
 import { clearCache } from '../cache';
-import { resetSettings, saveAutoReload, saveCopyLinks, saveNoCache, saveTheme } from '../settings';
+import {
+  NOTIFY_CHANNELS,
+  resetSettings,
+  saveAutoReload,
+  saveCopyLinks,
+  saveNoCache,
+  saveNotifications,
+  saveNotifyChannel,
+  saveTheme,
+  type NotifyChannel,
+} from '../settings';
 import { exportStatsFile } from './data/export';
 import type { RawData } from './data/load';
+import { TEST_NOTIFICATION } from './data/notifications';
 import type { AppViews } from './hooks/useViewModel';
 import type { BrowseAction, BrowseState, QueueTabKey, StatsTabKey } from './state/browse';
 import { FIELDS, writeSavedOptions, type OptionsState } from './state/options';
 import { SETTINGS, THEME_COLORS } from './state/settings';
 import type { UiAction, UiState } from './state/ui';
 import { applyThemeState, cycleTheme, themeColorText, themeSettingsOf, type ThemeState } from './theme';
+import type { Notifier } from './utils/notify';
 import { queueRows } from './views/queue';
 
 /**
@@ -30,6 +42,8 @@ export interface KeymapContext {
    * validates and stores the edited value.
    */
   reloadInterval: string;
+  notifications: boolean;
+  notifyChannel: NotifyChannel;
   copyLinks: boolean;
   themeState: ThemeState;
   options: OptionsState;
@@ -48,11 +62,19 @@ export interface KeymapContext {
   setSaved: Dispatch<SetStateAction<OptionsState | null>>;
   setNoCache: Dispatch<SetStateAction<boolean>>;
   setAutoReload: Dispatch<SetStateAction<boolean>>;
+  setNotifications: Dispatch<SetStateAction<boolean>>;
+  setNotifyChannel: Dispatch<SetStateAction<NotifyChannel>>;
   setCopyLinks: Dispatch<SetStateAction<boolean>>;
   setThemeState: Dispatch<SetStateAction<ThemeState>>;
   quit: () => void;
   reload: (bypassCache: boolean) => void;
   openUrl: (url: string, onError: (message: string) => void) => void;
+
+  /**
+   * Sends a desktop notification, which the test row in the settings
+   * dialog uses to let the user check that notifications show up.
+   */
+  notify: Notifier;
 
   /**
    * Copies the PR's link to the clipboard and reports the copy in the
@@ -210,6 +232,54 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
 
           // the interval edits in the shared edit mode, whose commit validates and persists it
           context.beginEdit(context.reloadInterval);
+
+          break;
+        }
+        case 'notifications': {
+          /**
+           * The toggle flips the session state and persists it right
+           * away, like the cache toggle above. The next fresh load
+           * reports its changes against the baseline the loads kept
+           * while the setting was off.
+           */
+          const next = !context.notifications;
+
+          context.setNotifications(next);
+          context.dispatchUi({ type: 'cacheActionReported', action: saveNotifications(next) ? 'saved' : 'notSaved' });
+
+          break;
+        }
+        case 'notifyChannel': {
+          /**
+           * Cycles auto, terminal, and the platform command, and
+           * persists the choice like the toggles above. The notifier
+           * the App builds follows the state right away, so the next
+           * send and the test row already use the new channel.
+           */
+          const index = NOTIFY_CHANNELS.indexOf(context.notifyChannel);
+          const step = key.name === 'left' ? -1 : 1;
+          const next = NOTIFY_CHANNELS[(index + step + NOTIFY_CHANNELS.length) % NOTIFY_CHANNELS.length];
+
+          context.setNotifyChannel(next);
+          context.dispatchUi({ type: 'cacheActionReported', action: saveNotifyChannel(next) ? 'saved' : 'notSaved' });
+
+          break;
+        }
+        case 'testNotification': {
+          if (key.name !== 'return') {
+            break;
+          }
+
+          /**
+           * The send is fire and forget, so the message slot reports the
+           * attempt right away and a failure arrives later in the footer
+           * notice slot, the same way a failed copy does.
+           */
+          context.notify(TEST_NOTIFICATION.title, TEST_NOTIFICATION.body, (message) => {
+            context.dispatchUi({ type: 'openErrorReported', message });
+          });
+
+          context.dispatchUi({ type: 'cacheActionReported', action: 'notified' });
 
           break;
         }

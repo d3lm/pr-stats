@@ -9,6 +9,7 @@ import { configureCache } from '../cache';
 import { configureAuth } from '../github';
 import { loadSettings } from '../settings';
 import { App } from './App';
+import { TEST_NOTIFICATION } from './data/notifications';
 import { readSavedOptions, type OptionsState } from './state/options';
 import { applyThemeState, defaultThemeState } from './theme';
 
@@ -654,7 +655,33 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(lineWith(setup.captureCharFrame(), 'Reload interval')).toContain('10m');
 
-    // the copy-links toggle sits between the reload rows and the theme rows
+    /**
+     * The notification rows sit between the reload rows and the
+     * copy-links toggle. The toggle starts off, the channel row
+     * starts on auto, and the test row below them names the channel
+     * the notification goes through.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'notifies you when a load finds');
+
+    expect(setup.captureCharFrame()).toContain('Desktop notifications');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'auto posts through the terminal');
+
+    expect(setup.captureCharFrame()).toContain('Notification channel');
+    expect(setup.captureCharFrame()).toContain('‹ auto ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'sends a sample notification');
+
+    expect(setup.captureCharFrame()).toContain('Send test notification');
+
+    // the copy-links toggle sits between the notification rows and the theme rows
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'clipboard');
@@ -865,6 +892,18 @@ test('labels the save state in the options modal and saves with s', async () => 
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'time between the background reloads');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'notifies you when a load finds');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'auto posts through the terminal');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'sends a sample notification');
 
     setup.mockInput.pressArrow('down');
 
@@ -1180,6 +1219,148 @@ test('reloads in the background on the configured interval while auto reload is 
     await setup.renderOnce();
 
     expect(refreshedAt(setup.captureCharFrame())).toBe(settledRefresh);
+  } finally {
+    destroyApp(setup);
+    configureCache(false);
+    delete process.env.PR_STATS_CACHE_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test('sends notifications through the injected notifier and keeps the first load and unchanged reloads quiet', async () => {
+  /**
+   * Persisting the toggle needs an enabled cache, so this test points
+   * the cache at a temp directory like the auto-reload test and loads
+   * the empty settings the way bootstrap would. The injected notifier
+   * records every send and reports a delivery failure for each one,
+   * which exercises the footer path without touching a real desktop.
+   */
+  const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
+
+  process.env.PR_STATS_CACHE_DIR = dir;
+  configureCache(true);
+  loadSettings();
+
+  const sent: { title: string; body: string }[] = [];
+
+  const setup = await renderApp(
+    <App
+      initial={initial}
+      onQuit={() => {}}
+      notify={(title, body, onError) => {
+        sent.push({ title, body });
+        onError('could not send the notification (spawn notify-send ENOENT)');
+      }}
+    />,
+    { width: 140, height: 44 },
+  );
+
+  try {
+    /**
+     * The first load only establishes the baseline, so nothing goes out
+     * even though two PRs already await a review.
+     */
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    const firstRefresh = await waitForRefresh(setup);
+    const firstRefreshSeen = Date.now();
+
+    expect(sent).toEqual([]);
+
+    /**
+     * The notifications toggle sits below the reload rows and persists
+     * right away.
+     */
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'Disable cache');
+
+    for (const hint of [
+      'deletes the cached PR data',
+      'reloads the data in the background',
+      'time between the background reloads',
+      'notifies you when a load finds',
+    ]) {
+      setup.mockInput.pressArrow('down');
+
+      await waitForText(setup, hint);
+    }
+
+    expect(setup.captureCharFrame()).toContain('Desktop notifications');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'saved to settings.json');
+
+    expect(setup.captureCharFrame()).toContain('‹ yes ›');
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ notifications: true });
+
+    /**
+     * The channel row below the toggle cycles auto, terminal, and the
+     * platform command, and persists each step. The cycle ends back on
+     * auto, so the send below keeps the default routing.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'auto posts through the terminal');
+
+    expect(setup.captureCharFrame()).toContain('‹ auto ›');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ terminal ›');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      notifications: true,
+      notifyChannel: 'terminal',
+    });
+
+    setup.mockInput.pressArrow('left');
+
+    await waitForText(setup, '‹ auto ›');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      notifications: true,
+      notifyChannel: 'auto',
+    });
+
+    /**
+     * Enter on the test row sends the sample notification through the
+     * injected notifier and reports the attempt in the message slot,
+     * while the notifier's failure report lands in the footer notice
+     * slot next to the still-open dialog.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'sends a sample notification');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'test notification sent');
+    await waitForText(setup, 'could not send the notification');
+
+    expect(sent).toEqual([TEST_NOTIFICATION]);
+
+    /**
+     * A reload of the unchanged canned data finds nothing new against
+     * the baseline, so nothing else goes out while the setting is on.
+     * The refresh time has second granularity, so the reload waits for
+     * the next second before it can prove that a load finished.
+     */
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'r reload');
+
+    expect(setup.captureCharFrame()).not.toContain('could not send the notification');
+
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, 1100 - (Date.now() - firstRefreshSeen))));
+
+    setup.mockInput.pressKey('r');
+
+    await waitForRefreshAfter(setup, firstRefresh);
+
+    expect(sent).toHaveLength(1);
   } finally {
     destroyApp(setup);
     configureCache(false);
@@ -1729,9 +1910,10 @@ test('copies the PR link instead of opening it while the copy-links setting is o
     expect(copied).toEqual([]);
 
     /**
-     * The copy-links toggle sits below the cache and reload rows in the
-     * settings dialog. Toggling it flips the value right away, and the
-     * debug run cannot persist it, which the message slot reports.
+     * The copy-links toggle sits below the cache, reload, and
+     * notification rows in the settings dialog. Toggling it flips the
+     * value right away, and the debug run cannot persist it, which the
+     * message slot reports.
      */
     setup.mockInput.pressKey('s');
 
@@ -1748,6 +1930,18 @@ test('copies the PR link instead of opening it while the copy-links setting is o
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'time between the background reloads');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'notifies you when a load finds');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'auto posts through the terminal');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'sends a sample notification');
 
     setup.mockInput.pressArrow('down');
 
