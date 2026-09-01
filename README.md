@@ -7,7 +7,7 @@ An interactive terminal UI for GitHub PR statistics, built with [OpenTUI](https:
 ## Requirements
 
 - Node 26.4+ or Bun 1.3+. The TUI renders through native FFI. Node gates that behind `--experimental-ffi`, and the launcher re-executes itself with the flag, so a plain `pr-stats` works on both runtimes.
-- Either an authenticated gh CLI (`gh auth login`) or a GitHub access token via `--token`, `GITHUB_TOKEN`, or `GH_TOKEN`. With a token, the tool calls the GitHub API directly and does not need the gh CLI. Private repositories need the `repo` scope.
+- Either an authenticated gh CLI (`gh auth login`) or a GitHub access token via `--token`, `GITHUB_TOKEN`, or `GH_TOKEN`. With a token, the tool calls the GitHub API directly and does not need the gh CLI. See [Tokens](#tokens) for the access a token needs.
 
 ## Install
 
@@ -69,6 +69,21 @@ pr-stats --work-hours 9-17 --target 1d
 # Count only approvals and change requests as reviews
 pr-stats --review-types approve,request-changes
 ```
+
+## Tokens
+
+The `--token` flag and the `GITHUB_TOKEN` and `GH_TOKEN` environment variables switch the tool from the gh CLI to direct GitHub API calls. The PR list comes from the GitHub search API, which silently leaves out every repository the token cannot see, so a token with too little access shows an empty view instead of an error.
+
+A classic token needs the `repo` scope, or `public_repo` when every repository is public.
+
+A fine-grained token needs more care, because it only covers one resource owner and only the repositories you select for it.
+
+- Pick the organization as the resource owner when the PRs live in an organization's repositories. A token owned by your user account never sees them.
+- Grant access to all repositories or select the ones you care about. The public repositories option hides every private one.
+- Grant read access to `Metadata`, `Pull requests`, and `Contents`. Searching pull requests in private repositories needs `Contents` on top of `Pull requests`, even though GitHub's permission tables do not mention it.
+- Ask an organization owner to approve the token when the organization requires approval for fine-grained tokens. Until then, the token sees nothing in that organization.
+
+To check a token, run `pr-stats --token <token> --repo owner/name` against a repository you expect to see. Naming the repository makes the search fail with a `422 Validation Failed` error when the token cannot see it, where a search without `--repo` would just return nothing.
 
 ## JSON export
 
