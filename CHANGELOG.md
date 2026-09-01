@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.15](https://github.com/d3lm/pr-stats/releases/tag/v0.2.15) - 2026-09-01
+
+### Features
+
+- feat: add bell notification channel and terminal quirk caveats ([cee0e04](https://github.com/d3lm/pr-stats/commit/cee0e0473f5766099c603e23685bcdd7ffb85a1e))
+
 ## [0.2.14](https://github.com/d3lm/pr-stats/releases/tag/v0.2.14) - 2026-09-01
 
 ### Features
