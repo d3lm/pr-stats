@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.18](https://github.com/d3lm/pr-stats/releases/tag/v0.2.18) - 2026-09-02
+
+### Bug Fixes
+
+- fix: seed the notification baseline from the startup snapshot ([d3328b2](https://github.com/d3lm/pr-stats/commit/d3328b2a2526b53b9fb109ffd5d2f21cfe9749e1))
+
 ## [0.2.17](https://github.com/d3lm/pr-stats/releases/tag/v0.2.17) - 2026-09-02
 
 ### Features
