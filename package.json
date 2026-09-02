@@ -33,6 +33,7 @@
     "build": "pnpm build:app && pnpm build:bin",
     "build:app": "esbuild src/tui/main.tsx --bundle --platform=node --format=esm --target=esnext --jsx=automatic --jsx-import-source=@opentui/react --external:@opentui/core --external:@opentui/react --external:react --outfile=dist/tui-app.mjs",
     "build:bin": "esbuild src/tui/launch.ts --platform=node --format=esm --target=node20 --outfile=dist/tui.mjs",
+    "build:notifier": "bash scripts/build-notifier.sh",
     "tui": "bun src/tui/main.tsx",
     "tui:node": "pnpm build && node dist/tui.mjs",
     "check": "tsc --noEmit",

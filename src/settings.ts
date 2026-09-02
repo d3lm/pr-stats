@@ -50,11 +50,12 @@ export interface Settings {
    */
   notifications?: boolean;
   /**
-   * Picks the channel the notifications go through. With auto the TUI
-   * asks the terminal to post them and falls back to the platform
+   * Picks the channel the notifications go through. With auto the
+   * TUI asks the terminal to post them and falls back to the platform
    * command, terminal forces the terminal path, command forces the
-   * platform command, osascript on macOS and notify-send on Linux, and
-   * bell rings the terminal bell instead of posting any text.
+   * platform command, the bundled pr-stats.app helper on macOS and
+   * notify-send on Linux, and bell rings the terminal bell instead
+   * of posting any text.
    */
   notifyChannel?: NotifyChannel;
   /**

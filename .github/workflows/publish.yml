@@ -6,7 +6,30 @@ on:
       - 'v*'
 
 jobs:
+  # The macOS notification helper is a Swift app bundle, so it builds on a
+  # macOS runner and travels to the publish job as a tarball, because the
+  # artifact upload drops the executable bit that the bundle needs.
+  notifier:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .tool-versions
+
+      - run: bash scripts/build-notifier.sh
+
+      - run: COPYFILE_DISABLE=1 tar -czf pr-stats.app.tgz -C dist pr-stats.app
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pr-stats-app
+          path: pr-stats.app.tgz
+          if-no-files-found: error
+
   publish:
+    needs: notifier
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -46,5 +69,16 @@ jobs:
       - run: pnpm test
 
       - run: pnpm build
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: pr-stats-app
+          path: dist
+
+      - name: Unpack the notification helper into dist
+        run: |
+          tar -xzf dist/pr-stats.app.tgz -C dist
+          rm dist/pr-stats.app.tgz
+          test -x dist/pr-stats.app/Contents/MacOS/pr-stats-notifier
 
       - run: npm publish

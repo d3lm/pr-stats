@@ -1,5 +1,7 @@
 import type { CliRenderer } from '@opentui/core';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { NotifyChannel } from '../../settings';
 
 /**
@@ -178,13 +180,74 @@ export function notificationCaveat(renderer: RendererNotificationBoundary, chann
 }
 
 /**
- * Names the command the fallback shells out to on this platform, or
- * null where none exists.
+ * Holds the path of the helper binary inside the macOS app bundle. The
+ * TUI runs the binary in place rather than through open, because the
+ * notification center only needs the process to live inside a bundle,
+ * and a direct spawn keeps the exit code.
  */
-export function notificationTool(): string | null {
+const HELPER_BINARY = 'pr-stats.app/Contents/MacOS/pr-stats-notifier';
+
+/**
+ * Names the bundle in the settings dialog and the footer.
+ */
+const HELPER_NAME = 'pr-stats.app';
+
+/**
+ * Mirrors the denied case of the Outcome enum in native/macos/main.swift.
+ */
+const HELPER_DENIED_EXIT = 3;
+
+/**
+ * Bounds how long a helper normally lives. One that runs longer is
+ * waiting on the permission prompt, which macOS shows on the first send
+ * and which the helper must not abandon, because macOS records an
+ * abandoned prompt as a refusal.
+ */
+const PROMPT_GRACE_MS = 5000;
+
+let helperLookup: string | null | undefined;
+
+/**
+ * Locates the macOS notification helper, or returns null off macOS and
+ * where the bundle is absent, which happens in a source checkout that
+ * never ran build:notifier. The published package ships the bundle next
+ * to the built app module in dist, and a run from the sources finds it
+ * in dist at the repo root. The lookup runs once, because the settings
+ * dialog asks on every render.
+ */
+export function notificationHelper(): string | null {
+  if (helperLookup === undefined) {
+    helperLookup = locateHelper();
+  }
+
+  return helperLookup;
+}
+
+function locateHelper(): string | null {
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+
+  for (const base of ['./', '../../../dist/']) {
+    const path = fileURLToPath(new URL(base + HELPER_BINARY, import.meta.url));
+
+    if (existsSync(path)) {
+      return path;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Names the command the fallback shells out to on this platform,
+ * or null where none exists. On macOS that is the bundled helper,
+ * or osascript where the bundle is absent.
+ */
+export function notificationTool(helper: string | null = notificationHelper()): string | null {
   switch (process.platform) {
     case 'darwin': {
-      return 'osascript';
+      return helper === null ? 'osascript' : HELPER_NAME;
     }
     case 'linux': {
       return 'notify-send';
@@ -206,18 +269,39 @@ function escapeMarkup(text: string): string {
 }
 
 /**
- * Picks the platform's notification command. Both commands ship with the
- * platform or its desktop, so nothing needs installing on a typical
- * machine. The macOS path hands the strings to the script as arguments
- * instead of quoting them into AppleScript source, and the title comes
- * first, where it ends the option parsing before a body could start
- * with a dash. The sound name makes the notification audible next to
- * the banner. The Linux path ends the options with -- for the same
- * argument-parsing reason.
+ * Describes the process one send spawns. The name stands in for the
+ * command in footer messages, so the helper reads as its bundle rather
+ * than as a long path into node_modules.
  */
-function notifyCommand(title: string, body: string): { command: string; args: string[] } | null {
+export interface NotifyCommand {
+  command: string;
+  args: string[];
+  name: string;
+}
+
+/**
+ * Picks the platform's notification command. On macOS the bundled
+ * helper posts under the pr-stats name and icon and takes the title and
+ * body as its two arguments, and osascript stands in where the bundle is
+ * absent. Both fallbacks ship with the platform or its desktop, so
+ * nothing needs installing on a typical machine. The osascript path hands
+ * the strings to the script as arguments instead of quoting them into
+ * AppleScript source, and the title comes first, where it ends the
+ * option parsing before a body could start with a dash. The sound name
+ * makes the notification audible next to the banner. The Linux path ends
+ * the options with -- for the same argument-parsing reason.
+ */
+export function notifyCommand(
+  title: string,
+  body: string,
+  helper: string | null = notificationHelper(),
+): NotifyCommand | null {
   switch (process.platform) {
     case 'darwin': {
+      if (helper !== null) {
+        return { command: helper, args: [title, body], name: HELPER_NAME };
+      }
+
       return {
         command: 'osascript',
         args: [
@@ -230,10 +314,15 @@ function notifyCommand(title: string, body: string): { command: string; args: st
           title,
           body,
         ],
+        name: 'osascript',
       };
     }
     case 'linux': {
-      return { command: 'notify-send', args: ['--app-name=pr-stats', '--', title, escapeMarkup(body)] };
+      return {
+        command: 'notify-send',
+        args: ['--app-name=pr-stats', '--', title, escapeMarkup(body)],
+        name: 'notify-send',
+      };
     }
     default: {
       return null;
@@ -242,34 +331,85 @@ function notifyCommand(title: string, body: string): { command: string; args: st
 }
 
 /**
+ * Describes the slice of a spawned child the sender listens to. Tests
+ * inject a fake here so the exit-code handling runs without a process.
+ */
+export interface NotifyChild {
+  on(event: 'error', listener: (error: Error) => void): unknown;
+  on(event: 'exit', listener: (code: number | null) => void): unknown;
+  unref(): void;
+}
+
+export type NotifySpawn = (command: string, args: string[]) => NotifyChild;
+
+const spawnDetached: NotifySpawn = (command, args) => spawn(command, args, { stdio: 'ignore', detached: true });
+
+/**
+ * Holds the start times of the helper processes still running.
+ */
+const runningHelpers = new Set<{ started: number }>();
+
+/**
  * Sends a desktop notification through the platform command, the
  * fallback for terminals without a notification protocol. The child is
  * detached and fire and forget, so nothing blocks on it. A missing
  * command, a spawn failure, or a non-zero exit reports through onError
  * instead of tearing down the TUI, so the caller can tell the user the
- * notification failed rather than staying silent. The macOS command
- * posts through the built-in Script Editor, which since macOS 15 needs
- * notification permission before anything shows up, and the README
- * names the one-time steps to grant it.
+ * notification failed rather than staying silent. The macOS helper
+ * reports a refused permission through its exit code, and the message
+ * for it names the System Settings entry that turns notifications back
+ * on. A helper that has outlived the grace period is sitting on the
+ * permission prompt, and a send in that state reports the pending
+ * prompt instead of spawning another helper, because every one of them
+ * would post as soon as the user allows and bury the desktop in stale
+ * notifications.
  */
-export function sendNotification(title: string, body: string, onError: (message: string) => void): void {
-  const spec = notifyCommand(title, body);
+export function sendNotification(
+  title: string,
+  body: string,
+  onError: (message: string) => void,
+  spawnProcess: NotifySpawn = spawnDetached,
+  helper: string | null = notificationHelper(),
+): void {
+  const spec = notifyCommand(title, body, helper);
 
   if (spec === null) {
     onError('desktop notifications are not supported on this platform');
     return;
   }
 
-  const child = spawn(spec.command, spec.args, { stdio: 'ignore', detached: true });
+  const isHelper = spec.name === HELPER_NAME;
+  const run = { started: Date.now() };
+
+  if (isHelper && [...runningHelpers].some(({ started }) => run.started - started > PROMPT_GRACE_MS)) {
+    onError('the notification permission prompt for pr-stats is still waiting for an answer');
+    return;
+  }
+
+  const child = spawnProcess(spec.command, spec.args);
+
+  if (isHelper) {
+    runningHelpers.add(run);
+  }
 
   child.on('error', (error) => {
+    runningHelpers.delete(run);
     onError(`could not send the notification (${error.message})`);
   });
 
   child.on('exit', (code) => {
-    if (code !== null && code !== 0) {
-      onError(`could not send the notification (${spec.command} exited with ${code})`);
+    runningHelpers.delete(run);
+
+    if (code === null || code === 0) {
+      return;
     }
+
+    if (isHelper && code === HELPER_DENIED_EXIT) {
+      onError('notifications for pr-stats are turned off, allow them under System Settings › Notifications › pr-stats');
+      return;
+    }
+
+    onError(`could not send the notification (${spec.name} exited with ${code})`);
   });
 
   child.unref();

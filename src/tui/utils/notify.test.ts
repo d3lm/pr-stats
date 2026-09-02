@@ -1,11 +1,91 @@
-import { expect, test } from 'bun:test';
+import { expect, setSystemTime, test } from 'bun:test';
 import {
   createNotifier,
   notificationCaveat,
   notificationChannel,
   notificationTool,
+  notifyCommand,
+  sendNotification,
+  type NotifyChild,
+  type NotifySpawn,
   type RendererNotificationBoundary,
 } from './notify';
+
+/**
+ * Runs the callback with process.platform posing as the given platform,
+ * so the command routing can be checked for macOS and Linux on whatever
+ * machine runs the tests, and restores the real value afterwards.
+ */
+function withPlatform(platform: NodeJS.Platform, run: () => void): void {
+  const original = Object.getOwnPropertyDescriptor(process, 'platform');
+
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+
+  try {
+    run();
+  } finally {
+    Object.defineProperty(process, 'platform', original ?? { value: platform, configurable: true });
+  }
+}
+
+/**
+ * Stands in for a spawned child. The test fires its exit or error by
+ * hand, so the exit-code handling runs without a process.
+ */
+class FakeChild implements NotifyChild {
+  private readonly _errorListeners: ((error: Error) => void)[] = [];
+  private readonly _exitListeners: ((code: number | null) => void)[] = [];
+
+  on(event: 'error' | 'exit', listener: ((error: Error) => void) | ((code: number | null) => void)): this {
+    if (event === 'error') {
+      this._errorListeners.push(listener as (error: Error) => void);
+    } else {
+      this._exitListeners.push(listener as (code: number | null) => void);
+    }
+
+    return this;
+  }
+
+  unref(): void {
+    // nothing to release on a fake
+  }
+
+  exit(code: number | null): void {
+    for (const listener of this._exitListeners) {
+      listener(code);
+    }
+  }
+
+  fail(message: string): void {
+    for (const listener of this._errorListeners) {
+      listener(new Error(message));
+    }
+  }
+}
+
+/**
+ * Builds a spawn stand-in that records every command and hands out fake
+ * children the test controls.
+ */
+function fakeSpawn(): { calls: { command: string; args: string[] }[]; children: FakeChild[]; spawn: NotifySpawn } {
+  const calls: { command: string; args: string[] }[] = [];
+  const children: FakeChild[] = [];
+
+  return {
+    calls,
+    children,
+    spawn: (command, args) => {
+      const child = new FakeChild();
+
+      calls.push({ command, args });
+      children.push(child);
+
+      return child;
+    },
+  };
+}
+
+const HELPER = '/pkg/dist/pr-stats.app/Contents/MacOS/pr-stats-notifier';
 
 /**
  * Builds a renderer stub whose trigger records every call and answers
@@ -83,20 +163,14 @@ test('auto skips the terminal on Apple Terminal, which swallows the sequence, wh
   const errors: string[] = [];
 
   /**
-   * The fallback would spawn osascript on this machine, so the test poses
-   * as a platform without a command for the duration of the send. The
+   * The fallback would spawn a real command on this machine, so the test
+   * poses as a platform without one for the duration of the send. The
    * unsupported-platform report then proves the send took the command
    * path without the terminal ever being asked.
    */
-  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
-
-  Object.defineProperty(process, 'platform', { value: 'freebsd', configurable: true });
-
-  try {
+  withPlatform('freebsd', () => {
     createNotifier(skipped.renderer, 'auto')('the title', 'the body', (message) => errors.push(message));
-  } finally {
-    Object.defineProperty(process, 'platform', platform ?? { value: 'darwin', configurable: true });
-  }
+  });
 
   expect(skipped.calls).toEqual([]);
   expect(errors).toEqual(['desktop notifications are not supported on this platform']);
@@ -144,4 +218,102 @@ test('explains the terminals that swallow the notification sequence and stays qu
     expect(notificationCaveat(iterm, channel)).toBeNull();
     expect(notificationCaveat(apple, channel)).toBeNull();
   }
+});
+
+test('macOS posts through the bundled helper and falls back to osascript without it', () => {
+  withPlatform('darwin', () => {
+    expect(notifyCommand('the title', 'the body', HELPER)).toEqual({
+      command: HELPER,
+      args: ['the title', 'the body'],
+      name: 'pr-stats.app',
+    });
+
+    expect(notificationTool(HELPER)).toBe('pr-stats.app');
+
+    const fallback = notifyCommand('the title', 'the body', null);
+
+    expect(fallback?.command).toBe('osascript');
+    expect(fallback?.name).toBe('osascript');
+
+    // the strings travel as arguments behind the script, never inside it
+    expect(fallback?.args.slice(-2)).toEqual(['the title', 'the body']);
+    expect(notificationTool(null)).toBe('osascript');
+  });
+
+  withPlatform('linux', () => {
+    // the helper is a macOS bundle, so Linux ignores it even when a path comes in
+    expect(notifyCommand('the title', 'fix <Button> focus', HELPER)).toEqual({
+      command: 'notify-send',
+      args: ['--app-name=pr-stats', '--', 'the title', 'fix &lt;Button&gt; focus'],
+      name: 'notify-send',
+    });
+
+    expect(notificationTool(HELPER)).toBe('notify-send');
+  });
+});
+
+test('the helper exit codes turn into footer messages', () => {
+  withPlatform('darwin', () => {
+    const { calls, children, spawn } = fakeSpawn();
+    const errors: string[] = [];
+    const report = (message: string) => errors.push(message);
+
+    sendNotification('the title', 'the body', report, spawn, HELPER);
+    sendNotification('the title', 'the body', report, spawn, HELPER);
+    sendNotification('the title', 'the body', report, spawn, HELPER);
+    sendNotification('the title', 'the body', report, spawn, HELPER);
+
+    expect(calls).toHaveLength(4);
+    expect(calls[0]).toEqual({ command: HELPER, args: ['the title', 'the body'] });
+
+    children[0]?.exit(0);
+    children[1]?.exit(3);
+    children[2]?.exit(1);
+    children[3]?.fail('spawn ENOENT');
+
+    expect(errors).toEqual([
+      'notifications for pr-stats are turned off, allow them under System Settings › Notifications › pr-stats',
+      'could not send the notification (pr-stats.app exited with 1)',
+      'could not send the notification (spawn ENOENT)',
+    ]);
+  });
+});
+
+test('a helper stuck on the permission prompt blocks further sends until it exits', () => {
+  withPlatform('darwin', () => {
+    const { calls, children, spawn } = fakeSpawn();
+    const errors: string[] = [];
+    const report = (message: string) => errors.push(message);
+
+    try {
+      setSystemTime(new Date('2026-09-02T09:00:00Z'));
+      sendNotification('the title', 'the body', report, spawn, HELPER);
+
+      // a second send inside the grace period runs, because a healthy helper takes under a second
+      setSystemTime(new Date('2026-09-02T09:00:02Z'));
+      sendNotification('the title', 'the body', report, spawn, HELPER);
+
+      expect(calls).toHaveLength(2);
+      expect(errors).toEqual([]);
+
+      // past the grace period the first helper can only be waiting on the prompt
+      setSystemTime(new Date('2026-09-02T09:00:10Z'));
+      sendNotification('the title', 'the body', report, spawn, HELPER);
+
+      expect(calls).toHaveLength(2);
+      expect(errors).toEqual(['the notification permission prompt for pr-stats is still waiting for an answer']);
+
+      // the user answers, the helpers exit, and sends flow again
+      children[0]?.exit(0);
+      children[1]?.exit(0);
+      sendNotification('the title', 'the body', report, spawn, HELPER);
+
+      expect(calls).toHaveLength(3);
+      expect(errors).toHaveLength(1);
+
+      children[2]?.exit(0);
+    } finally {
+      setSystemTime();
+    }
+  });
 });
