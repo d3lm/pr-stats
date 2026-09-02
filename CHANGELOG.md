@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.17](https://github.com/d3lm/pr-stats/releases/tag/v0.2.17) - 2026-09-02
+
+### Features
+
+- feat: count reviewed PRs apart from review rounds on the Reviews tab ([570e222](https://github.com/d3lm/pr-stats/commit/570e222a2280555732c1a200d15be3f8b796daa1))
+
 ## [0.2.16](https://github.com/d3lm/pr-stats/releases/tag/v0.2.16) - 2026-09-02
 
 ### Features
