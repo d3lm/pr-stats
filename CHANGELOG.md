@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.16](https://github.com/d3lm/pr-stats/releases/tag/v0.2.16) - 2026-09-02
+
+### Features
+
+- feat: post macOS notifications through a bundled helper app ([3585424](https://github.com/d3lm/pr-stats/commit/35854240f1dbd7430be79f57d2578544971b790e))
+
+### Bug Fixes
+
+- fix: rename the Reviewing queue to Reviewed ([8dbf142](https://github.com/d3lm/pr-stats/commit/8dbf142947973df04bd6ac52875b2b88e67bdd83))
+
 ## [0.2.15](https://github.com/d3lm/pr-stats/releases/tag/v0.2.15) - 2026-09-01
 
 ### Features
