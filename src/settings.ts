@@ -46,7 +46,9 @@ export interface Settings {
   /**
    * Sends a desktop notification when a load finds a PR newly awaiting
    * your review or a review re-requested from you. The first load of a
-   * session only records what is already waiting.
+   * session compares against the startup snapshot, so it reports what
+   * changed since the previous session, and only a session without a
+   * snapshot starts by recording what is already waiting.
    */
   notifications?: boolean;
   /**

@@ -32,8 +32,8 @@ export interface BootstrapResult {
   reloadInterval: string;
   /**
    * Mirrors the notifications setting from settings.json. While it is
-   * set, fresh loads after the first send desktop notifications for new
-   * and re-requested reviews.
+   * set, fresh loads send desktop notifications for new and re-requested
+   * reviews, the first one measured against the startup snapshot.
    */
   notifications: boolean;
   /**

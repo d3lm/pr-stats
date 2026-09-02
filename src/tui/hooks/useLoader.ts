@@ -35,6 +35,20 @@ export interface Loader {
   reload: (bypassCache?: boolean) => void;
 }
 
+export interface LoaderCallbacks {
+  /**
+   * Fires once on mount with the startup snapshot when one rendered,
+   * before the first load starts, so the snapshot can stand in for the
+   * load before that one wherever a caller compares consecutive loads.
+   */
+  onSnapshot?: (data: RawData) => void;
+  /**
+   * Fires with every freshly loaded dataset, right after it became the
+   * shown data, and never for the startup snapshot.
+   */
+  onLoaded?: (data: RawData) => void;
+}
+
 /**
  * Owns the data-loading lifecycle. The lazy snapshot initializer runs
  * once on mount, so the disk read happens exactly once and the charts
@@ -44,11 +58,13 @@ export interface Loader {
  * the cache, and a noCache start also skips the snapshot like every
  * other cache read. Reload reads the options from the render it was
  * created in, which useKeyboard keeps current, so a reload always
- * fetches for the latest committed options. The onLoaded callback fires
- * with every freshly loaded dataset, right after it became the shown
- * data, and never for the startup snapshot.
+ * fetches for the latest committed options. The callbacks report the
+ * snapshot once and then every fresh load, always in that order, because
+ * the snapshot callback runs before the first load even starts.
  */
-export function useLoader(options: OptionsState, noCache: boolean, onLoaded?: (data: RawData) => void): Loader {
+export function useLoader(options: OptionsState, noCache: boolean, callbacks: LoaderCallbacks = {}): Loader {
+  const { onSnapshot, onLoaded } = callbacks;
+
   const [startupSnapshot] = useState(() => (noCache ? null : loadSnapshot(options)));
 
   const [raw, setRaw] = useState<RawData | null>(startupSnapshot);
@@ -134,7 +150,9 @@ export function useLoader(options: OptionsState, noCache: boolean, onLoaded?: (d
    * skips the resets a reload does and only starts the fetch, with the
    * mount-render closure carrying exactly the initial options the first
    * load must fetch for. The ref guard keeps later renders of this
-   * dependency-free effect from starting the load again.
+   * dependency-free effect from starting the load again. The snapshot
+   * reports right before the fetch starts, which is what guarantees the
+   * callback order, since the load can only finish after an await.
    *
    * The cleanup marks the hook disposed, which keeps a load that resolves
    * after unmount from writing state. On re-renders the cleanup and the
@@ -149,6 +167,10 @@ export function useLoader(options: OptionsState, noCache: boolean, onLoaded?: (d
 
     if (!startedRef.current) {
       startedRef.current = true;
+
+      if (startupSnapshot !== null) {
+        onSnapshot?.(startupSnapshot);
+      }
 
       void run(noCache);
     }

@@ -34,10 +34,11 @@ export interface ReviewRequestChanges {
  * request-review cycle of yours and as a new request otherwise. The
  * newer-request rule catches a PR that was pending, got your review, and
  * came back to you all between two loads. A null baseline marks the
- * first load, which only establishes the baseline, so a fresh start
- * never floods the desktop with everything already waiting. Pending
- * results on closed PRs and unrequested reviews never notify, because a
- * closed PR needs nothing and a team request never names you.
+ * first result list of a session, the startup snapshot or the first
+ * load without one, which only establishes the baseline, so a fresh
+ * start never floods the desktop with everything already waiting.
+ * Pending results on closed PRs and unrequested reviews never notify,
+ * because a closed PR needs nothing and a team request never names you.
  */
 export function diffReviewRequests(previous: RequestBaseline | null, results: ReviewResult[]): ReviewRequestChanges {
   const baseline: RequestBaseline = new Map();

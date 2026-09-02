@@ -9,6 +9,7 @@ import { configureCache } from '../cache';
 import { configureAuth } from '../github';
 import { loadSettings } from '../settings';
 import { App } from './App';
+import { saveSnapshot, type RawData } from './data/load';
 import { TEST_NOTIFICATION } from './data/notifications';
 import { readSavedOptions, type OptionsState } from './state/options';
 import { applyThemeState, defaultThemeState } from './theme';
@@ -1414,6 +1415,108 @@ test('sends notifications through the injected notifier and keeps the first load
 
     expect(setup.captureCharFrame()).not.toContain('could not send the notification');
 
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, 1100 - (Date.now() - firstRefreshSeen))));
+
+    setup.mockInput.pressKey('r');
+
+    await waitForRefreshAfter(setup, firstRefresh);
+
+    expect(sent).toHaveLength(1);
+  } finally {
+    destroyApp(setup);
+    configureCache(false);
+    delete process.env.PR_STATS_CACHE_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test('seeds the notification baseline from the startup snapshot, so the first load reports what changed since the last session', async () => {
+  /**
+   * The snapshot stands for the previous session and needs an enabled
+   * cache to be read, so this test points the cache at a temp directory
+   * like the notifications test above. It holds web#3 awaiting a review
+   * since the same request the canned data reports, and api#7 sitting on
+   * the reviewed queue after a review without a personal request, while
+   * the canned data has api#7 awaiting a review again.
+   */
+  const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
+
+  process.env.PR_STATS_CACHE_DIR = dir;
+
+  configureCache(true);
+  loadSettings();
+
+  const snapshot: RawData = {
+    user: 'testuser',
+    sinceIso: '2026-06-01',
+    repos: [],
+    reviewResults: [
+      {
+        kind: 'pending',
+        pr: {
+          repo: 'acme/web',
+          number: 3,
+          title: 'Add pagination to the list view',
+          url: 'https://github.com/acme/web/pull/3',
+          state: 'open',
+          createdAt: new Date('2026-08-22T10:00:00Z'),
+        },
+        requestedAt: new Date('2026-08-23T09:00:00Z'),
+      },
+      {
+        kind: 'unrequested',
+        pr: {
+          repo: 'acme/api',
+          number: 7,
+          title: 'Refactor the billing worker',
+          url: 'https://github.com/acme/api/pull/7',
+          state: 'open',
+          createdAt: new Date('2026-08-19T10:00:00Z'),
+        },
+        reviewedAt: new Date('2026-08-21T09:00:00Z'),
+      },
+    ],
+    sizes: [],
+    authoredTotal: 0,
+    searchCapped: false,
+    fetchedAt: new Date('2026-08-26T10:00:00Z'),
+  };
+
+  saveSnapshot(initial, snapshot);
+
+  const sent: { title: string; body: string }[] = [];
+
+  const setup = await renderApp(
+    <App
+      initial={initial}
+      initialNotifications
+      onQuit={() => {}}
+      notify={(title, body) => {
+        sent.push({ title, body });
+      }}
+    />,
+    { width: 140, height: 44 },
+  );
+
+  try {
+    /**
+     * The snapshot renders first with its single awaiting PR, and the
+     * fresh load then brings the second one. Only api#7 is news against
+     * the snapshot, and without a completed request cycle of yours on
+     * it, the notification calls it a new request.
+     */
+    await waitForText(setup, '1 PR awaiting your review');
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    const firstRefresh = await waitForRefresh(setup);
+    const firstRefreshSeen = Date.now();
+
+    expect(sent).toEqual([{ title: 'Review requested on acme/api#7', body: 'Refactor the billing worker' }]);
+
+    /**
+     * A reload of the unchanged canned data finds nothing new against the
+     * baseline the first load left behind, the same as without a snapshot.
+     */
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, 1100 - (Date.now() - firstRefreshSeen))));
 
     setup.mockInput.pressKey('r');

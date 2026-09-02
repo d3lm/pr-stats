@@ -116,7 +116,7 @@ The `r` key reloads the data by hand, and `R` refetches everything past the cach
 
 ## Notifications
 
-The Desktop notifications row in the settings dialog makes the TUI send a desktop notification whenever a load finds a PR newly awaiting your review or a review re-requested from you after you already reviewed the PR. Every load diffs its review requests against the load before it, so the first load of a session only records what is already waiting and never notifies about it. Manual reloads count as well, but the feature pairs naturally with auto reload, which lets the TUI watch your review queue from a spare terminal. The setting persists in `settings.json` in the cache directory.
+The Desktop notifications row in the settings dialog makes the TUI send a desktop notification whenever a load finds a PR newly awaiting your review or a review re-requested from you after you already reviewed the PR. Every load diffs its review requests against the data shown before it. For the first load of a session that is the startup snapshot from the previous session, so a restart tells you what came in while the TUI was closed. Only a session without a snapshot, after `--no-cache` or on the first run, starts by recording what is already waiting without notifying about it. Manual reloads count as well, but the feature pairs naturally with auto reload, which lets the TUI watch your review queue from a spare terminal. The setting persists in `settings.json` in the cache directory.
 
 ```json
 {

@@ -79,9 +79,10 @@ interface AppProps {
   initialReloadInterval?: string;
   /**
    * Seeds the notifications state from the saved setting. While it is
-   * on, every fresh load after the first sends a desktop notification
-   * for the PRs newly awaiting your review and the reviews re-requested
-   * from you. The settings dialog toggles it at runtime.
+   * on, every fresh load sends a desktop notification for the PRs newly
+   * awaiting your review and the reviews re-requested from you since the
+   * data shown before it, which is the startup snapshot for the first
+   * load. The settings dialog toggles it at runtime.
    */
   initialNotifications?: boolean;
   /**
@@ -239,22 +240,30 @@ export function App({
    * state too keeps the vanished repo from reopening on its own if a
    * later reload brings it back. The same load feeds the notification
    * diff, keyed by the options it fetched for, which this closure holds
-   * because the loader calls back the render that started the load.
+   * because the loader calls back the render that started the load. The
+   * startup snapshot feeds the diff first, so the first fresh load
+   * reports what changed since the previous session instead of only
+   * recording the baseline.
    */
-  const { raw, isSnapshot, loading, load, error, stale, reload } = useLoader(options, noCache, (data) => {
-    dispatchBrowse({
-      type: 'dataLoaded',
-      repos: {
-        pending: buildPendingRepoOptions(data),
-        open: buildOpenRepoOptions(data),
-        review: buildReviewRepoOptions(data),
-        size: buildSizeRepoOptions(data),
-        comment: buildCommentRepoOptions(data),
-        merged: buildMergedRepoOptions(data),
-      },
-    });
+  const { raw, isSnapshot, loading, load, error, stale, reload } = useLoader(options, noCache, {
+    onSnapshot: (data) => {
+      notifyReviewChanges(fetchParamsKey(options), data.reviewResults);
+    },
+    onLoaded: (data) => {
+      dispatchBrowse({
+        type: 'dataLoaded',
+        repos: {
+          pending: buildPendingRepoOptions(data),
+          open: buildOpenRepoOptions(data),
+          review: buildReviewRepoOptions(data),
+          size: buildSizeRepoOptions(data),
+          comment: buildCommentRepoOptions(data),
+          merged: buildMergedRepoOptions(data),
+        },
+      });
 
-    notifyReviewChanges(fetchParamsKey(options), data.reviewResults);
+      notifyReviewChanges(fetchParamsKey(options), data.reviewResults);
+    },
   });
 
   /**
