@@ -27,7 +27,7 @@ Without flags, it covers PRs from the last 90 days across all repositories you c
 
 - **Queue** lists the open PRs awaiting your review with their wait time, and below them the open PRs you already reviewed. A fresh review request moves a PR back into the awaiting list.
 - **Your PRs** splits into your open PRs and a merged-and-closed report with merge-time, first-review, backlog, and outcome charts plus a reviewer leaderboard. The `t` key switches the sub-tabs.
-- **Time to review** charts your review times as a histogram, trend, heatmap, and weekly volume, plus review cycles, verdicts, an off-hours gauge, and the requests still waiting on you.
+- **Reviews** counts the PRs you reviewed on request next to the review rounds they took, and charts your review times as a histogram, trend, heatmap, and weekly volume, plus review cycles, verdicts, an off-hours gauge, and the requests still waiting on you.
 - **PR size** carries the same charts for PR sizes and adds a weekly net-lines trend.
 - **Comments** holds a histogram of comments per PR, a scatter against PR size, and the most commented PRs.
 

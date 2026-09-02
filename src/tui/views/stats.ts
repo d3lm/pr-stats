@@ -268,8 +268,16 @@ export function buildReviewView(
   const results = repo === null ? raw.reviewResults : raw.reviewResults.filter((result) => result.pr.repo === repo);
   const stats = computeReviewStats(results, { targetHours: target?.hours, now: raw.fetchedAt });
 
+  /**
+   * The reviewed entries hold one per completed request-review cycle,
+   * so a PR that came back to you counts twice there. The strip leads
+   * with the distinct PRs, which the cycles list carries one count for,
+   * and puts the rounds next to it so the two never get mistaken for each
+   * other.
+   */
   const strip = [
-    countCell(stats.reviewed.length, 'reviewed on request'),
+    countCell(stats.cycles.length, 'PRs reviewed'),
+    countCell(stats.reviewed.length, 'review rounds'),
     countCell(stats.pending.length, 'awaiting you', true),
     countCell(stats.expired.length, 'closed unreviewed', true),
     [{ text: `${stats.unrequested.length} reviewed unasked (excluded)`, fg: theme.dim }],

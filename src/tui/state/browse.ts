@@ -1,6 +1,6 @@
 import type { RepoOption } from '../views/repos';
 
-export const TABS = ['1 Awaiting you', '2 Your PRs', '3 Review time', '4 PR size', '5 Comments'];
+export const TABS = ['1 Awaiting you', '2 Your PRs', '3 Reviews', '4 PR size', '5 Comments'];
 
 /**
  * The two queue tabs, which render a selectable PR list with an optional

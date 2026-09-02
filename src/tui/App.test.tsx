@@ -280,11 +280,13 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     /**
      * The pinned strip above the charts summarizes how the PRs classified,
-     * and the scope row carries the headline percentiles. The canned p90
-     * of 24 hours lands exactly on the one-day target, so the headline
-     * reports the target as met.
+     * and the scope row carries the headline percentiles. Every canned PR
+     * took a single review round, so the PR count and the round count agree.
+     * The canned p90 of 24 hours lands exactly on the one-day target, so the
+     * headline reports the target as met.
      */
-    expect(reviewFrame).toContain('3 reviewed on request');
+    expect(reviewFrame).toContain('3 PRs reviewed');
+    expect(reviewFrame).toContain('3 review rounds');
     expect(reviewFrame).toContain('2 awaiting you');
     expect(reviewFrame).toContain('1 closed unreviewed');
     expect(reviewFrame).toContain('2 reviewed unasked (excluded)');
@@ -374,7 +376,8 @@ test('loads canned data and renders both tabs, the options modal, and the settin
      * clear which repo the stats cover.
      */
     expect(setup.captureCharFrame()).toContain('▸ acme/api');
-    expect(setup.captureCharFrame()).toContain('2 reviewed on request');
+    expect(setup.captureCharFrame()).toContain('2 PRs reviewed');
+    expect(setup.captureCharFrame()).toContain('2 review rounds');
 
     setup.mockInput.pressKey('4');
 
