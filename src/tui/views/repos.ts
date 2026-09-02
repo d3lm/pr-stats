@@ -100,7 +100,7 @@ export function buildSizeRepoOptions(raw: RawData): RepoOption[] {
 function pendingDetail(counts: { awaiting: number; reviewing: number }): string {
   const awaiting = `${counts.awaiting} ${counts.awaiting === 1 ? 'PR' : 'PRs'} awaiting your review`;
 
-  return awaiting + (counts.reviewing > 0 ? `, ${counts.reviewing} reviewing` : '');
+  return awaiting + (counts.reviewing > 0 ? `, ${counts.reviewing} reviewed` : '');
 }
 
 /**

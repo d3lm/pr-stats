@@ -57,7 +57,7 @@ function groupedLists<T extends { pr: { repo: string } }>(entries: T[], rowsOf: 
 /**
  * Builds the awaiting-review tab, the two queues of open PRs on your
  * plate, one section each. The awaiting section holds the PRs where a
- * review from you is still pending, longest wait first. The reviewing
+ * review from you is still pending, longest wait first. The reviewed
  * section holds the PRs you already reviewed that are still open without
  * a new request, longest since your review first, so a PR you commented
  * on stays visible until it merges or closes. Call this after the time
@@ -83,7 +83,7 @@ export function buildPendingReviewView(raw: RawData, repo: string | null = null,
     empty: null,
     sections: [
       ...(awaiting.length === 0 ? [] : [sectionOf(`Awaiting your review (n=${awaiting.length})`, awaiting)]),
-      ...(reviewing.length === 0 ? [] : [sectionOf(`Reviewing (n=${reviewing.length})`, reviewing)]),
+      ...(reviewing.length === 0 ? [] : [sectionOf(`Reviewed (n=${reviewing.length})`, reviewing)]),
     ],
   };
 }

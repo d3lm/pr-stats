@@ -1616,12 +1616,12 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(pickerFrame).toContain('▸  All repos');
     expect(pickerFrame).toContain('acme/api');
     expect(pickerFrame).toContain('acme/web');
-    expect(pickerFrame).toContain('1 PR awaiting your review, 1 reviewing');
+    expect(pickerFrame).toContain('1 PR awaiting your review, 1 reviewed');
     expect(pickerFrame).not.toContain('Awaiting your review (n=');
 
     /**
      * Enter on All repos opens the aggregate view, the awaiting queue
-     * longest wait first and the reviewing queue with the open PR you
+     * longest wait first and the reviewed queue with the open PR you
      * already reviewed, with the scope header naming it.
      */
     setup.mockInput.pressEnter();
@@ -1635,7 +1635,7 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(pendingFrame).toContain('Refactor the billing worker');
     expect(pendingFrame).toContain('acme/web#3');
     expect(pendingFrame).toContain('Add pagination to the list view');
-    expect(pendingFrame).toContain('Reviewing (n=1)');
+    expect(pendingFrame).toContain('Reviewed (n=1)');
     expect(pendingFrame).toContain('acme/api#8');
     expect(pendingFrame).toContain('Add caching to the sessions store');
     expect(pendingFrame).not.toContain('Review time distribution');
@@ -1655,7 +1655,7 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(groupedFrame).toContain('Awaiting your review (n=2)');
     expect(groupedFrame).toContain('acme/api (n=1)');
     expect(groupedFrame).toContain('acme/web (n=1)');
-    expect(groupedFrame).toContain('Reviewing (n=1)');
+    expect(groupedFrame).toContain('Reviewed (n=1)');
 
     setup.mockInput.pressKey('g');
 

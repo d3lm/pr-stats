@@ -97,15 +97,15 @@ test('the pending picker lists every repo with review activity and skips the pic
        */
       pendingResult('acme/zulu', 4, '2026-07-04T00:00:00Z', 'closed'),
       reviewedResult('acme/zulu', 5, '2026-07-02T00:00:00Z', 'closed'),
-      // an open reviewed PR counts into the repo's reviewing detail
+      // an open reviewed PR counts into the repo's reviewed detail
       reviewedResult('acme/web', 6, '2026-07-05T00:00:00Z'),
     ],
   });
 
   expect(buildPendingRepoOptions(raw)).toEqual([
-    { repo: null, label: 'All repos', detail: '3 PRs awaiting your review, 1 reviewing' },
+    { repo: null, label: 'All repos', detail: '3 PRs awaiting your review, 1 reviewed' },
     { repo: 'acme/api', label: 'acme/api', detail: '2 PRs awaiting your review' },
-    { repo: 'acme/web', label: 'acme/web', detail: '1 PR awaiting your review, 1 reviewing' },
+    { repo: 'acme/web', label: 'acme/web', detail: '1 PR awaiting your review, 1 reviewed' },
     { repo: 'acme/zulu', label: 'acme/zulu', detail: '0 PRs awaiting your review' },
   ]);
 
@@ -180,13 +180,13 @@ test('the pending view narrows to a repo and groups the aggregate by repo', () =
   );
 });
 
-test('the pending view lists PRs you reviewed that are still open in the reviewing queue', () => {
+test('the pending view lists PRs you reviewed that are still open in the reviewed queue', () => {
   const raw = rawData({
     reviewResults: [
       pendingResult('acme/api', 1, '2026-07-01T00:00:00Z'),
       /**
        * Two completed cycles on the same open PR collapse into one
-       * reviewing row, which carries the latest review time and sorts
+       * reviewed row, which carries the latest review time and sorts
        * by it, oldest first.
        */
       reviewedResult('acme/api', 2, '2026-07-02T00:00:00Z'),
@@ -207,7 +207,7 @@ test('the pending view lists PRs you reviewed that are still open in the reviewi
 
   const flat = buildPendingReviewView(raw);
 
-  expect(flat.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)', 'Reviewing (n=2)']);
+  expect(flat.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)', 'Reviewed (n=2)']);
 
   expect(queueRows(flat).map((row) => row.ref)).toEqual([
     'acme/api#1',
@@ -220,10 +220,10 @@ test('the pending view lists PRs you reviewed that are still open in the reviewi
   // narrowing to a repo filters both queues
   const narrowed = buildPendingReviewView(raw, 'acme/api');
 
-  expect(narrowed.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=1)', 'Reviewing (n=1)']);
+  expect(narrowed.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=1)', 'Reviewed (n=1)']);
   expect(queueRows(narrowed).map((row) => row.ref)).toEqual(['acme/api#1', 'acme/api#2']);
 
-  // a scope without reviewing PRs skips that section
+  // a scope without reviewed PRs skips that section
   expect(buildPendingReviewView(raw, 'acme/zulu').sections.map((section) => section.title)).toEqual([
     'Awaiting your review (n=1)',
   ]);
@@ -235,7 +235,7 @@ test('the pending view lists PRs you reviewed that are still open in the reviewi
    */
   const grouped = buildPendingReviewView(raw, null, true);
 
-  expect(grouped.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)', 'Reviewing (n=2)']);
+  expect(grouped.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)', 'Reviewed (n=2)']);
 
   expect(grouped.sections[0].lists.map((list) => list.title)).toEqual([
     'acme/api (n=1)',
