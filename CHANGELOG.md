@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.21](https://github.com/d3lm/pr-stats/releases/tag/v0.2.21) - 2026-09-04
+
+### Bug Fixes
+
+- fix: publish once per tag and write the bin path npm normalizes to ([389aafb](https://github.com/d3lm/pr-stats/commit/389aafb9bd92611676d367f3aa203a6aa866e02f))
+
 ## [0.2.20](https://github.com/d3lm/pr-stats/releases/tag/v0.2.20) - 2026-09-04
 
 ### Features
