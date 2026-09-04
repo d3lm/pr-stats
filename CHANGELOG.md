@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.19](https://github.com/d3lm/pr-stats/releases/tag/v0.2.19) - 2026-09-04
+
+### Bug Fixes
+
+- fix: exclude your own PRs from the review searches ([36633cf](https://github.com/d3lm/pr-stats/commit/36633cf6a808e84ad86397498d1035569a4aae5b))
+
 ## [0.2.18](https://github.com/d3lm/pr-stats/releases/tag/v0.2.18) - 2026-09-02
 
 ### Bug Fixes
