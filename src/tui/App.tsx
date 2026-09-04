@@ -6,19 +6,31 @@ import {
   parseReloadInterval,
   reloadIntervalMs,
   saveReloadInterval,
+  saveSnoozeDuration,
   saveTheme,
   type NotifyChannel,
 } from '../settings';
+import {
+  DEFAULT_SNOOZE_DURATION,
+  dueSnoozes,
+  formatWakeTime,
+  parseSnoozeDuration,
+  wokenPrs,
+  type Snooze,
+} from '../snooze';
 import { CliError } from '../utils';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { MainPanel } from './components/MainPanel';
 import { Modals } from './components/Modals';
 import { TabBar } from './components/TabBar';
+import { describeSnoozeWakeUps } from './data/notifications';
 import { useAutoReload } from './hooks/useAutoReload';
 import { useDeferredLoading } from './hooks/useDeferredLoading';
 import { useLoader } from './hooks/useLoader';
 import { useReviewNotifications } from './hooks/useReviewNotifications';
+import { useSnoozes } from './hooks/useSnoozes';
+import { useSnoozeWakeups } from './hooks/useSnoozeWakeups';
 import { useViewModel } from './hooks/useViewModel';
 import { handleAppKey } from './keymap';
 import { browseReducer, initialBrowseState } from './state/browse';
@@ -30,7 +42,7 @@ import {
   validateField,
   type OptionsState,
 } from './state/options';
-import { THEME_COLORS } from './state/settings';
+import { SETTINGS, THEME_COLORS } from './state/settings';
 import { initialUiState, uiReducer } from './state/ui';
 import {
   applyThemeState,
@@ -98,6 +110,18 @@ interface AppProps {
    */
   initialCopyLinks?: boolean;
   /**
+   * Seeds the default snooze duration from the saved setting, a value
+   * like 30m, 2h, or 1d that bootstrap already validated. The snooze
+   * dialog starts with it, and the settings dialog edits it at runtime.
+   */
+  initialSnoozeDuration?: string;
+  /**
+   * Seeds the snoozes with what bootstrap read from the snooze file in
+   * the cache directory, expired ones included so the wake-up timer can
+   * end them and report the PRs that came back while the TUI was closed.
+   */
+  initialSnoozes?: Snooze[];
+  /**
    * Seeds the theme state with what bootstrap parsed from settings.json
    * and already applied. The settings dialog changes it at runtime.
    */
@@ -144,6 +168,8 @@ export function App({
   initialNotifications = false,
   initialNotifyChannel = 'auto',
   initialCopyLinks = false,
+  initialSnoozeDuration = DEFAULT_SNOOZE_DURATION,
+  initialSnoozes = [],
   initialTheme = defaultThemeState(),
   openUrl = openInBrowser,
   copyUrl,
@@ -171,7 +197,9 @@ export function App({
   const [notifications, setNotifications] = useState(initialNotifications);
   const [notifyChannel, setNotifyChannel] = useState(initialNotifyChannel);
   const [copyLinks, setCopyLinks] = useState(initialCopyLinks);
+  const [snoozeDuration, setSnoozeDuration] = useState(initialSnoozeDuration);
   const [themeState, setThemeState] = useState(initialTheme);
+  const snoozeStore = useSnoozes(initialSnoozes);
 
   /**
    * Falls back to the channel-following notifier when no notify override
@@ -197,7 +225,17 @@ export function App({
       dispatchUi({ type: 'openErrorReported', message });
     });
 
-    dispatchUi({ type: 'copyReported', message: `copied ${row.ref} to the clipboard` });
+    dispatchUi({ type: 'successReported', message: `copied ${row.ref} to the clipboard` });
+  };
+
+  /**
+   * Ends the snooze of a PR from the snoozed queue, which puts it back
+   * on the awaiting list right away, and confirms in the footer notice
+   * slot.
+   */
+  const unsnooze = (ref: string) => {
+    snoozeStore.remove([ref]);
+    dispatchUi({ type: 'successReported', message: `unsnoozed ${ref}` });
   };
 
   /**
@@ -273,7 +311,52 @@ export function App({
    */
   useAutoReload(autoReload ? reloadIntervalMs(reloadInterval) : null, loading, reload);
 
-  const views = useViewModel(raw, options, width, browse.scopes, browse.grouped, browse.expanded, themeState);
+  /**
+   * A snooze that reaches its wake-up time ends, which rebuilds the
+   * queue with the PR back on the awaiting list. When the PR still awaits
+   * the review the snooze parked, a desktop notification says so while
+   * the setting is on. A PR that got reviewed, closed, or re-requested in
+   * the meantime ends its snooze quietly, because the queue already shows
+   * the right thing for it. Snoozes that ended while the TUI was closed
+   * wake up as soon as data is on screen, the startup snapshot included,
+   * so a restart reports them like the new requests it finds.
+   */
+  useSnoozeWakeups(snoozeStore.snoozes, raw !== null, () => {
+    if (raw === null) {
+      return;
+    }
+
+    const due = dueSnoozes(snoozeStore.snoozes, Date.now());
+
+    if (due.length === 0) {
+      return;
+    }
+
+    const woken = wokenPrs(due, raw.reviewResults);
+
+    snoozeStore.remove(due.map((snooze) => snooze.ref));
+
+    if (!notifications) {
+      return;
+    }
+
+    for (const notification of describeSnoozeWakeUps(woken)) {
+      notifier(notification.title, notification.body, (message) => {
+        dispatchUi({ type: 'openErrorReported', message });
+      });
+    }
+  });
+
+  const views = useViewModel(
+    raw,
+    options,
+    width,
+    browse.scopes,
+    browse.grouped,
+    browse.expanded,
+    snoozeStore.snoozes,
+    themeState,
+  );
 
   /**
    * A refresh is always running behind the startup snapshot, so the
@@ -337,6 +420,80 @@ export function App({
   };
 
   /**
+   * Commits an edited default snooze duration from the settings dialog.
+   * A valid value seeds the next snooze dialog and persists to
+   * settings.json, with the message slot reporting whether the save
+   * landed. A bad value keeps the edit open and shows the error instead
+   * of the row hint.
+   */
+  const commitSnoozeDuration = () => {
+    const value = draftRef.current.trim();
+
+    try {
+      parseSnoozeDuration(value);
+
+      setSnoozeDuration(value);
+      dispatchUi({ type: 'settingCommitted', action: saveSnoozeDuration(value) ? 'saved' : 'notSaved' });
+    } catch (error) {
+      if (error instanceof CliError) {
+        dispatchUi({ type: 'settingErrorReported', message: error.message });
+        return;
+      }
+
+      throw error;
+    }
+  };
+
+  /**
+   * Routes the enter press of the settings dialog's edit mode to the
+   * commit handler of the selected row, because the dialog holds two
+   * editable durations.
+   */
+  const commitSetting = () => {
+    if (SETTINGS[ui.selectedSetting].key === 'snoozeDuration') {
+      commitSnoozeDuration();
+    } else {
+      commitReloadInterval();
+    }
+  };
+
+  /**
+   * Commits the snooze dialog. A valid duration parks the highlighted PR
+   * until now plus the duration, closes the dialog, and confirms in the
+   * footer with the wake-up time, or reports in the error slot that the
+   * snooze only lasts the session when the disabled cache stored
+   * nothing. A bad duration keeps the dialog open and shows the error in
+   * place of its hint.
+   */
+  const commitSnooze = () => {
+    const target = ui.snoozeTarget;
+
+    if (target === null) {
+      return;
+    }
+
+    const value = draftRef.current.trim();
+
+    try {
+      const until = Date.now() + parseSnoozeDuration(value);
+      const saved = snoozeStore.add({ ref: target.ref, until, requestedAt: target.requestedAt });
+
+      dispatchUi({
+        type: 'snoozeCommitted',
+        message: `snoozed ${target.ref} until ${formatWakeTime(until)}`,
+        saved,
+      });
+    } catch (error) {
+      if (error instanceof CliError) {
+        dispatchUi({ type: 'snoozeErrorReported', message: error.message });
+        return;
+      }
+
+      throw error;
+    }
+  };
+
+  /**
    * Commits an edited theme color from the theme dialog. A valid value
    * becomes part of the custom theme, which the edit creates from the
    * theme on screen or updates and switches to. It applies to the live
@@ -383,6 +540,7 @@ export function App({
       notifications,
       notifyChannel,
       copyLinks,
+      snoozeDuration,
       themeState,
       options,
       views,
@@ -402,6 +560,7 @@ export function App({
       openUrl,
       notify: notifier,
       copyRow,
+      unsnooze,
       beginEdit: (value) => {
         draftRef.current = value;
         dispatchUi({ type: 'editStarted' });
@@ -462,6 +621,7 @@ export function App({
         tab={browse.tab}
         authoredTab={browse.authoredTab}
         views={views}
+        pendingCursor={browse.rowCursors.pending}
         copyLinks={copyLinks}
         openError={ui.openError}
         successNotice={ui.successNotice === null ? null : ui.successNotice.text}
@@ -478,13 +638,15 @@ export function App({
         notifications={notifications}
         notifyChannel={notifyChannel}
         copyLinks={copyLinks}
+        snoozeDuration={snoozeDuration}
         themeState={themeState}
         onDraft={(value) => {
           draftRef.current = value;
         }}
         onSubmitField={commitField}
-        onSubmitReloadInterval={commitReloadInterval}
+        onSubmitSetting={commitSetting}
         onSubmitThemeColor={commitThemeColor}
+        onSubmitSnooze={commitSnooze}
         onToggleReviewType={(type) => {
           setOptions((previous) => {
             return { ...previous, reviewTypes: toggleReviewType(previous.reviewTypes, type) };

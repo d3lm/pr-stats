@@ -1,4 +1,5 @@
 import { computeReviewStats, type PendingEntry, type ReviewingEntry } from '../../compute';
+import { formatWakeTime, splitSnoozed, type Snooze } from '../../snooze';
 import { durationHours } from '../../time';
 import type { RawData, SizeEntry } from '../data/load';
 import { durationLead, toPrRows, type PrList, type PrRow } from './rows';
@@ -33,6 +34,31 @@ export function queueRows(view: QueueView): PrRow[] {
 }
 
 /**
+ * Returns the row under the cursor of a queue view, or undefined while
+ * the view is missing or shows no rows. The cursor clamps to the last row
+ * like the panel does, so a cursor that outlived a shrinking list resolves
+ * to the row the panel highlights.
+ */
+export function queueRowAt(view: QueueView | null, cursor: number): PrRow | undefined {
+  const rows = view === null ? [] : queueRows(view);
+
+  return rows[Math.min(cursor, rows.length - 1)];
+}
+
+/**
+ * Resolves what the snooze key does to the given row, snoozing a PR of
+ * the awaiting queue, unsnoozing one of the snoozed queue, and nothing
+ * for every other row.
+ */
+export function snoozeActionOf(row: PrRow | undefined): 'snooze' | 'unsnooze' | null {
+  if (row?.pending === undefined) {
+    return null;
+  }
+
+  return row.pending.snoozed ? 'unsnooze' : 'snooze';
+}
+
+/**
  * Splits queue entries into one titled list per repo, largest group first
  * with ties broken by name, matching the repo picker order. The rows of
  * each group keep the order of the given entries.
@@ -55,37 +81,84 @@ function groupedLists<T extends { pr: { repo: string } }>(entries: T[], rowsOf: 
 }
 
 /**
- * Builds the awaiting-review tab, the two queues of open PRs on your
- * plate, one section each. The awaiting section holds the PRs where a
- * review from you is still pending, longest wait first. The reviewed
- * section holds the PRs you already reviewed that are still open without
- * a new request, longest since your review first, so a PR you commented
- * on stays visible until it merges or closes. Call this after the time
- * mode is configured, because the durations depend on it. Passing a repo
- * narrows both sections to that repo, and the grouped flag splits each
- * section into one indented sub-list per repo instead.
+ * Builds the awaiting-review tab, the queues of open PRs on your plate,
+ * one section each. The awaiting section holds the PRs where a review
+ * from you is still pending, longest wait first. The snoozed section
+ * holds the pending PRs a snooze parks until its wake-up time, soonest
+ * wake-up first, each leading with that time instead of the wait. The
+ * reviewed section holds the PRs you already reviewed that are still open
+ * without a new request, longest since your review first, so a PR you
+ * commented on stays visible until it merges or closes. Call this after
+ * the time mode is configured, because the durations depend on it.
+ * Passing a repo narrows every section to that repo, and the grouped flag
+ * splits each section into one indented sub-list per repo instead. The
+ * snoozes decide which pending PRs sit in the snoozed section at the
+ * given time, which defaults to the current time because a snooze ends
+ * on the wall clock rather than at the fetch.
  */
-export function buildPendingReviewView(raw: RawData, repo: string | null = null, grouped = false): QueueView {
+export function buildPendingReviewView(
+  raw: RawData,
+  repo: string | null = null,
+  grouped = false,
+  snoozes: readonly Snooze[] = [],
+  now = Date.now(),
+): QueueView {
   const stats = computeReviewStats(raw.reviewResults, { now: raw.fetchedAt });
-  const awaiting = repo === null ? stats.pending : stats.pending.filter((entry) => entry.pr.repo === repo);
-  const reviewing = repo === null ? stats.reviewing : stats.reviewing.filter((entry) => entry.pr.repo === repo);
 
-  if (awaiting.length === 0 && reviewing.length === 0) {
+  const inScope = <T extends { pr: { repo: string } }>(entries: T[]) =>
+    repo === null ? entries : entries.filter((entry) => entry.pr.repo === repo);
+
+  const { awaiting, snoozed } = splitSnoozed(inScope(stats.pending), snoozes, now);
+  const reviewing = inScope(stats.reviewing);
+
+  if (awaiting.length === 0 && snoozed.length === 0 && reviewing.length === 0) {
     return { empty: 'No PRs are awaiting your review, and none you reviewed are still open.', sections: [] };
   }
 
   const split = repo === null && grouped;
 
-  const sectionOf = (title: string, entries: (PendingEntry | ReviewingEntry)[]): QueueSection =>
+  const sectionOf = <T extends { pr: { repo: string } }>(
+    title: string,
+    entries: T[],
+    rowsOf: (group: T[]) => PrRow[],
+  ): QueueSection =>
     split ? { title, rows: [], lists: groupedLists(entries, rowsOf) } : { title, rows: rowsOf(entries), lists: [] };
+
+  const snoozedRowsOf = (group: (PendingEntry & { until: number })[]) => snoozedRows(group, now);
 
   return {
     empty: null,
     sections: [
-      ...(awaiting.length === 0 ? [] : [sectionOf(`Awaiting your review (n=${awaiting.length})`, awaiting)]),
-      ...(reviewing.length === 0 ? [] : [sectionOf(`Reviewed (n=${reviewing.length})`, reviewing)]),
+      ...(awaiting.length === 0
+        ? []
+        : [sectionOf(`Awaiting your review (n=${awaiting.length})`, awaiting, awaitingRows)]),
+      ...(snoozed.length === 0 ? [] : [sectionOf(`Snoozed (n=${snoozed.length})`, snoozed, snoozedRowsOf)]),
+      ...(reviewing.length === 0 ? [] : [sectionOf(`Reviewed (n=${reviewing.length})`, reviewing, rowsOf)]),
     ],
   };
+}
+
+/**
+ * Builds the rows of the awaiting queue, each carrying the request time
+ * the snooze key records.
+ */
+function awaitingRows(group: PendingEntry[]): PrRow[] {
+  return rowsOf(group).map((row, i) => {
+    return { ...row, pending: { requestedAt: group[i].requestedAt.getTime(), snoozed: false } };
+  });
+}
+
+/**
+ * Builds the rows of the snoozed queue, each leading with its wake-up
+ * time and marked as snoozed so the snooze key unsnoozes it.
+ */
+function snoozedRows(group: (PendingEntry & { until: number })[], now: number): PrRow[] {
+  return toPrRows(
+    group,
+    group.map((entry) => `until ${formatWakeTime(entry.until, now)}`),
+  ).map((row, i) => {
+    return { ...row, pending: { requestedAt: group[i].requestedAt.getTime(), snoozed: true } };
+  });
 }
 
 /**

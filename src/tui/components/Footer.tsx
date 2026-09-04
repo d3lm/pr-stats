@@ -2,6 +2,7 @@ import type { AppViews } from '../hooks/useViewModel';
 import type { AuthoredSubTab } from '../state/browse';
 import type { Modal } from '../state/ui';
 import { theme } from '../theme';
+import { queueRowAt, snoozeActionOf } from '../views/queue';
 
 /**
  * Renders the footer, a full-width rule above one row with the key hints
@@ -14,6 +15,7 @@ export function Footer({
   tab,
   authoredTab,
   views,
+  pendingCursor,
   copyLinks,
   openError,
   successNotice,
@@ -25,6 +27,12 @@ export function Footer({
   tab: number;
   authoredTab: AuthoredSubTab;
   views: AppViews | null;
+  /**
+   * Holds the row cursor of the awaiting-review queue, which decides
+   * whether the s hint offers to snooze or to unsnooze the highlighted
+   * PR.
+   */
+  pendingCursor: number;
   copyLinks: boolean;
   openError: string | null;
   successNotice: string | null;
@@ -46,7 +54,11 @@ export function Footer({
    * with a two-cell gap between the hints and the notice.
    */
   const noticeWidth = notice === '' ? 0 : notice.length + (check ? 2 : 0) + 2;
-  const hints = truncated(hintsFor(modal, editing, tab, authoredTab, views, copyLinks), width - 2 - noticeWidth);
+
+  const hints = truncated(
+    hintsFor(modal, editing, tab, authoredTab, views, pendingCursor, copyLinks),
+    width - 2 - noticeWidth,
+  );
 
   return (
     <>
@@ -94,9 +106,10 @@ function truncated(text: string, limit: number): string {
 /**
  * Builds the footer hint line for the current input mode. The queue
  * detail hints name what enter does with the highlighted PR, which the
- * copy-links setting flips from opening to copying. On the Your PRs tab
- * the hints lead with the t toggle that switches between the open queue
- * and the merged stats.
+ * copy-links setting flips from opening to copying, and on the
+ * awaiting-review queue what s does with it, snoozing an awaiting PR or
+ * unsnoozing a snoozed one. On the Your PRs tab the hints lead with the t
+ * toggle that switches between the open queue and the merged stats.
  */
 function hintsFor(
   modal: Modal,
@@ -104,6 +117,7 @@ function hintsFor(
   tab: number,
   authoredTab: AuthoredSubTab,
   views: AppViews | null,
+  pendingCursor: number,
   copyLinks: boolean,
 ): string {
   if (modal === 'options') {
@@ -118,6 +132,10 @@ function hintsFor(
     return editing ? 'enter apply · esc cancel' : '↑/↓ select · enter edit hex · esc back · q quit';
   }
 
+  if (modal === 'snooze') {
+    return 'enter snooze · esc cancel';
+  }
+
   const toggle = tab === 1 ? (authoredTab === 'open' ? 't merged stats · ' : 't open PRs · ') : '';
 
   if (tab === 0 || (tab === 1 && authoredTab === 'open')) {
@@ -125,18 +143,20 @@ function hintsFor(
     const repos = views === null ? [] : tab === 0 ? views.pendingRepos : views.openRepos;
 
     if (scope?.view === 'list') {
-      return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · s settings · r reload · R refetch · q quit`;
+      return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · S settings · r reload · R refetch · q quit`;
     }
 
+    const snoozeAction = tab === 0 && views !== null ? snoozeActionOf(queueRowAt(views.pending, pendingCursor)) : null;
+    const snooze = snoozeAction === null ? '' : `s ${snoozeAction} · `;
     const action = copyLinks ? 'enter copy link' : 'enter open';
 
     if (scope !== null && repos.length > 0) {
       return scope.repo === null
-        ? `↑/↓ select · ${action} · ${toggle}g group by repo · esc back · o options · s settings · r reload · q quit`
-        : `↑/↓ select · ${action} · ${toggle}esc back · 1-5 tabs · o options · s settings · r reload · R refetch · q quit`;
+        ? `↑/↓ select · ${action} · ${snooze}${toggle}g group by repo · esc back · o options · S settings · r reload · q quit`
+        : `↑/↓ select · ${action} · ${snooze}${toggle}esc back · 1-5 tabs · o options · S settings · r reload · R refetch · q quit`;
     }
 
-    return `↑/↓ select · ${copyLinks ? 'enter copy link' : 'enter open in browser'} · ${toggle}←/→ tabs · o options · s settings · r reload · R refetch · q quit`;
+    return `↑/↓ select · ${copyLinks ? 'enter copy link' : 'enter open in browser'} · ${snooze}${toggle}←/→ tabs · o options · S settings · r reload · R refetch · q quit`;
   }
 
   const scope =
@@ -162,7 +182,7 @@ function hintsFor(
             : views.commentRepos;
 
   if (scope?.view === 'list') {
-    return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · s settings · r reload · R refetch · q quit`;
+    return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · S settings · r reload · R refetch · q quit`;
   }
 
   /**
@@ -183,8 +203,8 @@ function hintsFor(
   const expand = view?.expandable ? (view.expanded ? 'x collapse · ' : 'x expand · ') : '';
 
   if (scope !== null && repos.length > 0) {
-    return `${toggle}${expand}esc back · j/k scroll · 1-5 tabs · o options · s settings · r reload · R refetch · q quit`;
+    return `${toggle}${expand}esc back · j/k scroll · 1-5 tabs · o options · S settings · r reload · R refetch · q quit`;
   }
 
-  return `${toggle}${expand}1-5 tabs · j/k scroll · o options · s settings · r reload · R refetch · q quit`;
+  return `${toggle}${expand}1-5 tabs · j/k scroll · o options · S settings · r reload · R refetch · q quit`;
 }

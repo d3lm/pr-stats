@@ -2,6 +2,7 @@ import { configureCache } from '../cache';
 import { canonicalWorkDays, HELP, parseCliArgs } from '../flags';
 import { configureAuth } from '../github';
 import { applySettings, DEFAULT_RELOAD_INTERVAL, type NotifyChannel } from '../settings';
+import { DEFAULT_SNOOZE_DURATION, readSnoozes, type Snooze } from '../snooze';
 import { CliError, fail } from '../utils';
 import { applySavedOptions, FIELDS, validateField, type OptionsState } from './state/options';
 import { applyTheme, type ThemeState } from './theme';
@@ -47,6 +48,17 @@ export interface BootstrapResult {
    * clipboard instead of opening it in the browser.
    */
   copyLinks: boolean;
+  /**
+   * Holds the default snooze duration from settings.json, already
+   * validated by loadSettings, or the default while the file names none.
+   */
+  snoozeDuration: string;
+  /**
+   * Holds the snoozes read from the snooze file in the cache directory,
+   * expired ones included, so the TUI can wake them up and report the
+   * PRs that came back while it was closed.
+   */
+  snoozes: Snooze[];
   /**
    * Holds the theme parsed from settings.json and already applied, so
    * the settings dialog starts from the saved active theme and the saved
@@ -123,6 +135,8 @@ export function bootstrap(): BootstrapResult {
       notifications: settings.notifications === true,
       notifyChannel: settings.notifyChannel ?? 'auto',
       copyLinks: settings.copyLinks === true,
+      snoozeDuration: settings.snoozeDuration ?? DEFAULT_SNOOZE_DURATION,
+      snoozes: readSnoozes(),
       theme,
       json: values.json,
     };

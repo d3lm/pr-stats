@@ -1,4 +1,5 @@
 import { computeReviewStats } from '../../compute';
+import { splitSnoozed, type Snooze } from '../../snooze';
 import type { RawData } from '../data/load';
 
 export interface RepoOption {
@@ -94,13 +95,23 @@ export function buildSizeRepoOptions(raw: RawData): RepoOption[] {
   ];
 }
 
+interface PendingCounts {
+  awaiting: number;
+  snoozed: number;
+  reviewing: number;
+}
+
 /**
  * Formats the picker detail for one repo on the awaiting-review tab.
  */
-function pendingDetail(counts: { awaiting: number; reviewing: number }): string {
+function pendingDetail(counts: PendingCounts): string {
   const awaiting = `${counts.awaiting} ${counts.awaiting === 1 ? 'PR' : 'PRs'} awaiting your review`;
 
-  return awaiting + (counts.reviewing > 0 ? `, ${counts.reviewing} reviewed` : '');
+  return (
+    awaiting +
+    (counts.snoozed > 0 ? `, ${counts.snoozed} snoozed` : '') +
+    (counts.reviewing > 0 ? `, ${counts.reviewing} reviewed` : '')
+  );
 }
 
 /**
@@ -108,15 +119,17 @@ function pendingDetail(counts: { awaiting: number; reviewing: number }): string 
  * repos mirror the review tab's picker, every repo with review activity,
  * so this tab shows its picker whenever that tab does. The details count
  * the open PRs still awaiting a review, which can be zero, next to the
- * open PRs you already reviewed. Returns an empty array when the data
- * spans at most one repo, in which case the tab skips the picker and
+ * snoozed ones and the open PRs you already reviewed. The snoozes decide
+ * which pending PRs count as snoozed at the given time, which defaults to
+ * the current time like the queue view. Returns an empty array when the
+ * data spans at most one repo, in which case the tab skips the picker and
  * renders the queue directly.
  */
-export function buildPendingRepoOptions(raw: RawData): RepoOption[] {
-  const countsByRepo = new Map<string, { awaiting: number; reviewing: number }>();
+export function buildPendingRepoOptions(raw: RawData, snoozes: readonly Snooze[] = [], now = Date.now()): RepoOption[] {
+  const countsByRepo = new Map<string, PendingCounts>();
 
   const countsOf = (repo: string) => {
-    const counts = countsByRepo.get(repo) ?? { awaiting: 0, reviewing: 0 };
+    const counts = countsByRepo.get(repo) ?? { awaiting: 0, snoozed: 0, reviewing: 0 };
 
     countsByRepo.set(repo, counts);
 
@@ -132,9 +145,14 @@ export function buildPendingRepoOptions(raw: RawData): RepoOption[] {
   }
 
   const stats = computeReviewStats(raw.reviewResults, { now: raw.fetchedAt });
+  const { awaiting, snoozed } = splitSnoozed(stats.pending, snoozes, now);
 
-  for (const entry of stats.pending) {
+  for (const entry of awaiting) {
     countsOf(entry.pr.repo).awaiting += 1;
+  }
+
+  for (const entry of snoozed) {
+    countsOf(entry.pr.repo).snoozed += 1;
   }
 
   for (const entry of stats.reviewing) {
@@ -142,13 +160,18 @@ export function buildPendingRepoOptions(raw: RawData): RepoOption[] {
   }
 
   const entries = [...countsByRepo.entries()].toSorted(
-    (a, b) => b[1].awaiting - a[1].awaiting || b[1].reviewing - a[1].reviewing || a[0].localeCompare(b[0]),
+    (a, b) =>
+      b[1].awaiting - a[1].awaiting ||
+      b[1].snoozed - a[1].snoozed ||
+      b[1].reviewing - a[1].reviewing ||
+      a[0].localeCompare(b[0]),
   );
 
-  const totals = { awaiting: 0, reviewing: 0 };
+  const totals: PendingCounts = { awaiting: 0, snoozed: 0, reviewing: 0 };
 
   for (const [, counts] of entries) {
     totals.awaiting += counts.awaiting;
+    totals.snoozed += counts.snoozed;
     totals.reviewing += counts.reviewing;
   }
 

@@ -5,10 +5,21 @@ import { SETTINGS, THEME_COLORS, type CacheAction } from './settings';
  * Names the dialog currently covering the charts, where null means none is
  * open. The options dialog edits the data and analysis options, the
  * settings dialog holds app-level settings like the cache and the theme,
- * and the theme dialog opens from the settings dialog with the editable
- * color list.
+ * the theme dialog opens from the settings dialog with the editable color
+ * list, and the snooze dialog asks how long to park the highlighted PR of
+ * the awaiting-review queue.
  */
-export type Modal = 'options' | 'settings' | 'theme' | null;
+export type Modal = 'options' | 'settings' | 'theme' | 'snooze' | null;
+
+/**
+ * Names the PR the snooze dialog is about, with the request time the
+ * snooze records so a later re-request voids it.
+ */
+export interface SnoozeTarget {
+  ref: string;
+  title: string;
+  requestedAt: number;
+}
 
 /**
  * Everything that tracks the dialogs and their feedback, the open modal,
@@ -32,13 +43,24 @@ export interface UiState {
    */
   settingError: string | null;
   themeColorError: string | null;
+  /**
+   * Holds the PR the open snooze dialog is about, or null while no
+   * snooze dialog is open.
+   */
+  snoozeTarget: SnoozeTarget | null;
+  /**
+   * Holds the validation error of the duration edit in the snooze
+   * dialog, shown in place of the dialog hint until the next edit or
+   * escape.
+   */
+  snoozeError: string | null;
   cacheAction: CacheAction | null;
   openError: string | null;
   /**
    * Holds the success confirmation the footer shows with a checkmark,
-   * either a copied link or a saved options report. Every report stores
-   * a fresh object even when the text repeats, which restarts the App's
-   * expiry timer through the changed identity.
+   * like a copied link, a saved options report, or a snoozed PR. Every
+   * report stores a fresh object even when the text repeats, which
+   * restarts the App's expiry timer through the changed identity.
    */
   successNotice: { text: string } | null;
 }
@@ -52,6 +74,8 @@ export const initialUiState: UiState = {
   fieldError: null,
   settingError: null,
   themeColorError: null,
+  snoozeTarget: null,
+  snoozeError: null,
   cacheAction: null,
   openError: null,
   successNotice: null,
@@ -60,12 +84,15 @@ export const initialUiState: UiState = {
 export type UiAction =
   | { type: 'noticesDismissed' }
   | { type: 'openErrorReported'; message: string }
-  | { type: 'copyReported'; message: string }
+  | { type: 'successReported'; message: string }
   | { type: 'successNoticeExpired' }
   | { type: 'modalOpened'; modal: 'options' | 'settings' | 'theme' }
   | { type: 'optionsModalClosed' }
   | { type: 'settingsModalEscaped' }
   | { type: 'themeModalClosed' }
+  | { type: 'snoozeModalOpened'; target: SnoozeTarget }
+  | { type: 'snoozeCommitted'; message: string; saved: boolean }
+  | { type: 'snoozeErrorReported'; message: string }
   | { type: 'fieldSelectionMoved'; delta: 1 | -1 }
   | { type: 'settingSelectionMoved'; delta: 1 | -1 }
   | { type: 'themeColorSelectionMoved'; delta: 1 | -1 }
@@ -100,7 +127,7 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
     case 'openErrorReported': {
       return { ...state, openError: action.message };
     }
-    case 'copyReported': {
+    case 'successReported': {
       return { ...state, openError: null, successNotice: { text: action.message } };
     }
     case 'successNoticeExpired': {
@@ -130,6 +157,35 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
     case 'themeModalClosed': {
       return { ...state, modal: 'settings', themeColorError: null, cacheAction: null };
     }
+    case 'snoozeModalOpened': {
+      /**
+       * The dialog opens straight into the duration edit, because the
+       * duration is all it asks for. The App seeds the draft with the
+       * default duration alongside this dispatch.
+       */
+      return { ...state, modal: 'snooze', editing: true, snoozeTarget: action.target, snoozeError: null };
+    }
+    case 'snoozeCommitted': {
+      /**
+       * A committed snooze closes the dialog and confirms in the footer.
+       * Debug runs keep the cache disabled, in which case the snooze only
+       * lasts the session and the error slot says so instead.
+       */
+      const closed = { ...state, modal: null, editing: false, snoozeTarget: null, snoozeError: null };
+
+      if (action.saved) {
+        return { ...closed, openError: null, successNotice: { text: action.message } };
+      }
+
+      return {
+        ...closed,
+        openError: `${action.message} · the cache is disabled for this session, so the snooze is not saved`,
+        successNotice: null,
+      };
+    }
+    case 'snoozeErrorReported': {
+      return { ...state, snoozeError: action.message };
+    }
     case 'fieldSelectionMoved': {
       return { ...state, selectedField: cycled(state.selectedField, action.delta, FIELDS.length), fieldError: null };
     }
@@ -153,6 +209,11 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, editing: true, fieldError: null, settingError: null, themeColorError: null };
     }
     case 'editCancelled': {
+      // the snooze dialog is nothing but its edit, so cancelling the edit closes it
+      if (state.modal === 'snooze') {
+        return { ...state, modal: null, editing: false, snoozeTarget: null, snoozeError: null };
+      }
+
       return { ...state, editing: false, fieldError: null, settingError: null, themeColorError: null };
     }
     case 'fieldCommitted': {

@@ -4,8 +4,20 @@ import { App } from './App';
 import { bootstrap } from './bootstrap';
 import { runJsonStats } from './data/export';
 
-const { initial, saved, noCache, autoReload, reloadInterval, notifications, notifyChannel, copyLinks, theme, json } =
-  bootstrap();
+const {
+  initial,
+  saved,
+  noCache,
+  autoReload,
+  reloadInterval,
+  notifications,
+  notifyChannel,
+  copyLinks,
+  snoozeDuration,
+  snoozes,
+  theme,
+  json,
+} = bootstrap();
 
 /**
  * The --json flag replaces the TUI with one load that prints the stats
@@ -50,6 +62,8 @@ createRoot(renderer).render(
     initialNotifications={notifications}
     initialNotifyChannel={notifyChannel}
     initialCopyLinks={copyLinks}
+    initialSnoozeDuration={snoozeDuration}
+    initialSnoozes={snoozes}
     initialTheme={theme}
     onQuit={() => {
       renderer.destroy();

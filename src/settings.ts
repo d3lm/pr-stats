@@ -2,6 +2,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { cacheDir, cacheEnabled, writeFileAtomic } from './cache';
 import type { CliValues } from './flags';
+import { snoozeDurationMs } from './snooze';
 import { CliError } from './utils';
 
 /**
@@ -60,6 +61,12 @@ export interface Settings {
    * of posting any text.
    */
   notifyChannel?: NotifyChannel;
+  /**
+   * Names the duration the snooze dialog starts with when s snoozes a PR
+   * on the awaiting-review queue, like 30m, 2h, or 1d. The dialog still
+   * takes another duration for one snooze.
+   */
+  snoozeDuration?: string;
   /**
    * Holds the theme, the active preset (a built-in name or custom) plus
    * the colors that form the custom theme. The theme module validates
@@ -207,6 +214,15 @@ export function loadSettings(): Settings {
     throw new CliError(`"notifyChannel" in ${settingsFile()} must be "auto", "terminal", "command", or "bell"`);
   }
 
+  if (
+    settings.snoozeDuration !== undefined &&
+    (typeof settings.snoozeDuration !== 'string' || snoozeDurationMs(settings.snoozeDuration) === null)
+  ) {
+    throw new CliError(
+      `"snoozeDuration" in ${settingsFile()} must be a duration from 1m to 4w like "30m", "2h", or "1d"`,
+    );
+  }
+
   current = settings;
 
   return current;
@@ -276,6 +292,18 @@ export function saveNotifications(on: boolean): boolean {
  */
 export function saveNotifyChannel(channel: NotifyChannel): boolean {
   current = { ...current, notifyChannel: channel };
+
+  return writeCurrent();
+}
+
+/**
+ * Persists an already validated default snooze duration to settings.json,
+ * keeping every other key the file holds. Returns false without writing
+ * while the cache is disabled, which keeps debug runs from writing
+ * settings.
+ */
+export function saveSnoozeDuration(value: string): boolean {
+  current = { ...current, snoozeDuration: value };
 
   return writeCurrent();
 }

@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test';
 import type { ReviewResult } from './load';
-import { describeReviewRequests, diffReviewRequests, type ReviewRequestChanges } from './notifications';
+import {
+  describeReviewRequests,
+  describeSnoozeWakeUps,
+  diffReviewRequests,
+  type ReviewRequestChanges,
+} from './notifications';
 
 /**
  * Builds the PR descriptor the results share, with a title that names
@@ -165,4 +170,17 @@ test('describes a single PR by reference and several PRs by count with a capped 
   ]);
 
   expect(describeReviewRequests({ baseline: new Map(), newRequests: [], reRequests: [] })).toEqual([]);
+});
+
+test('describes the PRs that came back from a snooze like the request notifications', () => {
+  expect(describeSnoozeWakeUps([pr('acme/api', 1)])).toEqual([{ title: 'Snooze ended on acme/api#1', body: 'pr 1' }]);
+
+  expect(describeSnoozeWakeUps([pr('acme/api', 1), pr('acme/web', 2), pr('acme/web', 3), pr('acme/web', 4)])).toEqual([
+    {
+      title: '4 snoozed PRs are back in your queue',
+      body: 'acme/api#1 pr 1\nacme/web#2 pr 2\nacme/web#3 pr 3\nand 1 more',
+    },
+  ]);
+
+  expect(describeSnoozeWakeUps([])).toEqual([]);
 });

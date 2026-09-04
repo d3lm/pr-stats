@@ -115,6 +115,9 @@ export function QueuePanel({
     const isSelected = index === cursor;
     const bg = isSelected ? theme.selectedBg : undefined;
 
+    // a snoozed PR is parked, so its wake-up time and title step back to the secondary color
+    const fg = row.pending?.snoozed === true ? theme.muted : theme.text;
+
     /**
      * The reference starts after the indent, the two-cell cursor marker,
      * the lead, and the two-space gap, all single-cell ASCII, so the
@@ -158,7 +161,7 @@ export function QueuePanel({
           {indent}
           {isSelected ? '▸ ' : '  '}
         </span>
-        <span fg={theme.text} bg={bg}>
+        <span fg={fg} bg={bg}>
           {row.lead}
           {'  '}
         </span>
@@ -171,7 +174,7 @@ export function QueuePanel({
             {row.ref}
           </span>
         )}
-        <span fg={theme.text} bg={bg}>
+        <span fg={fg} bg={bg}>
           {'  '}
           {row.title}
         </span>

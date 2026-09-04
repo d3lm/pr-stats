@@ -41,6 +41,7 @@ export function SettingsModal({
   notifications,
   notifyChannel,
   copyLinks,
+  snoozeDuration,
   preset,
   onDraft,
   onSubmit,
@@ -55,6 +56,7 @@ export function SettingsModal({
   notifications: boolean;
   notifyChannel: NotifyChannel;
   copyLinks: boolean;
+  snoozeDuration: string;
   preset: ThemeName;
   onDraft: (value: string) => void;
   onSubmit: () => void;
@@ -113,6 +115,7 @@ export function SettingsModal({
                   channelValue={channelValue}
                   deliveryValue={deliveryValue}
                   copyLinks={copyLinks}
+                  snoozeDuration={snoozeDuration}
                   preset={preset}
                   onDraft={onDraft}
                   onSubmit={onSubmit}
@@ -137,12 +140,13 @@ export function SettingsModal({
  * and turns into an input while editing. The notification-channel row
  * cycles auto, terminal, the platform command, and bell, and the
  * test-notification row names the channel the next send takes, or
- * unsupported where none exists. The edit-colors row previews the current accent
- * family as a swatch strip. The clear-cache and reset-settings rows show
- * the path they delete with the home directory abbreviated, and flip to a
- * confirm prompt after the first enter. The export row shows the path it
- * writes the same way, without a confirm because an export only overwrites
- * its own file.
+ * unsupported where none exists. The default-snooze row shows the
+ * duration and turns into an input while editing, like the interval. The
+ * edit-colors row previews the current accent family as a swatch strip.
+ * The clear-cache and reset-settings rows show the path they delete with
+ * the home directory abbreviated, and flip to a confirm prompt after the
+ * first enter. The export row shows the path it writes the same way,
+ * without a confirm because an export only overwrites its own file.
  */
 function SettingValue({
   setting,
@@ -156,6 +160,7 @@ function SettingValue({
   channelValue,
   deliveryValue,
   copyLinks,
+  snoozeDuration,
   preset,
   onDraft,
   onSubmit,
@@ -171,6 +176,7 @@ function SettingValue({
   channelValue: string;
   deliveryValue: string;
   copyLinks: boolean;
+  snoozeDuration: string;
   preset: ThemeName;
   onDraft: (value: string) => void;
   onSubmit: () => void;
@@ -207,6 +213,13 @@ function SettingValue({
     }
     case 'copyLinks': {
       return <ToggleValue value={copyLinks ? 'yes' : 'no'} isSelected={isSelected} />;
+    }
+    case 'snoozeDuration': {
+      if (isEditing) {
+        return <ModalInput width={16} value={snoozeDuration} onDraft={onDraft} onSubmit={onSubmit} />;
+      }
+
+      return <IntervalValue value={snoozeDuration} active isSelected={isSelected} />;
     }
     case 'themePreset': {
       return <ToggleValue value={preset} isSelected={isSelected} />;
@@ -257,9 +270,11 @@ function ToggleValue({ value, isSelected }: { value: string; isSelected: boolean
 }
 
 /**
- * Value slot of the reload-interval row. The interval only drives a timer
- * while auto reload is on, so it dims to the placeholder colors while the
- * toggle above it is off, and shows like an editable value otherwise.
+ * Value slot of an editable duration row, the reload interval and the
+ * default snooze. The interval only drives a timer while auto reload is
+ * on, so it dims to the placeholder colors while the toggle above it is
+ * off, and shows like an editable value otherwise. The default snooze
+ * always applies, so it always shows the active way.
  */
 function IntervalValue({ value, active, isSelected }: { value: string; active: boolean; isSelected: boolean }) {
   if (!active) {

@@ -25,13 +25,13 @@ pr-stats
 
 Without flags, it covers PRs from the last 90 days across all repositories you can access.
 
-- **Queue** lists the open PRs awaiting your review with their wait time, and below them the open PRs you already reviewed. A fresh review request moves a PR back into the awaiting list.
+- **Queue** lists the open PRs awaiting your review with their wait time, and below them the open PRs you already reviewed. A fresh review request moves a PR back into the awaiting list. The `s` key snoozes a PR you are not ready to review yet, which parks it in a snoozed list until a time you pick. See [Snoozing](#snoozing).
 - **Your PRs** splits into your open PRs and a merged-and-closed report with merge-time, first-review, backlog, and outcome charts plus a reviewer leaderboard. The `t` key switches the sub-tabs.
 - **Reviews** counts the PRs you reviewed on request next to the review rounds they took, and charts your review times as a histogram, trend, heatmap, and weekly volume, plus review cycles, verdicts, an off-hours gauge, and the requests still waiting on you.
 - **PR size** carries the same charts for PR sizes and adds a weekly net-lines trend.
 - **Comments** holds a histogram of comments per PR, a scatter against PR size, and the most commented PRs.
 
-When the data spans multiple repos, every tab opens on a repo picker that drills into one repo or the aggregate. On the queue lists, `g` groups the aggregate by repo, and on stats tabs, `x` lifts the row cap on comparison cards.
+When the data spans multiple repos, every tab opens on a repo picker that drills into one repo or the aggregate. On the queue lists, `g` groups the aggregate by repo, and on stats tabs, `x` lifts the row cap on comparison cards. The `o` key opens the options modal and `S` the settings dialog.
 
 ## Options
 
@@ -132,6 +132,20 @@ The "Notification channel" row picks the path, and the choice persists as `notif
 Two terminals accept the notification sequence without showing anything, and the test row warns about both. iTerm2 drops it until the profile has "Notification Center Alerts" turned on under Settings → Profiles → Terminal, which is off by default. Behind the "Filter Alerts…" button next to it, "Send escape sequence-generated alerts" has to stay on as well, and macOS asks for iTerm2's notification permission on the first send. iTerm2 prefixes the banner with the session name unless its advanced setting "Omit session identifier from notifications" is on. Apple Terminal never implemented the sequence at all, so `auto` skips the terminal there and goes straight to the platform command.
 
 On macOS the command path runs a small app bundle that ships inside the package, `dist/pr-stats.app`, so the banner carries the pr-stats name and icon and the app gets its own entry under System Settings › Notifications. The first send asks for permission the way any app does, and the helper waits for your answer, because macOS treats a prompt that goes unanswered until the requesting app quits as a refusal. Should notifications end up turned off, the footer says so, and the switch to turn them back on sits under System Settings › Notifications › pr-stats. The helper runs on macOS 13 and later on both Apple silicon and Intel Macs. A source checkout without the bundle falls back to `osascript`, whose notifications post under Script Editor and stay invisible since macOS 15 until Script Editor holds notification permission, which the Script Editor app grants after running the one-line script `display notification "test"` once.
+
+## Snoozing
+
+A PR you commented on without leaving a review stays in the awaiting list, because GitHub still counts the review as requested. When you are waiting on the author, the `s` key snoozes the highlighted PR. A small dialog asks how long, starting from the default snooze duration, and takes a value in minutes, hours, days, or weeks like `30m`, `2h`, `1d`, or `1w`, up to four weeks. The PR then moves into a Snoozed list below the awaiting one, where its row shows the wake-up time instead of the wait, and the repo picker counts the snoozed PRs apart from the awaiting ones. Pressing `s` on a snoozed PR ends the snooze right away.
+
+When the snooze ends and the PR still awaits your review, it moves back into the awaiting list, and a desktop notification says so while notifications are on. A PR that got reviewed, merged, or closed in the meantime ends its snooze quietly, and a review re-requested from you after the snooze voids it, so a re-request never hides behind a snooze. Snoozes persist in `snoozes.json` in the cache directory and survive a restart and a cache clear. A snooze that ended while the TUI was closed wakes up as soon as the TUI starts, so the restart reports it like the review requests that came in while it was closed.
+
+The Default snooze row in the settings dialog sets the duration the dialog starts with, and the setting persists in `settings.json` in the cache directory.
+
+```json
+{
+  "snoozeDuration": "30m"
+}
+```
 
 ## Theming
 

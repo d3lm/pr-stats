@@ -45,6 +45,11 @@ export interface KeymapContext {
   notifications: boolean;
   notifyChannel: NotifyChannel;
   copyLinks: boolean;
+  /**
+   * Holds the default snooze duration. Enter on its settings row seeds
+   * the edit with it, and the snooze dialog opens with it as the draft.
+   */
+  snoozeDuration: string;
   themeState: ThemeState;
   options: OptionsState;
   views: AppViews | null;
@@ -81,6 +86,12 @@ export interface KeymapContext {
    * footer, used in place of openUrl while the copy-links setting is on.
    */
   copyRow: (row: { ref: string; url: string }) => void;
+
+  /**
+   * Ends the snooze of the given PR, which puts it back on the awaiting
+   * list, and reports the change in the footer.
+   */
+  unsnooze: (ref: string) => void;
 
   /**
    * Seeds the edit draft with the given value and switches the open
@@ -295,6 +306,16 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
 
           break;
         }
+        case 'snoozeDuration': {
+          if (key.name !== 'return') {
+            break;
+          }
+
+          // the duration edits in the shared edit mode, whose commit validates and persists it
+          context.beginEdit(context.snoozeDuration);
+
+          break;
+        }
         case 'themePreset': {
           /**
            * Cycles through the built-in themes plus the custom theme once
@@ -438,8 +459,10 @@ function queueTabOf(context: KeymapContext) {
  * repos, like the stats tabs, and otherwise render one selectable PR
  * list, whose cursor the movement keys drive and whose highlighted PR
  * enter opens in the browser. On the aggregate list, g toggles grouping
- * the rows by repo. The panel scrolls the cursor row into view on its
- * own.
+ * the rows by repo. On the awaiting-review queue, s opens the snooze
+ * dialog for an awaiting PR and unsnoozes a snoozed one, while shift+s
+ * opens the settings before the key gets here. The panel scrolls the
+ * cursor row into view on its own.
  */
 function handleQueueKey(key: KeyEvent, context: KeymapContext): void {
   const { key: tab, view, repos, scope } = queueTabOf(context);
@@ -512,6 +535,34 @@ function handleQueueKey(key: KeyEvent, context: KeymapContext): void {
           context.dispatchUi({ type: 'openErrorReported', message });
         });
       }
+
+      break;
+    }
+    case 's': {
+      const cursor = context.browse.rowCursors[tab];
+      const row = rows[Math.min(cursor, rows.length - 1)];
+
+      /**
+       * Only the pending rows carry a request, so the reviewed queue and
+       * the open authored PRs ignore the key. A snoozed row unsnoozes
+       * right away, and an awaiting row opens the snooze dialog, which
+       * starts in the edit mode with the default duration as the draft.
+       */
+      if (row.pending === undefined) {
+        break;
+      }
+
+      if (row.pending.snoozed) {
+        context.unsnooze(row.ref);
+        break;
+      }
+
+      context.dispatchUi({
+        type: 'snoozeModalOpened',
+        target: { ref: row.ref, title: row.title, requestedAt: row.pending.requestedAt },
+      });
+
+      context.beginEdit(context.snoozeDuration);
 
       break;
     }
@@ -649,7 +700,8 @@ export function handleAppKey(key: KeyEvent, context: KeymapContext): void {
 
   if (key.name === 'o') {
     context.dispatchUi({ type: 'modalOpened', modal: 'options' });
-  } else if (key.name === 's') {
+  } else if (key.name === 's' && key.shift) {
+    // shift+s opens the settings, which leaves the plain s to the snooze on the queue
     context.dispatchUi({ type: 'modalOpened', modal: 'settings' });
   } else if (['1', '2', '3', '4', '5'].includes(key.name)) {
     context.dispatchBrowse({ type: 'tabSelected', tab: Number(key.name) - 1 });

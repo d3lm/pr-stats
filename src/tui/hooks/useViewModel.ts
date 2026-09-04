@@ -9,6 +9,7 @@ import {
   resolveTimezone,
 } from '../../flags';
 import { initBuckets } from '../../report';
+import type { Snooze } from '../../snooze';
 import { configureTimeMode } from '../../time';
 import type { RawData } from '../data/load';
 import {
@@ -82,11 +83,13 @@ export interface AppViews {
 
 /**
  * Derives everything the tabs render from the loaded data, the live
- * options, the per-tab scopes with the queue grouping, and the terminal
- * width. Returns null before the first data arrives. Pure apart from
- * configuring the shared time-mode singleton the compute layers read,
- * which happens right before they run so it stays consistent for this
- * render.
+ * options, the per-tab scopes with the queue grouping, the snoozes, and
+ * the terminal width. Returns null before the first data arrives. Pure
+ * apart from configuring the shared time-mode singleton the compute
+ * layers read, which happens right before they run so it stays
+ * consistent for this render, and apart from the awaiting-review queue
+ * reading the clock to place the snoozed PRs, which the wake-up timer
+ * keeps current by changing the snoozes when one ends.
  *
  * The view builders bake the current theme colors into their lines, so
  * the theme epoch invalidates the memo. It changes identity whenever the
@@ -100,6 +103,7 @@ export function useViewModel(
   scopes: TabScopes,
   grouping: QueueGrouping,
   expanded: Record<StatsTabKey, boolean>,
+  snoozes: Snooze[],
   themeEpoch: unknown,
 ): AppViews | null {
   return useMemo(() => {
@@ -140,7 +144,7 @@ export function useViewModel(
 
     const sizeTarget = options.sizeTarget === '' ? undefined : parseSizeTarget(options.sizeTarget);
 
-    const pendingRepos = buildPendingRepoOptions(raw);
+    const pendingRepos = buildPendingRepoOptions(raw, snoozes);
     const openRepos = buildOpenRepoOptions(raw);
     const mergedRepos = buildMergedRepoOptions(raw);
     const reviewRepos = buildReviewRepoOptions(raw);
@@ -171,7 +175,10 @@ export function useViewModel(
       reviewScope,
       sizeScope,
       commentScope,
-      pending: pendingScope.view === 'detail' ? buildPendingReviewView(raw, pendingScope.repo, grouping.pending) : null,
+      pending:
+        pendingScope.view === 'detail'
+          ? buildPendingReviewView(raw, pendingScope.repo, grouping.pending, snoozes)
+          : null,
       open: openScope.view === 'detail' ? buildOpenAuthoredView(raw, openScope.repo, grouping.open) : null,
       merged: mergedScope.view === 'detail' ? buildMergedView(raw, mergedScope.repo, width, expanded.merged) : null,
       review,
@@ -198,6 +205,7 @@ export function useViewModel(
     grouping.open,
     expanded.review,
     expanded.merged,
+    snoozes,
     themeEpoch,
   ]);
 }

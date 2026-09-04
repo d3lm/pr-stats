@@ -124,6 +124,20 @@ export function describeReviewRequests(changes: ReviewRequestChanges): Notificat
   return notifications;
 }
 
+/**
+ * Turns the PRs whose snooze ended while they still await your review
+ * into one notification, or none when no PR came back. The shape follows
+ * the request notifications, a single PR by reference with its title as
+ * the body and several PRs by count with a capped list.
+ */
+export function describeSnoozeWakeUps(prs: ReviewPr[]): Notification[] {
+  if (prs.length === 0) {
+    return [];
+  }
+
+  return [describe(prs, 'Snooze ended on', 'snoozed PRs are back in your queue')];
+}
+
 function describe(prs: ReviewPr[], singleTitle: string, pluralTitle: string): Notification {
   if (prs.length === 1) {
     const [pr] = prs;

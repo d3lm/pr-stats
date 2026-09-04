@@ -4,6 +4,7 @@ import type { UiState } from '../state/ui';
 import type { ThemeState } from '../theme';
 import { OptionsModal } from './OptionsModal';
 import { SettingsModal } from './SettingsModal';
+import { SnoozeModal } from './SnoozeModal';
 import { ThemeModal } from './ThemeModal';
 
 /**
@@ -22,11 +23,13 @@ export function Modals({
   notifications,
   notifyChannel,
   copyLinks,
+  snoozeDuration,
   themeState,
   onDraft,
   onSubmitField,
-  onSubmitReloadInterval,
+  onSubmitSetting,
   onSubmitThemeColor,
+  onSubmitSnooze,
   onToggleReviewType,
   onToggleWorkDay,
 }: {
@@ -39,11 +42,17 @@ export function Modals({
   notifications: boolean;
   notifyChannel: NotifyChannel;
   copyLinks: boolean;
+  snoozeDuration: string;
   themeState: ThemeState;
   onDraft: (value: string) => void;
   onSubmitField: () => void;
-  onSubmitReloadInterval: () => void;
+  /**
+   * Commits the edit of the selected settings row, which the App routes
+   * to the row's own validation and save.
+   */
+  onSubmitSetting: () => void;
   onSubmitThemeColor: () => void;
+  onSubmitSnooze: () => void;
   onToggleReviewType: (type: string) => void;
   onToggleWorkDay: (day: string) => void;
 }) {
@@ -76,9 +85,22 @@ export function Modals({
         notifications={notifications}
         notifyChannel={notifyChannel}
         copyLinks={copyLinks}
+        snoozeDuration={snoozeDuration}
         preset={themeState.preset}
         onDraft={onDraft}
-        onSubmit={onSubmitReloadInterval}
+        onSubmit={onSubmitSetting}
+      />
+    );
+  }
+
+  if (ui.modal === 'snooze' && ui.snoozeTarget !== null) {
+    return (
+      <SnoozeModal
+        target={ui.snoozeTarget}
+        snoozeDuration={snoozeDuration}
+        error={ui.snoozeError}
+        onDraft={onDraft}
+        onSubmit={onSubmitSnooze}
       />
     );
   }

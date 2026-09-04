@@ -16,6 +16,7 @@ import {
   saveNotifications,
   saveNotifyChannel,
   saveReloadInterval,
+  saveSnoozeDuration,
   saveTheme,
 } from './settings';
 import {
@@ -191,6 +192,30 @@ test('saveNotifyChannel persists the channel and keeps hand-written keys', () =>
   ).toBe('terminal');
 });
 
+test('saveSnoozeDuration persists the default snooze and keeps hand-written keys', () => {
+  writeSettingsFile({ theme: { accent: '#89b4f0' }, notifications: true });
+  loadSettings();
+
+  expect(saveSnoozeDuration('4h')).toBe(true);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+    theme: { accent: '#89b4f0' },
+    notifications: true,
+    snoozeDuration: '4h',
+  });
+
+  expect(loadSettings().snoozeDuration).toBe('4h');
+
+  // a disabled cache stores nothing, the way debug runs stay isolated
+  configureCache(false);
+
+  expect(saveSnoozeDuration('1d')).toBe(false);
+
+  expect(
+    (JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { snoozeDuration: string }).snoozeDuration,
+  ).toBe('4h');
+});
+
 test('parses reload intervals in seconds, minutes, and hours within a day', () => {
   expect(reloadIntervalMs('1s')).toBe(1000);
   expect(reloadIntervalMs('30s')).toBe(30_000);
@@ -308,6 +333,19 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
   writeSettingsFile({ autoReload: true, reloadInterval: '2h' });
 
   expect(loadSettings()).toEqual({ autoReload: true, reloadInterval: '2h' });
+
+  // a hand-written snooze duration goes through the same parser as an edit in the dialog
+  writeSettingsFile({ snoozeDuration: 60 });
+
+  expect(() => loadSettings()).toThrow('"snoozeDuration"');
+
+  writeSettingsFile({ snoozeDuration: '30s' });
+
+  expect(() => loadSettings()).toThrow('"snoozeDuration"');
+
+  writeSettingsFile({ snoozeDuration: '2d' });
+
+  expect(loadSettings()).toEqual({ snoozeDuration: '2d' });
 });
 
 test('applies hand-written colors as the active custom theme', () => {

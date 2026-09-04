@@ -66,6 +66,12 @@ export const SETTINGS: SettingSpec[] = [
     hint: 'enter and a click on a PR reference copy its link to the clipboard instead of opening the browser',
   },
   {
+    key: 'snoozeDuration',
+    section: 'Snooze',
+    label: 'Default snooze',
+    hint: 'the duration the snooze dialog starts with when s snoozes a PR, like 30m, 2h, or 1d · enter edits the value',
+  },
+  {
     key: 'themePreset',
     section: 'Theme',
     label: 'Theme',

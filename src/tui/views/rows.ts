@@ -5,6 +5,14 @@ export interface PrRow {
   ref: string;
   url: string;
   title: string;
+  /**
+   * Describes the pending review request behind a row of the awaiting or
+   * the snoozed queue, with the request time in milliseconds that a
+   * snooze records so a later re-request voids it, and whether the row
+   * sits in the snoozed queue. Rows of the other lists carry none, which
+   * tells the snooze key to leave them alone.
+   */
+  pending?: { requestedAt: number; snoozed: boolean };
 }
 
 export interface PrList {
