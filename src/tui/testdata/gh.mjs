@@ -234,6 +234,18 @@ if (args[0] === 'auth' && args[1] === 'token') {
   process.stdout.write(handleGraphql(queryArg.slice('query='.length)));
 } else if (args[0] === 'search' && args[1] === 'prs') {
   const mode = args.find((arg) => arg in SEARCHES);
+  const user = args[args.indexOf(mode) + 1];
+
+  /**
+   * The real review searches exclude the user's own PRs with a negated
+   * author term, because GitHub records inline replies as reviews. The
+   * fake insists on that term so a search that drops it fails every test
+   * that loads through it.
+   */
+  if (mode !== '--author' && !args.includes(`-author:${user}`)) {
+    process.stderr.write(`fake gh got a review search without the author exclusion: ${args.join(' ')}\n`);
+    process.exit(1);
+  }
 
   process.stdout.write(JSON.stringify(SEARCHES[mode]));
 } else {

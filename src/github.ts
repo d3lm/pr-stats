@@ -89,6 +89,12 @@ export interface PrSize {
   };
 }
 
+/**
+ * Arguments of one PR search. The requested and reviewed modes cover PRs
+ * other people authored and exclude the user's own, because GitHub
+ * records an author's inline replies as reviews, so a plain reviewed-by
+ * search returns your own PRs whenever you answered a comment on them.
+ */
 export interface SearchArgs {
   user: string;
   sinceIso: string;
@@ -347,6 +353,10 @@ async function searchPrsViaApi({ user, sinceIso, repos, includeDrafts, mode }: S
 
   const terms = ['type:pr', `${qualifier}:${user}`, `created:>=${sinceIso}`];
 
+  if (mode !== 'authored') {
+    terms.push(`-author:${user}`);
+  }
+
   if (!includeDrafts) {
     terms.push('draft:false');
   }
@@ -413,6 +423,15 @@ export async function searchPrs({ user, sinceIso, repos, includeDrafts, mode }: 
 
   for (const repo of repos) {
     args.push('--repo', repo);
+  }
+
+  /**
+   * The gh CLI has no flag that negates the author, so the exclusion goes
+   * in as a raw query term behind the flag terminator, which keeps gh from
+   * reading the leading dash as a flag.
+   */
+  if (mode !== 'authored') {
+    args.push('--', `-author:${user}`);
   }
 
   return JSON.parse(await gh(args)) as SearchPrItem[];
