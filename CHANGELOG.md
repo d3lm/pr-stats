@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.20](https://github.com/d3lm/pr-stats/releases/tag/v0.2.20) - 2026-09-04
+
+### Features
+
+- feat: snooze PRs on the awaiting-review queue ([79bedfe](https://github.com/d3lm/pr-stats/commit/79bedfe0afec16532670618870627b9484bf09e1))
+
 ## [0.2.19](https://github.com/d3lm/pr-stats/releases/tag/v0.2.19) - 2026-09-04
 
 ### Bug Fixes
