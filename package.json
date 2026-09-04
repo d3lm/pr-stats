@@ -18,7 +18,7 @@
     "terminal"
   ],
   "bin": {
-    "pr-stats": "./dist/tui.mjs"
+    "pr-stats": "dist/tui.mjs"
   },
   "files": [
     "dist"
