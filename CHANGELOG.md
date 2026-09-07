@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.23](https://github.com/d3lm/pr-stats/releases/tag/v0.2.23) - 2026-09-07
+
+### Features
+
+- feat: cycle the sub-tabs backward with shift+t ([30bd2a4](https://github.com/d3lm/pr-stats/commit/30bd2a4501785fa9aba9d5773626f0f94aaff424))
+
 ## [0.2.22](https://github.com/d3lm/pr-stats/releases/tag/v0.2.22) - 2026-09-07
 
 ### Features
