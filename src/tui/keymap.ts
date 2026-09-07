@@ -820,10 +820,11 @@ export function handleAppKey(key: KeyEvent, context: KeymapContext): void {
     context.dispatchBrowse({ type: 'tabCycled', delta: 1 });
   } else if ((context.browse.tab === 0 || context.browse.tab === 1) && key.name === 't') {
     /**
-     * The t key cycles the sub-tabs of the Awaiting you tab and flips the
-     * Your PRs tab between the open queue and the merged stats.
+     * The t key cycles the sub-tabs of the Awaiting you tab forward and
+     * shift+t cycles them backward, and either flips the Your PRs tab
+     * between the open queue and the merged stats.
      */
-    context.dispatchBrowse({ type: 'subTabToggled' });
+    context.dispatchBrowse({ type: 'subTabCycled', delta: key.shift ? -1 : 1 });
   } else {
     const queue = activeQueueTab(context.browse);
 

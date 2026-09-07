@@ -19,7 +19,8 @@ export type StatsTabKey = 'review' | 'size' | 'comment' | 'merged';
 
 /**
  * The three sub-tabs of the Awaiting you tab, keyed like the queue tabs
- * they render, in the order the t key cycles them.
+ * they render, in the order the t key cycles them forward and shift+t
+ * cycles them backward.
  */
 export type PendingSubTab = 'pending' | 'reviewed' | 'mentions';
 
@@ -49,13 +50,15 @@ export const AUTHORED_SUB_TABS: { key: AuthoredSubTab; label: string }[] = [
 ];
 
 /**
- * Resolves the sub-tab of the Awaiting you tab that follows the given
- * one in the cycle, wrapping around from the last to the first.
+ * Resolves the sub-tab of the Awaiting you tab that sits the given
+ * number of steps from the given one in the cycle, wrapping around at
+ * both ends, so a delta of 1 names the next sub-tab and a delta of -1
+ * names the previous one.
  */
-export function nextPendingSubTab(current: PendingSubTab): { key: PendingSubTab; label: string } {
+export function cycledPendingSubTab(current: PendingSubTab, delta: 1 | -1): { key: PendingSubTab; label: string } {
   const index = PENDING_SUB_TABS.findIndex((entry) => entry.key === current);
 
-  return PENDING_SUB_TABS[(index + 1) % PENDING_SUB_TABS.length];
+  return PENDING_SUB_TABS[(index + PENDING_SUB_TABS.length + delta) % PENDING_SUB_TABS.length];
 }
 
 export type BrowseTabKey = QueueTabKey | StatsTabKey;
@@ -154,7 +157,7 @@ export function activeQueueTab(state: BrowseState): QueueTabKey | null {
 export type BrowseAction =
   | { type: 'tabSelected'; tab: number }
   | { type: 'tabCycled'; delta: 1 | -1 }
-  | { type: 'subTabToggled' }
+  | { type: 'subTabCycled'; delta: 1 | -1 }
   | { type: 'repoCursorMoved'; tab: BrowseTabKey; delta: 1 | -1; count: number }
   | { type: 'rowCursorMoved'; tab: QueueTabKey; delta: 1 | -1; count: number }
   | { type: 'repoOpened'; tab: BrowseTabKey; repo: string | null }
@@ -194,14 +197,15 @@ export function browseReducer(state: BrowseState, action: BrowseAction): BrowseS
     case 'tabCycled': {
       return { ...state, tab: (state.tab + TABS.length + action.delta) % TABS.length };
     }
-    case 'subTabToggled': {
+    case 'subTabCycled': {
       /**
-       * The toggle acts on the sub-tabs of the active tab, cycling the
-       * three of the Awaiting you tab forward and flipping the two of
-       * the Your PRs tab, and does nothing on a tab without sub-tabs.
+       * The cycle acts on the sub-tabs of the active tab, stepping the
+       * three of the Awaiting you tab in the given direction and flipping
+       * the two of the Your PRs tab, where both directions land on the
+       * same sub-tab, and does nothing on a tab without sub-tabs.
        */
       if (state.tab === 0) {
-        return { ...state, pendingTab: nextPendingSubTab(state.pendingTab).key };
+        return { ...state, pendingTab: cycledPendingSubTab(state.pendingTab, action.delta).key };
       }
 
       if (state.tab === 1) {

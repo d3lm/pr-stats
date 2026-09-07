@@ -23,9 +23,10 @@ export function TabBar({ tab }: { tab: number }) {
 
 /**
  * Renders the sub-tab bar of a tab with sub-tabs, styled like the tab
- * bar above it, with the t key hint that switches between the sub-tabs.
- * A sub-tab the alerts flag leads with an asterisk in the accent color,
- * so work waiting on another sub-tab shows without switching to it. The
+ * bar above it, with the hint for the t key that switches to the next
+ * sub-tab and the shift+t key that switches to the previous one. A
+ * sub-tab the alerts flag leads with an asterisk in the accent color, so
+ * work waiting on another sub-tab shows without switching to it. The
  * ASCII asterisk renders the same in every terminal font, where the
  * bullet and circle glyphs vary in size and sit off center.
  */
@@ -61,7 +62,7 @@ export function SubTabBar<K extends string>({
         );
       })}
       <text wrapMode="none" fg={theme.dim}>
-        t switches
+        t/T switches
       </text>
     </box>
   );

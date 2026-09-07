@@ -25,8 +25,8 @@ pr-stats
 
 Without flags, it covers PRs from the last 90 days across all repositories you can access.
 
-- **Awaiting you** splits into three sub-tabs, which the `t` key cycles. Awaiting review lists the open PRs awaiting your review with their wait time, Reviewed lists the open PRs you already reviewed, and Mentions is an inbox of the PRs that @-mention you. A fresh review request moves a PR back into the awaiting list. The `s` key snoozes a PR or a mention you are not ready for yet, which parks it in a snoozed list until a time you pick, and `d` marks a mention read. See [Mentions](#mentions) and [Snoozing](#snoozing).
-- **Your PRs** splits into your open PRs and a merged-and-closed report with merge-time, first-review, backlog, and outcome charts plus a reviewer leaderboard. The `t` key switches the sub-tabs.
+- **Awaiting you** splits into three sub-tabs, which the `t` key cycles forward and `T` (shift+t) cycles backward. Awaiting review lists the open PRs awaiting your review with their wait time, Reviewed lists the open PRs you already reviewed, and Mentions is an inbox of the PRs that @-mention you. A fresh review request moves a PR back into the awaiting list. The `s` key snoozes a PR or a mention you are not ready for yet, which parks it in a snoozed list until a time you pick, and `d` marks a mention read. See [Mentions](#mentions) and [Snoozing](#snoozing).
+- **Your PRs** splits into your open PRs and a merged-and-closed report with merge-time, first-review, backlog, and outcome charts plus a reviewer leaderboard. The `t` and `T` keys switch the sub-tabs.
 - **Reviews** counts the PRs you reviewed on request next to the review rounds they took, and charts your review times as a histogram, trend, heatmap, and weekly volume, plus review cycles, verdicts, an off-hours gauge, and the requests still waiting on you.
 - **PR size** carries the same charts for PR sizes and adds a weekly net-lines trend.
 - **Comments** holds a histogram of comments per PR, a scatter against PR size, and the most commented PRs.

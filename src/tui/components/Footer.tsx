@@ -1,5 +1,5 @@
 import type { AppViews } from '../hooks/useViewModel';
-import { activeQueueTab, nextPendingSubTab, type BrowseState, type QueueTabKey } from '../state/browse';
+import { activeQueueTab, cycledPendingSubTab, type BrowseState, type QueueTabKey } from '../state/browse';
 import type { Modal } from '../state/ui';
 import { theme } from '../theme';
 import { mentionActionOf, queueRowAt, snoozeActionOf, unreadMentionRows, type QueueView } from '../views/queue';
@@ -123,7 +123,7 @@ function queueViewsOf(key: QueueTabKey, views: AppViews) {
  */
 function subTabHint(browse: BrowseState): string {
   if (browse.tab === 0) {
-    return `t ${nextPendingSubTab(browse.pendingTab).label.toLowerCase()} · `;
+    return `t ${cycledPendingSubTab(browse.pendingTab, 1).label.toLowerCase()} · `;
   }
 
   if (browse.tab === 1) {

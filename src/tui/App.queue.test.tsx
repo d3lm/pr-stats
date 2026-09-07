@@ -46,7 +46,7 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
      * a review, and leaves the inbox plain, because every canned mention
      * predates the seed.
      */
-    expect(pickerFrame).toContain('* Awaiting review   Reviewed   Mentions  t switches');
+    expect(pickerFrame).toContain('* Awaiting review   Reviewed   Mentions  t/T switches');
 
     /**
      * Enter on All repos opens the aggregate view, the awaiting queue
@@ -70,13 +70,32 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(pendingFrame).toContain('t reviewed');
 
     /**
-     * The t key cycles the sub-tabs. The reviewed sub-tab opens on its
-     * own picker, whose details count the open PRs you reviewed per
-     * repo, and enter lists them. The mentions sub-tab follows with the
-     * inbox, where every canned mention predates the seed and reads as
-     * read, and a third press returns to the awaiting queue, which kept
-     * its opened scope.
+     * Shift+t cycles the sub-tabs backward, so from the awaiting queue
+     * it wraps around to the mentions sub-tab, and a second press steps
+     * back to the reviewed sub-tab. Both open on their own pickers,
+     * because neither has an opened scope yet.
      */
+    setup.mockInput.pressKey('T');
+
+    await waitForText(setup, 'open its mention inbox');
+
+    setup.mockInput.pressKey('T');
+
+    await waitForText(setup, 'list the open PRs you reviewed');
+
+    /**
+     * Another shift+t returns to the awaiting queue, which kept its
+     * opened scope, and from there the t key cycles the sub-tabs
+     * forward. The reviewed sub-tab opens on its own picker, whose
+     * details count the open PRs you reviewed per repo, and enter lists
+     * them. The mentions sub-tab follows with the inbox, where every
+     * canned mention predates the seed and reads as read, and a third
+     * press returns to the awaiting queue again.
+     */
+    setup.mockInput.pressKey('T');
+
+    await waitForText(setup, 'Awaiting your review (n=2)');
+
     setup.mockInput.pressKey('t');
 
     await waitForText(setup, 'list the open PRs you reviewed');
@@ -245,13 +264,15 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
     const openFrame = setup.captureCharFrame();
 
     expect(openFrame).toContain('Merged & closed');
-    expect(openFrame).toContain('t switches');
+    expect(openFrame).toContain('t/T switches');
     expect(openFrame).toContain('t merged stats');
 
     /**
      * The t key switches to the merged sub-tab, which opens on its own
      * repo picker. The details split the closed PRs into merged and
      * closed unmerged, and the repo with the most merges sorts first.
+     * With only two sub-tabs, shift+t flips back to the open sub-tab
+     * and plain t flips to the merged one again.
      */
     setup.mockInput.pressKey('t');
 
@@ -262,6 +283,14 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
     expect(pickerFrame).toContain('3 merged, 1 closed unmerged');
     expect(pickerFrame).toContain('0 merged, 1 closed unmerged');
     expect(pickerFrame).toContain('t open PRs');
+
+    setup.mockInput.pressKey('T');
+
+    await waitForText(setup, 'list its open PRs');
+
+    setup.mockInput.pressKey('t');
+
+    await waitForText(setup, 'open its charts');
 
     /**
      * Enter on All repos opens the merged stats, with the outcome counts
