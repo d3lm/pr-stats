@@ -15,9 +15,11 @@ import type { PrRow } from '../views/rows';
  * repo when the view is grouped. The cursor counts across every row in
  * render order, matching the rows the App navigates. The PR references
  * stay clickable terminal hyperlinks as well, unless the copy-links
- * setting routes clicks to the clipboard instead. The heading names
- * the opened repo scope when the data spans multiple repos, framed by
- * rules like the stats header, and stays away otherwise.
+ * setting routes clicks to the clipboard instead. A row whose PR carries
+ * a mention of you that still awaits attention shows an at-sign badge in
+ * front of its title. The heading names the opened repo scope when the
+ * data spans multiple repos, framed by rules like the stats header, and
+ * stays away otherwise.
  */
 export function QueuePanel({
   heading,
@@ -115,8 +117,12 @@ export function QueuePanel({
     const isSelected = index === cursor;
     const bg = isSelected ? theme.selectedBg : undefined;
 
-    // a snoozed PR is parked, so its wake-up time and title step back to the secondary color
-    const fg = row.pending?.snoozed === true ? theme.muted : theme.text;
+    /**
+     * A snoozed PR is parked and a read mention is handled, so their
+     * lead and title step back to the secondary color.
+     */
+    const parked = row.pending?.snoozed === true || row.mention?.state === 'snoozed' || row.mention?.state === 'read';
+    const fg = parked ? theme.muted : theme.text;
 
     /**
      * The reference starts after the indent, the two-cell cursor marker,
@@ -176,6 +182,13 @@ export function QueuePanel({
         )}
         <span fg={fg} bg={bg}>
           {'  '}
+        </span>
+        {row.mentioned === true && (
+          <span fg={theme.accent} bg={bg}>
+            {'@ '}
+          </span>
+        )}
+        <span fg={fg} bg={bg}>
           {row.title}
         </span>
       </text>

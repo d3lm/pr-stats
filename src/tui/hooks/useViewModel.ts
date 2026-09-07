@@ -8,6 +8,7 @@ import {
   parseWorkHours,
   resolveTimezone,
 } from '../../flags';
+import type { MentionReads } from '../../mentions';
 import { initBuckets } from '../../report';
 import type { Snooze } from '../../snooze';
 import { configureTimeMode } from '../../time';
@@ -20,12 +21,22 @@ import {
   type TabScopes,
 } from '../state/browse';
 import { targetLabelOf, type OptionsState } from '../state/options';
-import { buildOpenAuthoredView, buildPendingReviewView, type QueueView } from '../views/queue';
+import {
+  buildMentionsView,
+  buildOpenAuthoredView,
+  buildPendingReviewView,
+  buildReviewedView,
+  queueAlerts,
+  type QueueAlerts,
+  type QueueView,
+} from '../views/queue';
 import {
   buildCommentRepoOptions,
+  buildMentionRepoOptions,
   buildMergedRepoOptions,
   buildOpenRepoOptions,
   buildPendingRepoOptions,
+  buildReviewedRepoOptions,
   buildReviewRepoOptions,
   buildSizeRepoOptions,
   type RepoOption,
@@ -58,12 +69,16 @@ function resolveScope(scope: PanelScope, repos: RepoOption[]): PanelScope {
  */
 export interface AppViews {
   pendingRepos: RepoOption[];
+  reviewedRepos: RepoOption[];
+  mentionsRepos: RepoOption[];
   openRepos: RepoOption[];
   mergedRepos: RepoOption[];
   reviewRepos: RepoOption[];
   sizeRepos: RepoOption[];
   commentRepos: RepoOption[];
   pendingScope: PanelScope;
+  reviewedScope: PanelScope;
+  mentionsScope: PanelScope;
   openScope: PanelScope;
   mergedScope: PanelScope;
   reviewScope: PanelScope;
@@ -74,7 +89,14 @@ export interface AppViews {
    * repo picker instead.
    */
   pending: QueueView | null;
+  reviewed: QueueView | null;
+  mentions: QueueView | null;
   open: QueueView | null;
+  /**
+   * Flags the sub-tabs of the Awaiting you tab that hold something to
+   * act on across every repo, which the sub-tab bar marks.
+   */
+  alerts: QueueAlerts;
   merged: StatsView | null;
   review: StatsView | null;
   size: StatsView | null;
@@ -83,13 +105,14 @@ export interface AppViews {
 
 /**
  * Derives everything the tabs render from the loaded data, the live
- * options, the per-tab scopes with the queue grouping, the snoozes, and
- * the terminal width. Returns null before the first data arrives. Pure
- * apart from configuring the shared time-mode singleton the compute
- * layers read, which happens right before they run so it stays
- * consistent for this render, and apart from the awaiting-review queue
- * reading the clock to place the snoozed PRs, which the wake-up timer
- * keeps current by changing the snoozes when one ends.
+ * options, the per-tab scopes with the queue grouping, the snoozes, the
+ * read state of the mention inbox, and the terminal width. Returns null
+ * before the first data arrives. Pure apart from configuring the shared
+ * time-mode singleton the compute layers read, which happens right
+ * before they run so it stays consistent for this render, and apart from
+ * the awaiting-you queue reading the clock to place the snoozed PRs,
+ * which the wake-up timer keeps current by changing the snoozes when one
+ * ends.
  *
  * The view builders bake the current theme colors into their lines, so
  * the theme epoch invalidates the memo. It changes identity whenever the
@@ -104,6 +127,7 @@ export function useViewModel(
   grouping: QueueGrouping,
   expanded: Record<StatsTabKey, boolean>,
   snoozes: Snooze[],
+  reads: MentionReads,
   themeEpoch: unknown,
 ): AppViews | null {
   return useMemo(() => {
@@ -145,12 +169,16 @@ export function useViewModel(
     const sizeTarget = options.sizeTarget === '' ? undefined : parseSizeTarget(options.sizeTarget);
 
     const pendingRepos = buildPendingRepoOptions(raw, snoozes);
+    const reviewedRepos = buildReviewedRepoOptions(raw);
+    const mentionsRepos = buildMentionRepoOptions(raw, snoozes, reads);
     const openRepos = buildOpenRepoOptions(raw);
     const mergedRepos = buildMergedRepoOptions(raw);
     const reviewRepos = buildReviewRepoOptions(raw);
     const sizeRepos = buildSizeRepoOptions(raw);
     const commentRepos = buildCommentRepoOptions(raw);
     const pendingScope = resolveScope(scopes.pending, pendingRepos);
+    const reviewedScope = resolveScope(scopes.reviewed, reviewedRepos);
+    const mentionsScope = resolveScope(scopes.mentions, mentionsRepos);
     const openScope = resolveScope(scopes.open, openRepos);
     const mergedScope = resolveScope(scopes.merged, mergedRepos);
     const reviewScope = resolveScope(scopes.review, reviewRepos);
@@ -164,12 +192,16 @@ export function useViewModel(
 
     return {
       pendingRepos,
+      reviewedRepos,
+      mentionsRepos,
       openRepos,
       mergedRepos,
       reviewRepos,
       sizeRepos,
       commentRepos,
       pendingScope,
+      reviewedScope,
+      mentionsScope,
       openScope,
       mergedScope,
       reviewScope,
@@ -177,9 +209,18 @@ export function useViewModel(
       commentScope,
       pending:
         pendingScope.view === 'detail'
-          ? buildPendingReviewView(raw, pendingScope.repo, grouping.pending, snoozes)
+          ? buildPendingReviewView(raw, pendingScope.repo, grouping.pending, snoozes, reads)
+          : null,
+      reviewed:
+        reviewedScope.view === 'detail'
+          ? buildReviewedView(raw, reviewedScope.repo, grouping.reviewed, snoozes, reads)
+          : null,
+      mentions:
+        mentionsScope.view === 'detail'
+          ? buildMentionsView(raw, mentionsScope.repo, grouping.mentions, snoozes, reads)
           : null,
       open: openScope.view === 'detail' ? buildOpenAuthoredView(raw, openScope.repo, grouping.open) : null,
+      alerts: queueAlerts(raw, snoozes, reads),
       merged: mergedScope.view === 'detail' ? buildMergedView(raw, mergedScope.repo, width, expanded.merged) : null,
       review,
       size: sizeScope.view === 'detail' ? buildSizeView(raw, sizeTarget, sizeScope.repo, width) : null,
@@ -196,16 +237,21 @@ export function useViewModel(
     options.sizeTarget,
     width,
     scopes.pending,
+    scopes.reviewed,
+    scopes.mentions,
     scopes.open,
     scopes.merged,
     scopes.review,
     scopes.size,
     scopes.comment,
     grouping.pending,
+    grouping.reviewed,
+    grouping.mentions,
     grouping.open,
     expanded.review,
     expanded.merged,
     snoozes,
+    reads,
     themeEpoch,
   ]);
 }

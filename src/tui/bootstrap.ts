@@ -1,6 +1,7 @@
 import { configureCache } from '../cache';
 import { canonicalWorkDays, HELP, parseCliArgs } from '../flags';
 import { configureAuth } from '../github';
+import { readMentionReads, type MentionReadsByUser } from '../mentions';
 import { applySettings, DEFAULT_RELOAD_INTERVAL, type NotifyChannel } from '../settings';
 import { DEFAULT_SNOOZE_DURATION, readSnoozes, type Snooze } from '../snooze';
 import { CliError, fail } from '../utils';
@@ -38,6 +39,19 @@ export interface BootstrapResult {
    */
   notifications: boolean;
   /**
+   * Mirrors the mention tracking setting from settings.json, on unless
+   * the file turns it off. While it is set, loads also look for PRs that
+   * mention the user and the awaiting-you tab lists them in the mention
+   * inbox.
+   */
+  trackMentions: boolean;
+  /**
+   * Mirrors the mention notifications setting from settings.json. While
+   * it is set together with notifications and mention tracking, loads
+   * notify about PRs that newly mention the user.
+   */
+  notifyMentions: boolean;
+  /**
    * Holds the notification channel from settings.json, already
    * validated by loadSettings, or auto while the file names none.
    */
@@ -59,6 +73,12 @@ export interface BootstrapResult {
    * PRs that came back while it was closed.
    */
   snoozes: Snooze[];
+  /**
+   * Holds the read state of the mention inbox of every login, read from
+   * its file in the cache directory, so the inbox continues where the
+   * previous session of the same account left it.
+   */
+  mentionReads: MentionReadsByUser;
   /**
    * Holds the theme parsed from settings.json and already applied, so
    * the settings dialog starts from the saved active theme and the saved
@@ -133,10 +153,13 @@ export function bootstrap(): BootstrapResult {
       autoReload: settings.autoReload === true,
       reloadInterval: settings.reloadInterval ?? DEFAULT_RELOAD_INTERVAL,
       notifications: settings.notifications === true,
+      trackMentions: settings.trackMentions !== false,
+      notifyMentions: settings.notifyMentions === true,
       notifyChannel: settings.notifyChannel ?? 'auto',
       copyLinks: settings.copyLinks === true,
       snoozeDuration: settings.snoozeDuration ?? DEFAULT_SNOOZE_DURATION,
       snoozes: readSnoozes(),
+      mentionReads: readMentionReads(),
       theme,
       json: values.json,
     };

@@ -9,20 +9,30 @@ import {
   saveNoCache,
   saveNotifications,
   saveNotifyChannel,
+  saveNotifyMentions,
   saveTheme,
+  saveTrackMentions,
   type NotifyChannel,
 } from '../settings';
+import type { SnoozeTargetKey } from '../snooze';
 import { exportStatsFile } from './data/export';
 import type { RawData } from './data/load';
 import { TEST_NOTIFICATION } from './data/notifications';
 import type { AppViews } from './hooks/useViewModel';
-import type { BrowseAction, BrowseState, QueueTabKey, StatsTabKey } from './state/browse';
+import {
+  activeQueueTab,
+  type BrowseAction,
+  type BrowseState,
+  type QueueTabKey,
+  type StatsTabKey,
+} from './state/browse';
 import { FIELDS, writeSavedOptions, type OptionsState } from './state/options';
 import { SETTINGS, THEME_COLORS } from './state/settings';
 import type { UiAction, UiState } from './state/ui';
 import { applyThemeState, cycleTheme, themeColorText, themeSettingsOf, type ThemeState } from './theme';
 import type { Notifier } from './utils/notify';
-import { queueRows } from './views/queue';
+import { queueRows, unreadMentionRows } from './views/queue';
+import type { PrRow } from './views/rows';
 
 /**
  * Everything the key handlers read and drive. The committed state comes
@@ -43,6 +53,8 @@ export interface KeymapContext {
    */
   reloadInterval: string;
   notifications: boolean;
+  trackMentions: boolean;
+  notifyMentions: boolean;
   notifyChannel: NotifyChannel;
   copyLinks: boolean;
   /**
@@ -68,6 +80,8 @@ export interface KeymapContext {
   setNoCache: Dispatch<SetStateAction<boolean>>;
   setAutoReload: Dispatch<SetStateAction<boolean>>;
   setNotifications: Dispatch<SetStateAction<boolean>>;
+  setTrackMentions: Dispatch<SetStateAction<boolean>>;
+  setNotifyMentions: Dispatch<SetStateAction<boolean>>;
   setNotifyChannel: Dispatch<SetStateAction<NotifyChannel>>;
   setCopyLinks: Dispatch<SetStateAction<boolean>>;
   setThemeState: Dispatch<SetStateAction<ThemeState>>;
@@ -88,10 +102,29 @@ export interface KeymapContext {
   copyRow: (row: { ref: string; url: string }) => void;
 
   /**
-   * Ends the snooze of the given PR, which puts it back on the awaiting
-   * list, and reports the change in the footer.
+   * Ends the snooze of the given kind on the given PR, which puts the
+   * request back on the awaiting list or the mention back in the inbox,
+   * and reports the change in the footer.
    */
-  unsnooze: (ref: string) => void;
+  unsnooze: (target: SnoozeTargetKey) => void;
+
+  /**
+   * Marks the mention behind the given inbox row read, ending its snooze
+   * when it had one, and reports the change in the footer.
+   */
+  markRead: (row: PrRow) => void;
+
+  /**
+   * Marks the mentions behind the given inbox rows read in one go and
+   * reports the change in the footer.
+   */
+  markAllRead: (rows: readonly PrRow[]) => void;
+
+  /**
+   * Marks the mention behind the given inbox row unread again and
+   * reports the change in the footer.
+   */
+  markUnread: (row: PrRow) => void;
 
   /**
    * Seeds the edit draft with the given value and switches the open
@@ -257,6 +290,35 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
 
           context.setNotifications(next);
           context.dispatchUi({ type: 'cacheActionReported', action: saveNotifications(next) ? 'saved' : 'notSaved' });
+
+          break;
+        }
+        case 'trackMentions': {
+          /**
+           * The toggle flips the session state and persists it right
+           * away, like the notifications toggle above. The next load
+           * starts or stops searching for mentions, and a load without
+           * them drops the inbox seed, so turning the tracking back on
+           * starts the inbox afresh.
+           */
+          const next = !context.trackMentions;
+
+          context.setTrackMentions(next);
+          context.dispatchUi({ type: 'cacheActionReported', action: saveTrackMentions(next) ? 'saved' : 'notSaved' });
+
+          break;
+        }
+        case 'notifyMentions': {
+          /**
+           * The toggle flips the session state and persists it right
+           * away, like the notifications toggle above. The loads keep
+           * the mention baseline current while the tracking is on, so
+           * only the mentions after the toggle notify.
+           */
+          const next = !context.notifyMentions;
+
+          context.setNotifyMentions(next);
+          context.dispatchUi({ type: 'cacheActionReported', action: saveNotifyMentions(next) ? 'saved' : 'notSaved' });
 
           break;
         }
@@ -430,28 +492,34 @@ function handleThemeModalKey(key: KeyEvent, context: KeymapContext): void {
 }
 
 /**
- * Resolves the derived views and the state key of the active queue tab,
- * so the key handler below works the same on the awaiting-review tab and
- * the open-PRs tab.
+ * Resolves the derived views and the state key of the given queue tab,
+ * so the key handler below works the same on the three sub-tabs of the
+ * Awaiting you tab and on the open-PRs tab.
  */
-function queueTabOf(context: KeymapContext) {
-  const { views } = context;
+function queueTabOf(key: QueueTabKey, views: AppViews | null) {
+  if (key === 'pending') {
+    return { key, view: views?.pending ?? null, repos: views?.pendingRepos ?? [], scope: views?.pendingScope ?? null };
+  }
 
-  if (context.browse.tab === 0) {
+  if (key === 'reviewed') {
     return {
-      key: 'pending' as QueueTabKey,
-      view: views?.pending ?? null,
-      repos: views?.pendingRepos ?? [],
-      scope: views?.pendingScope ?? null,
+      key,
+      view: views?.reviewed ?? null,
+      repos: views?.reviewedRepos ?? [],
+      scope: views?.reviewedScope ?? null,
     };
   }
 
-  return {
-    key: 'open' as QueueTabKey,
-    view: views?.open ?? null,
-    repos: views?.openRepos ?? [],
-    scope: views?.openScope ?? null,
-  };
+  if (key === 'mentions') {
+    return {
+      key,
+      view: views?.mentions ?? null,
+      repos: views?.mentionsRepos ?? [],
+      scope: views?.mentionsScope ?? null,
+    };
+  }
+
+  return { key, view: views?.open ?? null, repos: views?.openRepos ?? [], scope: views?.openScope ?? null };
 }
 
 /**
@@ -459,13 +527,16 @@ function queueTabOf(context: KeymapContext) {
  * repos, like the stats tabs, and otherwise render one selectable PR
  * list, whose cursor the movement keys drive and whose highlighted PR
  * enter opens in the browser. On the aggregate list, g toggles grouping
- * the rows by repo. On the awaiting-review queue, s opens the snooze
- * dialog for an awaiting PR and unsnoozes a snoozed one, while shift+s
- * opens the settings before the key gets here. The panel scrolls the
+ * the rows by repo. On the awaiting queue, s opens the snooze dialog for
+ * an awaiting PR and unsnoozes a snoozed one, and on the mention inbox
+ * it does the same for an unread mention, while shift+s opens the
+ * settings before the key gets here. On the inbox, d marks the mention
+ * under the cursor read, or unread again from the read list, and shift+d
+ * marks every unread mention on screen read. The panel scrolls the
  * cursor row into view on its own.
  */
-function handleQueueKey(key: KeyEvent, context: KeymapContext): void {
-  const { key: tab, view, repos, scope } = queueTabOf(context);
+function handleQueueKey(key: KeyEvent, queue: QueueTabKey, context: KeymapContext): void {
+  const { key: tab, view, repos, scope } = queueTabOf(queue, context.views);
 
   if (scope?.view === 'list') {
     switch (key.name) {
@@ -543,26 +614,64 @@ function handleQueueKey(key: KeyEvent, context: KeymapContext): void {
       const row = rows[Math.min(cursor, rows.length - 1)];
 
       /**
-       * Only the pending rows carry a request, so the reviewed queue and
-       * the open authored PRs ignore the key. A snoozed row unsnoozes
-       * right away, and an awaiting row opens the snooze dialog, which
-       * starts in the edit mode with the default duration as the draft.
+       * Only the pending rows and the inbox rows carry an ask to park,
+       * so the reviewed queue, the read mentions, and the open authored
+       * PRs ignore the key. A snoozed row unsnoozes right away, and an
+       * awaiting or unread row opens the snooze dialog, which starts in
+       * the edit mode with the default duration as the draft.
        */
-      if (row.pending === undefined) {
+      const ask =
+        row.pending !== undefined
+          ? { kind: 'review' as const, at: row.pending.requestedAt }
+          : row.mention !== undefined && row.mention.state !== 'read'
+            ? { kind: 'mention' as const, at: row.mention.mark.at, ids: row.mention.mark.ids }
+            : null;
+
+      if (ask === null) {
         break;
       }
 
-      if (row.pending.snoozed) {
-        context.unsnooze(row.ref);
+      if (row.pending?.snoozed ?? row.mention?.state === 'snoozed') {
+        context.unsnooze({ kind: ask.kind, ref: row.ref });
         break;
       }
 
-      context.dispatchUi({
-        type: 'snoozeModalOpened',
-        target: { ref: row.ref, title: row.title, requestedAt: row.pending.requestedAt },
-      });
+      context.dispatchUi({ type: 'snoozeModalOpened', target: { ...ask, ref: row.ref, title: row.title } });
 
       context.beginEdit(context.snoozeDuration);
+
+      break;
+    }
+    case 'd': {
+      /**
+       * Shift marks every unread mention on screen read in one go, which
+       * clears the inbox of the opened scope. The plain key acts on the
+       * mention under the cursor, marking an unread or a snoozed one
+       * read and a read one unread again, and leaves every other row
+       * alone.
+       */
+      if (key.shift) {
+        const unread = unreadMentionRows(view);
+
+        if (unread.length > 0) {
+          context.markAllRead(unread);
+        }
+
+        break;
+      }
+
+      const cursor = context.browse.rowCursors[tab];
+      const row = rows[Math.min(cursor, rows.length - 1)];
+
+      if (row.mention === undefined) {
+        break;
+      }
+
+      if (row.mention.state === 'read') {
+        context.markUnread(row);
+      } else {
+        context.markRead(row);
+      }
 
       break;
     }
@@ -709,12 +818,19 @@ export function handleAppKey(key: KeyEvent, context: KeymapContext): void {
     context.dispatchBrowse({ type: 'tabCycled', delta: -1 });
   } else if (key.name === 'right' || key.name === 'tab') {
     context.dispatchBrowse({ type: 'tabCycled', delta: 1 });
-  } else if (context.browse.tab === 1 && key.name === 't') {
-    // t flips the Your PRs tab between the open queue and the merged stats
+  } else if ((context.browse.tab === 0 || context.browse.tab === 1) && key.name === 't') {
+    /**
+     * The t key cycles the sub-tabs of the Awaiting you tab and flips the
+     * Your PRs tab between the open queue and the merged stats.
+     */
     context.dispatchBrowse({ type: 'subTabToggled' });
-  } else if (context.browse.tab === 0 || (context.browse.tab === 1 && context.browse.authoredTab === 'open')) {
-    handleQueueKey(key, context);
   } else {
-    handleStatsKey(key, context);
+    const queue = activeQueueTab(context.browse);
+
+    if (queue === null) {
+      handleStatsKey(key, context);
+    } else {
+      handleQueueKey(key, queue, context);
+    }
   }
 }

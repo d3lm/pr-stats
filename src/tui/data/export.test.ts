@@ -97,6 +97,7 @@ const raw: RawData = {
   reviewResults,
   sizes,
   authoredTotal: 3,
+  mentions: null,
   searchCapped: false,
   fetchedAt: new Date('2026-07-10T00:00:00Z'),
 };

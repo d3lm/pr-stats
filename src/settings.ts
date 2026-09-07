@@ -53,6 +53,21 @@ export interface Settings {
    */
   notifications?: boolean;
   /**
+   * Makes every load also search the PRs that mention you, in their
+   * body, a comment, or a review, your own PRs included, and lists them
+   * in the mention inbox on the awaiting-you tab. Defaults to on, and
+   * turning it off skips the extra search and hides the inbox, so a
+   * session without it pays nothing for mentions.
+   */
+  trackMentions?: boolean;
+  /**
+   * Also sends a desktop notification when a load finds a PR that
+   * newly mentions you. Only applies while notifications and
+   * trackMentions are both set, because the notification needs the
+   * mention data the tracking fetches.
+   */
+  notifyMentions?: boolean;
+  /**
    * Picks the channel the notifications go through. With auto the
    * TUI asks the terminal to post them and falls back to the platform
    * command, terminal forces the terminal path, command forces the
@@ -210,6 +225,14 @@ export function loadSettings(): Settings {
     throw new CliError(`"notifications" in ${settingsFile()} must be true or false`);
   }
 
+  if (settings.trackMentions !== undefined && typeof settings.trackMentions !== 'boolean') {
+    throw new CliError(`"trackMentions" in ${settingsFile()} must be true or false`);
+  }
+
+  if (settings.notifyMentions !== undefined && typeof settings.notifyMentions !== 'boolean') {
+    throw new CliError(`"notifyMentions" in ${settingsFile()} must be true or false`);
+  }
+
   if (settings.notifyChannel !== undefined && !NOTIFY_CHANNELS.includes(settings.notifyChannel)) {
     throw new CliError(`"notifyChannel" in ${settingsFile()} must be "auto", "terminal", "command", or "bell"`);
   }
@@ -281,6 +304,28 @@ export function saveReloadInterval(value: string): boolean {
  */
 export function saveNotifications(on: boolean): boolean {
   current = { ...current, notifications: on };
+
+  return writeCurrent();
+}
+
+/**
+ * Persists the mention tracking toggle to settings.json, keeping every
+ * other key the file holds. Returns false without writing while the
+ * cache is disabled, which keeps debug runs from writing settings.
+ */
+export function saveTrackMentions(on: boolean): boolean {
+  current = { ...current, trackMentions: on };
+
+  return writeCurrent();
+}
+
+/**
+ * Persists the mention notifications toggle to settings.json, keeping
+ * every other key the file holds. Returns false without writing while
+ * the cache is disabled, which keeps debug runs from writing settings.
+ */
+export function saveNotifyMentions(on: boolean): boolean {
+  current = { ...current, notifyMentions: on };
 
   return writeCurrent();
 }

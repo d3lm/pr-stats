@@ -5,16 +5,47 @@ import type { ReviewPr, ReviewResult } from './data';
 import { CliError } from './utils';
 
 /**
- * One snoozed review request. The ref names the PR as repo#number, until
- * holds the wake-up time in milliseconds since the epoch, and requestedAt
- * holds the time of the pending review request the snooze covers, so a
- * newer request on the same PR voids the snooze instead of hiding the
- * re-request.
+ * Names what a snooze parks. A review snooze parks a pending review
+ * request of the awaiting queue, and a mention snooze parks an unread
+ * mention of the mention inbox. The two live side by side on the same
+ * PR, because a review request and a mention are two separate asks.
+ */
+export type SnoozeKind = 'review' | 'mention';
+
+/**
+ * One snoozed ask. The kind names what the snooze parks, the ref names
+ * the PR as repo#number, until holds the wake-up time in milliseconds
+ * since the epoch, and at holds the time of the ask the snooze covers,
+ * the pending review request for a review snooze and the newest mention
+ * for a mention snooze. A mention snooze also holds the ids of the texts
+ * that mentioned you when it was made, so an edit to one of them, which
+ * moves its time, does not count as a new mention. A newer ask of the
+ * same kind on the same PR voids the snooze instead of hiding the
+ * re-request or the new mention.
  */
 export interface Snooze {
+  kind: SnoozeKind;
   ref: string;
   until: number;
-  requestedAt: number;
+  at: number;
+  ids?: readonly string[];
+}
+
+/**
+ * Names the ask a snooze covers, the kind and the PR ref together, which
+ * is what tells two snoozes apart.
+ */
+export interface SnoozeTargetKey {
+  kind: SnoozeKind;
+  ref: string;
+}
+
+/**
+ * Reports whether the snooze covers the given kind of ask on the given
+ * PR.
+ */
+export function snoozeMatches(snooze: Snooze, target: SnoozeTargetKey): boolean {
+  return snooze.kind === target.kind && snooze.ref === target.ref;
 }
 
 /**
@@ -97,12 +128,33 @@ export function snoozesFile(): string {
 }
 
 /**
- * On-disk shape of one snooze, keyed by the PR ref in the file, with the
- * times as ISO strings so the file reads well when opened by hand.
+ * On-disk shape of one snooze, keyed by kind and PR ref in the file as
+ * kind:ref, with the times as ISO strings so the file reads well when
+ * opened by hand. Only mention snoozes carry the ids of the texts they
+ * cover. Files written before mention snoozes existed key their entries
+ * by the PR ref alone and call the ask time requestedAt, and the reader
+ * still takes both forms as review snoozes.
  */
 interface StoredSnooze {
   until: string;
-  requestedAt: string;
+  at?: string;
+  requestedAt?: string;
+  ids?: string[];
+}
+
+/**
+ * Splits a stored key into the kind and the PR ref. A key without a
+ * known kind prefix is a review snooze from before mention snoozes
+ * existed, whose whole key is the ref.
+ */
+function parseStoredKey(key: string): SnoozeTargetKey {
+  for (const kind of ['review', 'mention'] as const) {
+    if (key.startsWith(`${kind}:`)) {
+      return { kind, ref: key.slice(kind.length + 1) };
+    }
+  }
+
+  return { kind: 'review', ref: key };
 }
 
 /**
@@ -110,25 +162,32 @@ interface StoredSnooze {
  * two valid timestamps, so a damaged entry drops out instead of breaking
  * the whole file.
  */
-function reviveSnooze(ref: string, stored: unknown): Snooze | null {
+function reviveSnooze(key: string, stored: unknown): Snooze | null {
   if (typeof stored !== 'object' || stored === null) {
     return null;
   }
 
-  const { until, requestedAt } = stored as Partial<StoredSnooze>;
+  const { until, at, requestedAt, ids } = stored as { [K in keyof StoredSnooze]?: unknown };
+  const askedAt = at ?? requestedAt;
 
-  if (typeof until !== 'string' || typeof requestedAt !== 'string') {
+  if (typeof until !== 'string' || typeof askedAt !== 'string') {
     return null;
   }
 
   const untilMs = Date.parse(until);
-  const requestedAtMs = Date.parse(requestedAt);
+  const atMs = Date.parse(askedAt);
 
-  if (Number.isNaN(untilMs) || Number.isNaN(requestedAtMs)) {
+  if (Number.isNaN(untilMs) || Number.isNaN(atMs)) {
     return null;
   }
 
-  return { ref, until: untilMs, requestedAt: requestedAtMs };
+  const snooze: Snooze = { ...parseStoredKey(key), until: untilMs, at: atMs };
+
+  if (Array.isArray(ids)) {
+    snooze.ids = ids.filter((id): id is string => typeof id === 'string');
+  }
+
+  return snooze;
 }
 
 /**
@@ -158,8 +217,8 @@ export function readSnoozes(): Snooze[] {
 
   const snoozes: Snooze[] = [];
 
-  for (const [ref, stored] of Object.entries(parsed)) {
-    const snooze = reviveSnooze(ref, stored);
+  for (const [key, stored] of Object.entries(parsed)) {
+    const snooze = reviveSnooze(key, stored);
 
     if (snooze !== null) {
       snoozes.push(snooze);
@@ -182,9 +241,10 @@ export function writeSnoozes(snoozes: Snooze[]): boolean {
   const stored: Record<string, StoredSnooze> = {};
 
   for (const snooze of snoozes) {
-    stored[snooze.ref] = {
+    stored[`${snooze.kind}:${snooze.ref}`] = {
       until: new Date(snooze.until).toISOString(),
-      requestedAt: new Date(snooze.requestedAt).toISOString(),
+      at: new Date(snooze.at).toISOString(),
+      ...(snooze.ids === undefined ? {} : { ids: [...snooze.ids] }),
     };
   }
 
@@ -194,39 +254,56 @@ export function writeSnoozes(snoozes: Snooze[]): boolean {
 }
 
 /**
- * Finds the snooze that covers a pending review request at the given
- * time, or returns undefined when none does. A snooze covers the request
- * while its wake-up time lies ahead and the request is not newer than
- * the one the snooze recorded, so a review re-requested after a snooze
- * shows up in the queue right away.
+ * Finds the snooze on the given kind of ask on the given PR whose
+ * wake-up time lies ahead at the given time and that the covers
+ * predicate accepts, or returns undefined when none does.
  */
-export function activeSnooze(
+function findSnooze(
   snoozes: readonly Snooze[],
-  ref: string,
-  requestedAt: Date,
+  target: SnoozeTargetKey,
   now: number,
+  covers: (snooze: Snooze) => boolean,
 ): Snooze | undefined {
-  return snoozes.find(
-    (snooze) => snooze.ref === ref && snooze.until > now && requestedAt.getTime() <= snooze.requestedAt,
-  );
+  return snoozes.find((snooze) => snoozeMatches(snooze, target) && snooze.until > now && covers(snooze));
 }
 
 /**
- * Splits pending review entries into the ones still awaiting attention
- * and the ones a snooze covers at the given time, keeping the order of
- * the awaiting entries and sorting the snoozed ones soonest wake-up
- * first, each carrying its wake-up time.
+ * Finds the snooze that covers an ask of the given kind on the given PR
+ * at the given time, or returns undefined when none does. A snooze
+ * covers the ask while its wake-up time lies ahead and the ask is not
+ * newer than the one the snooze recorded, so a review re-requested after
+ * a snooze shows up in the queue right away.
  */
-export function splitSnoozed<T extends { pr: ReviewPr; requestedAt: Date }>(
+export function activeSnooze(
+  snoozes: readonly Snooze[],
+  target: SnoozeTargetKey,
+  askedAt: number,
+  now: number,
+): Snooze | undefined {
+  return findSnooze(snoozes, target, now, (snooze) => askedAt <= snooze.at);
+}
+
+/**
+ * Splits entries of one kind of ask into the ones still awaiting
+ * attention and the ones a snooze covers at the given time, keeping the
+ * order of the awaiting entries and sorting the snoozed ones soonest
+ * wake-up first, each carrying its wake-up time. The covers predicate
+ * decides whether a snooze on the entry's PR still covers the entry's
+ * ask, which it does not once a newer ask arrived.
+ */
+export function partitionSnoozed<T extends { pr: { repo: string; number: number } }>(
+  kind: SnoozeKind,
   entries: T[],
   snoozes: readonly Snooze[],
   now: number,
+  covers: (snooze: Snooze, entry: T) => boolean,
 ): { awaiting: T[]; snoozed: (T & { until: number })[] } {
   const awaiting: T[] = [];
   const snoozed: (T & { until: number })[] = [];
 
   for (const entry of entries) {
-    const snooze = activeSnooze(snoozes, prKey(entry.pr.repo, entry.pr.number), entry.requestedAt, now);
+    const target = { kind, ref: prKey(entry.pr.repo, entry.pr.number) };
+    const snooze = findSnooze(snoozes, target, now, (candidate) => covers(candidate, entry));
 
     if (snooze === undefined) {
       awaiting.push(entry);
@@ -238,6 +315,19 @@ export function splitSnoozed<T extends { pr: ReviewPr; requestedAt: Date }>(
   snoozed.sort((a, b) => a.until - b.until);
 
   return { awaiting, snoozed };
+}
+
+/**
+ * Splits pending review entries into the ones still awaiting your review
+ * and the ones a review snooze covers at the given time, the way
+ * partitionSnoozed does for any kind of ask.
+ */
+export function splitSnoozed<T extends { pr: ReviewPr; requestedAt: Date }>(
+  entries: T[],
+  snoozes: readonly Snooze[],
+  now: number,
+): { awaiting: T[]; snoozed: (T & { until: number })[] } {
+  return partitionSnoozed('review', entries, snoozes, now, (snooze, entry) => entry.requestedAt.getTime() <= snooze.at);
 }
 
 /**
@@ -260,10 +350,12 @@ export function dueSnoozes(snoozes: readonly Snooze[], now: number): Snooze[] {
 }
 
 /**
- * Lists the PRs behind the given snoozes that still await a review, in
- * the order of the snoozes. A PR that got reviewed, closed, or
- * re-requested while snoozed is no longer the request the snooze parked,
- * so it stays out and the snooze ends quietly.
+ * Lists the PRs behind the given review snoozes that still await a
+ * review, in the order of the snoozes. A PR that got reviewed, closed,
+ * or re-requested while snoozed is no longer the request the snooze
+ * parked, so it stays out and the snooze ends quietly. Mention snoozes
+ * among the given ones are skipped, because the mention module answers
+ * for them.
  */
 export function wokenPrs(due: readonly Snooze[], results: readonly ReviewResult[]): ReviewPr[] {
   const pending = new Map<string, { pr: ReviewPr; requestedAt: number }>();
@@ -278,8 +370,12 @@ export function wokenPrs(due: readonly Snooze[], results: readonly ReviewResult[
   }
 
   return due.flatMap((snooze) => {
+    if (snooze.kind !== 'review') {
+      return [];
+    }
+
     const entry = pending.get(snooze.ref);
 
-    return entry !== undefined && entry.requestedAt <= snooze.requestedAt ? [entry.pr] : [];
+    return entry !== undefined && entry.requestedAt <= snooze.at ? [entry.pr] : [];
   });
 }

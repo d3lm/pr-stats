@@ -21,6 +21,8 @@ export function Modals({
   autoReload,
   reloadInterval,
   notifications,
+  trackMentions,
+  notifyMentions,
   notifyChannel,
   copyLinks,
   snoozeDuration,
@@ -40,6 +42,8 @@ export function Modals({
   autoReload: boolean;
   reloadInterval: string;
   notifications: boolean;
+  trackMentions: boolean;
+  notifyMentions: boolean;
   notifyChannel: NotifyChannel;
   copyLinks: boolean;
   snoozeDuration: string;
@@ -83,6 +87,8 @@ export function Modals({
         autoReload={autoReload}
         reloadInterval={reloadInterval}
         notifications={notifications}
+        trackMentions={trackMentions}
+        notifyMentions={notifyMentions}
         notifyChannel={notifyChannel}
         copyLinks={copyLinks}
         snoozeDuration={snoozeDuration}

@@ -3,8 +3,11 @@ import {
   authFingerprint,
   fetchCurrentUser,
   fetchPrDetails,
+  fetchPrMentionDetails,
   fetchPrSizes,
+  type MentionSource,
   type PrDetails,
+  type PrMentionDetails,
   type PrSize,
   type SearchPrItem,
 } from './github';
@@ -165,8 +168,9 @@ const limit = createLimiter(MAX_CONCURRENT_BATCHES);
 
 /**
  * Fetches the given PRs in batches with a bounded number of calls in
- * flight, stores every result into the found map, and writes closed PRs
- * back to the cache. The onBatchDone callback receives the number of PRs
+ * flight, stores every result into the found map, and writes the PRs the
+ * cacheable predicate accepts back to the cache, which by default are the
+ * closed ones. The onBatchDone callback receives the number of PRs
  * processed so far. Batches can finish out of order, so that count grows
  * monotonically but not in input order.
  */
@@ -176,6 +180,7 @@ async function fetchMissing<Pr extends { repo: string; number: number; state: st
   found: Map<string, T | null>,
   cache: PrCache<T>,
   onBatchDone: (completed: number) => void,
+  cacheable: (pr: Pr) => boolean = (pr) => pr.state !== 'open',
 ): Promise<void> {
   const batches: Pr[][] = [];
 
@@ -196,7 +201,7 @@ async function fetchMissing<Pr extends { repo: string; number: number; state: st
 
           found.set(key, details);
 
-          if (details !== null && pr.state !== 'open') {
+          if (details !== null && cacheable(pr)) {
             cache.set(key, details);
           }
         }
@@ -516,4 +521,309 @@ export async function fetchSizeRaw(
   }
 
   return { sizes, cacheHits };
+}
+
+/**
+ * One PR the mentions search returned. The update time rides along from
+ * the search, because the mention fetch keys its cache on it.
+ */
+export interface MentionedPr {
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  state: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * One text on a PR that names you. The id is the GraphQL node id of the
+ * text, which identifies it across loads, and the time is when the text
+ * became visible in its current form, so the later of its publication
+ * and its last edit. The notification diff uses the id to tell a text it
+ * has already reported from a new one, and the time to tell a new text
+ * from an old one it simply had not seen before.
+ */
+export interface Mention {
+  id: string;
+  at: Date;
+}
+
+/**
+ * One PR the mentions search returned, with every text on it that names
+ * you, or null when the load could not read the PR in full. The null
+ * keeps the PR in the result, so the notification diff knows the load
+ * did not observe it and holds its cutoff until a later load does,
+ * instead of dropping a mention that arrived in the meantime as old.
+ *
+ * The earlier ids name the texts that mentioned you before the since
+ * window, which the window cut dropped from the mentions. The read
+ * marks, the snoozes, and the notification baseline record them along
+ * with the ids of the mentions, so an edit that carries one of those
+ * texts into the window reads as the handled text it is and not as a
+ * new mention. The list is empty without a window and for a PR the load
+ * could not read.
+ */
+export interface MentionEntry {
+  pr: MentionedPr;
+  mentions: Mention[] | null;
+  earlier: string[];
+}
+
+/**
+ * On-disk shape of one mention cache entry. The mentions were found for
+ * the given login, in lower case the way GitHub compares logins, and the
+ * update time is the one the search reported when the entry was written.
+ * An entry only serves the same login on a PR whose search result still
+ * carries the same update time, because the texts that count depend on
+ * who is looking and any new comment, review, or edit moves the update
+ * time. An empty list records that none of the texts names the login.
+ */
+interface CachedMention {
+  user: string;
+  updatedAt: string;
+  mentions: { id: string; at: string }[];
+}
+
+/**
+ * Maps the mentions search results onto the PR shape the mention fetch
+ * uses.
+ */
+export function collectMentionedPrs(mentioned: SearchPrItem[]): MentionedPr[] {
+  return mentioned.map((item) => {
+    return {
+      repo: item.repository.nameWithOwner,
+      number: item.number,
+      title: item.title,
+      url: item.url,
+      state: item.state,
+      createdAt: new Date(item.createdAt),
+      updatedAt: new Date(item.updatedAt),
+    };
+  });
+}
+
+/**
+ * Builds the pattern that finds a mention of the given login in a text.
+ * A mention is the login behind an at sign, which must not continue a
+ * word or a path, so an email address or an org/login path never counts,
+ * and must end where the login ends, so a longer login that starts the
+ * same way never counts either. Logins compare case-insensitively the
+ * way GitHub treats them.
+ */
+function mentionPattern(user: string): RegExp {
+  const escaped = user.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
+
+  return new RegExp(String.raw`(?<![\w/-])@${escaped}(?![\w-])`, 'i');
+}
+
+/**
+ * Returns the latest of the given times, skipping the ones GitHub left
+ * null. At least one time is expected to be set.
+ */
+function latestOf(...times: (string | null)[]): Date {
+  let latest = Number.NEGATIVE_INFINITY;
+
+  for (const time of times) {
+    if (time !== null) {
+      latest = Math.max(latest, new Date(time).getTime());
+    }
+  }
+
+  return new Date(latest);
+}
+
+/**
+ * Finds every text on the PR that mentions the user, each with the time
+ * it became visible in its current form. A text is visible once it is
+ * published, which for an inline review comment is no earlier than the
+ * submission of its review, because a comment drafted with a review
+ * only shows up when the review does. An edit makes the text visible
+ * anew, because an edit is how a mention gets added to an older text.
+ * Texts the user wrote never count, because your own words are not news
+ * to you, and a review that was never submitted is a draft nobody else
+ * can see, so it drops out with its comments. Exported for the tests,
+ * the mention fetch is the only production caller.
+ */
+export function findMentions(details: PrMentionDetails, user: string): Mention[] {
+  const pattern = mentionPattern(user);
+  const own = user.toLowerCase();
+
+  const sources: { id: string; body: string; at: Date; login: string | null }[] = [];
+
+  const addText = (text: MentionSource, floor: string | null = null) => {
+    sources.push({
+      id: text.id,
+      body: text.body,
+      at: latestOf(text.publishedAt ?? text.createdAt, text.lastEditedAt, floor),
+      login: text.author?.login ?? null,
+    });
+  };
+
+  addText(details);
+
+  for (const comment of details.comments) {
+    addText(comment);
+  }
+
+  for (const review of details.reviews) {
+    if (review.submittedAt === null) {
+      continue;
+    }
+
+    sources.push({
+      id: review.id,
+      body: review.body,
+      at: latestOf(review.submittedAt, review.lastEditedAt),
+      login: review.author?.login ?? null,
+    });
+
+    for (const comment of review.comments) {
+      addText(comment, review.submittedAt);
+    }
+  }
+
+  const mentions: Mention[] = [];
+
+  for (const source of sources) {
+    if (source.login?.toLowerCase() !== own && pattern.test(source.body)) {
+      mentions.push({ id: source.id, at: source.at });
+    }
+  }
+
+  return mentions;
+}
+
+export interface MentionFetch {
+  mentions: MentionEntry[];
+  cacheHits: number;
+}
+
+export interface MentionFetchOptions extends FetchOptions {
+  /**
+   * Drops the mentions that became visible before this time, so the
+   * result only holds the mentions within the since window even though
+   * the search finds every PR with any activity in it. An absent time
+   * keeps every mention.
+   */
+  since?: Date;
+}
+
+/**
+ * Fetches the texts of every mentioned PR and reduces each one to the
+ * texts that mention the user. Unlike the review and size fetches, the
+ * cache serves open PRs too, because an entry is keyed by the update
+ * time the search reported and any new activity on the PR moves that
+ * time. So a reload only fetches the PRs that changed since the entry
+ * was written, which keeps the extra cost of watching for mentions close
+ * to the one search. An entry also records the login it was found for
+ * and only serves that login, because the same texts mention different
+ * people, so switching the user refetches. PRs without a mention are
+ * cached and left out of the result. PRs the fetch could not read stay
+ * in the result with null mentions and out of the cache, so the
+ * notification diff can hold their cutoff and the next load retries
+ * them. The onProgress callback receives the number of processed PRs
+ * and the total, first for the cache hits and then after every batch.
+ *
+ * The since option cuts the mentions to the window after the cache is
+ * read, so the cache stays independent of the window and a change of
+ * the window refetches nothing. The search finds every PR with activity
+ * in the window, and the cut drops the mentions on it from before the
+ * window, so a push or a comment on an old PR does not bring a mention
+ * back that the window no longer covers. A PR left without a mention
+ * drops out of the result like one that never had any, and a PR that
+ * stays carries the ids of the cut mentions as its earlier ids, so the
+ * marks made on it keep covering the texts the window no longer shows.
+ */
+export async function fetchMentionsRaw(
+  prs: MentionedPr[],
+  user: string,
+  onProgress?: ProgressCallback,
+  options: MentionFetchOptions = {},
+): Promise<MentionFetch> {
+  const cache = new PrCache<CachedMention>('mentions');
+  const found = new Map<string, CachedMention | null>();
+  const misses: MentionedPr[] = [];
+  const login = user.toLowerCase();
+
+  for (const pr of prs) {
+    const key = prKey(pr.repo, pr.number);
+    const cached = options.bypassCache === true ? undefined : cache.get(key);
+
+    if (cached?.user === login && cached.updatedAt === pr.updatedAt.toISOString()) {
+      found.set(key, cached);
+    } else {
+      misses.push(pr);
+    }
+  }
+
+  const cacheHits = prs.length - misses.length;
+
+  onProgress?.(cacheHits, prs.length);
+
+  const fetchBatch = async (batch: MentionedPr[]): Promise<(CachedMention | null)[]> => {
+    const detailsList = await fetchPrMentionDetails(batch);
+
+    return batch.map((pr, i) => {
+      const details = detailsList[i];
+
+      if (details === null) {
+        return null;
+      }
+
+      return {
+        user: login,
+        updatedAt: pr.updatedAt.toISOString(),
+        mentions: findMentions(details, user).map(({ id, at }) => {
+          return { id, at: at.toISOString() };
+        }),
+      };
+    });
+  };
+
+  await fetchMissing(
+    misses,
+    fetchBatch,
+    found,
+    cache,
+    (completed) => {
+      onProgress?.(cacheHits + completed, prs.length);
+    },
+    () => true,
+  );
+
+  cache.save();
+
+  const mentions: MentionEntry[] = [];
+  const since = options.since?.getTime() ?? Number.NEGATIVE_INFINITY;
+
+  for (const pr of prs) {
+    const entry = found.get(prKey(pr.repo, pr.number));
+
+    if (entry == null) {
+      mentions.push({ pr, mentions: null, earlier: [] });
+
+      continue;
+    }
+
+    const inWindow: Mention[] = [];
+    const earlier: string[] = [];
+
+    for (const { id, at } of entry.mentions) {
+      const time = new Date(at);
+
+      if (time.getTime() >= since) {
+        inWindow.push({ id, at: time });
+      } else {
+        earlier.push(id);
+      }
+    }
+
+    if (inWindow.length > 0) {
+      mentions.push({ pr, mentions: inWindow, earlier });
+    }
+  }
+
+  return { mentions, cacheHits };
 }

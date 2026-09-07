@@ -48,6 +48,12 @@ export const SETTINGS: SettingSpec[] = [
     hint: 'notifies you when a load finds a PR newly awaiting your review or a review re-requested from you',
   },
   {
+    key: 'notifyMentions',
+    section: 'Notifications',
+    label: 'Mention notifications',
+    hint: 'also notifies you when someone @-mentions you on a PR, your own PRs included · needs desktop notifications and mention tracking on',
+  },
+  {
     key: 'notifyChannel',
     section: 'Notifications',
     label: 'Notification channel',
@@ -66,8 +72,14 @@ export const SETTINGS: SettingSpec[] = [
     hint: 'enter and a click on a PR reference copy its link to the clipboard instead of opening the browser',
   },
   {
+    key: 'trackMentions',
+    section: 'Awaiting you',
+    label: 'Track mentions',
+    hint: 'searches the PRs that @-mention you on every load and lists the unread ones in the Mentions inbox · off skips the search',
+  },
+  {
     key: 'snoozeDuration',
-    section: 'Snooze',
+    section: 'Awaiting you',
     label: 'Default snooze',
     hint: 'the duration the snooze dialog starts with when s snoozes a PR, like 30m, 2h, or 1d · enter edits the value',
   },

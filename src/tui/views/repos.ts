@@ -1,4 +1,5 @@
-import { computeReviewStats } from '../../compute';
+import { latestReviews, pendingRequests } from '../../compute';
+import { emptyMentionReads, mentionItems, splitMentions, type MentionReads } from '../../mentions';
 import { splitSnoozed, type Snooze } from '../../snooze';
 import type { RawData } from '../data/load';
 
@@ -95,92 +96,225 @@ export function buildSizeRepoOptions(raw: RawData): RepoOption[] {
   ];
 }
 
-interface PendingCounts {
-  awaiting: number;
-  snoozed: number;
-  reviewing: number;
+/**
+ * Builds a picker from per-repo counts, All repos with the totals first
+ * and then every repo in the given order, each described by the detail
+ * formatter. Returns an empty array below two repos, in which case the
+ * tab skips the picker and renders its content directly.
+ */
+function pickerOf<T extends Record<string, number>>(
+  countsByRepo: Map<string, T>,
+  zero: () => T,
+  order: (a: T, b: T) => number,
+  detail: (counts: T) => string,
+): RepoOption[] {
+  if (countsByRepo.size < 2) {
+    return [];
+  }
+
+  const entries = [...countsByRepo.entries()].toSorted((a, b) => order(a[1], b[1]) || a[0].localeCompare(b[0]));
+  const totals: Record<string, number> = zero();
+
+  for (const [, counts] of entries) {
+    for (const [key, count] of Object.entries(counts)) {
+      totals[key] += count;
+    }
+  }
+
+  return [
+    { repo: null, label: 'All repos', detail: detail(totals as T) },
+    ...entries.map(([repo, counts]) => {
+      return { repo, label: repo, detail: detail(counts) };
+    }),
+  ];
 }
 
 /**
- * Formats the picker detail for one repo on the awaiting-review tab.
+ * Adds one to the given count of the given repo. The maps are filled
+ * with every repo of the data before the counting starts, so a repo the
+ * map lacks cannot occur and is left alone rather than invented.
+ */
+function bump<T extends Record<string, number>>(countsByRepo: Map<string, T>, repo: string, key: keyof T & string) {
+  const counts: Record<string, number> | undefined = countsByRepo.get(repo);
+
+  if (counts !== undefined) {
+    counts[key] += 1;
+  }
+}
+
+/**
+ * Collects one zeroed counts object per repo with review activity, so
+ * the pickers of the awaiting and the reviewed sub-tabs list the same
+ * repos as the review tab's picker.
+ */
+function reviewRepos<T>(raw: RawData, zero: () => T): Map<string, T> {
+  const countsByRepo = new Map<string, T>();
+
+  for (const result of raw.reviewResults) {
+    if (!countsByRepo.has(result.pr.repo)) {
+      countsByRepo.set(result.pr.repo, zero());
+    }
+  }
+
+  return countsByRepo;
+}
+
+interface PendingCounts extends Record<string, number> {
+  awaiting: number;
+  snoozed: number;
+}
+
+function zeroPending(): PendingCounts {
+  return { awaiting: 0, snoozed: 0 };
+}
+
+/**
+ * Formats the picker detail for one repo on the awaiting sub-tab.
  */
 function pendingDetail(counts: PendingCounts): string {
   const awaiting = `${counts.awaiting} ${counts.awaiting === 1 ? 'PR' : 'PRs'} awaiting your review`;
 
+  return awaiting + (counts.snoozed > 0 ? `, ${counts.snoozed} snoozed` : '');
+}
+
+/**
+ * Builds the entries for the repo picker on the awaiting sub-tab of the
+ * Awaiting you tab. The repos mirror the review tab's picker, every repo
+ * with review activity, so this tab shows its picker whenever that tab
+ * does. The details count the open PRs still awaiting a review, which
+ * can be zero, next to the snoozed ones. The snoozes decide which pending
+ * PRs count as snoozed at the given time, which defaults to the current
+ * time like the queue view. Returns an empty array when the data spans
+ * at most one repo, in which case the tab skips the picker and renders
+ * the queue directly.
+ */
+export function buildPendingRepoOptions(raw: RawData, snoozes: readonly Snooze[] = [], now = Date.now()): RepoOption[] {
+  const countsByRepo = reviewRepos(raw, zeroPending);
+
+  if (countsByRepo.size < 2) {
+    return [];
+  }
+
+  const { awaiting, snoozed } = splitSnoozed(pendingRequests(raw.reviewResults), snoozes, now);
+
+  for (const entry of awaiting) {
+    bump(countsByRepo, entry.pr.repo, 'awaiting');
+  }
+
+  for (const entry of snoozed) {
+    bump(countsByRepo, entry.pr.repo, 'snoozed');
+  }
+
+  return pickerOf(countsByRepo, zeroPending, (a, b) => b.awaiting - a.awaiting || b.snoozed - a.snoozed, pendingDetail);
+}
+
+interface ReviewedCounts extends Record<string, number> {
+  reviewed: number;
+}
+
+function zeroReviewed(): ReviewedCounts {
+  return { reviewed: 0 };
+}
+
+/**
+ * Formats the picker detail for one repo on the reviewed sub-tab.
+ */
+function reviewedDetail(counts: ReviewedCounts): string {
+  return `${counts.reviewed} reviewed ${counts.reviewed === 1 ? 'PR' : 'PRs'} still open`;
+}
+
+/**
+ * Builds the entries for the repo picker on the reviewed sub-tab of the
+ * Awaiting you tab. The repos mirror the review tab's picker like the
+ * awaiting sub-tab, and the details count the open PRs you already
+ * reviewed, which can be zero. Returns an empty array when the data
+ * spans at most one repo, in which case the tab skips the picker and
+ * renders the list directly.
+ */
+export function buildReviewedRepoOptions(raw: RawData): RepoOption[] {
+  const countsByRepo = reviewRepos(raw, zeroReviewed);
+
+  if (countsByRepo.size < 2) {
+    return [];
+  }
+
+  for (const entry of latestReviews(raw.reviewResults)) {
+    bump(countsByRepo, entry.pr.repo, 'reviewed');
+  }
+
+  return pickerOf(countsByRepo, zeroReviewed, (a, b) => b.reviewed - a.reviewed, reviewedDetail);
+}
+
+interface MentionCounts extends Record<string, number> {
+  unread: number;
+  snoozed: number;
+  read: number;
+}
+
+function zeroMentions(): MentionCounts {
+  return { unread: 0, snoozed: 0, read: 0 };
+}
+
+/**
+ * Formats the picker detail for one repo on the mentions sub-tab.
+ */
+function mentionDetail(counts: MentionCounts): string {
+  const unread = `${counts.unread} unread ${counts.unread === 1 ? 'mention' : 'mentions'}`;
+
   return (
-    awaiting +
+    unread +
     (counts.snoozed > 0 ? `, ${counts.snoozed} snoozed` : '') +
-    (counts.reviewing > 0 ? `, ${counts.reviewing} reviewed` : '')
+    (counts.read > 0 ? `, ${counts.read} read` : '')
   );
 }
 
 /**
- * Builds the entries for the repo picker on the awaiting-review tab. The
- * repos mirror the review tab's picker, every repo with review activity,
- * so this tab shows its picker whenever that tab does. The details count
- * the open PRs still awaiting a review, which can be zero, next to the
- * snoozed ones and the open PRs you already reviewed. The snoozes decide
- * which pending PRs count as snoozed at the given time, which defaults to
- * the current time like the queue view. Returns an empty array when the
- * data spans at most one repo, in which case the tab skips the picker and
- * renders the queue directly.
+ * Builds the entries for the repo picker on the mentions sub-tab of the
+ * Awaiting you tab, every repo with a PR that mentions you, most unread
+ * first. The details count the unread mentions, which can be zero, next
+ * to the snoozed and the read ones. The snoozes and the read state decide
+ * where each mention counts at the given time, which defaults to the
+ * current time like the queue view. Returns an empty array when the
+ * mentions span at most one repo, or while the data holds no mentions,
+ * in which case the tab skips the picker and renders the inbox directly.
  */
-export function buildPendingRepoOptions(raw: RawData, snoozes: readonly Snooze[] = [], now = Date.now()): RepoOption[] {
-  const countsByRepo = new Map<string, PendingCounts>();
+export function buildMentionRepoOptions(
+  raw: RawData,
+  snoozes: readonly Snooze[] = [],
+  reads: MentionReads = emptyMentionReads(),
+  now = Date.now(),
+): RepoOption[] {
+  const countsByRepo = new Map<string, MentionCounts>();
+  const items = mentionItems(raw.mentions ?? []);
 
-  const countsOf = (repo: string) => {
-    const counts = countsByRepo.get(repo) ?? { awaiting: 0, snoozed: 0, reviewing: 0 };
-
-    countsByRepo.set(repo, counts);
-
-    return counts;
-  };
-
-  for (const result of raw.reviewResults) {
-    countsOf(result.pr.repo);
+  for (const item of items) {
+    if (!countsByRepo.has(item.pr.repo)) {
+      countsByRepo.set(item.pr.repo, zeroMentions());
+    }
   }
 
   if (countsByRepo.size < 2) {
     return [];
   }
 
-  const stats = computeReviewStats(raw.reviewResults, { now: raw.fetchedAt });
-  const { awaiting, snoozed } = splitSnoozed(stats.pending, snoozes, now);
+  const { unread, snoozed, read } = splitMentions(items, reads, snoozes, now);
 
-  for (const entry of awaiting) {
-    countsOf(entry.pr.repo).awaiting += 1;
+  for (const [state, group] of [
+    ['unread', unread],
+    ['snoozed', snoozed],
+    ['read', read],
+  ] as const) {
+    for (const item of group) {
+      bump(countsByRepo, item.pr.repo, state);
+    }
   }
 
-  for (const entry of snoozed) {
-    countsOf(entry.pr.repo).snoozed += 1;
-  }
-
-  for (const entry of stats.reviewing) {
-    countsOf(entry.pr.repo).reviewing += 1;
-  }
-
-  const entries = [...countsByRepo.entries()].toSorted(
-    (a, b) =>
-      b[1].awaiting - a[1].awaiting ||
-      b[1].snoozed - a[1].snoozed ||
-      b[1].reviewing - a[1].reviewing ||
-      a[0].localeCompare(b[0]),
+  return pickerOf(
+    countsByRepo,
+    zeroMentions,
+    (a, b) => b.unread - a.unread || b.snoozed - a.snoozed || b.read - a.read,
+    mentionDetail,
   );
-
-  const totals: PendingCounts = { awaiting: 0, snoozed: 0, reviewing: 0 };
-
-  for (const [, counts] of entries) {
-    totals.awaiting += counts.awaiting;
-    totals.snoozed += counts.snoozed;
-    totals.reviewing += counts.reviewing;
-  }
-
-  return [
-    { repo: null, label: 'All repos', detail: pendingDetail(totals) },
-    ...entries.map(([repo, counts]) => {
-      return { repo, label: repo, detail: pendingDetail(counts) };
-    }),
-  ];
 }
 
 /**

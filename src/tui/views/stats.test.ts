@@ -51,6 +51,7 @@ function rawData(reviewResults: ReviewResult[]): RawData {
     reviewResults,
     sizes: [],
     authoredTotal: 0,
+    mentions: null,
     searchCapped: false,
     fetchedAt: new Date('2026-08-01T00:00:00Z'),
   };

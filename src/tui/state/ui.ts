@@ -1,3 +1,4 @@
+import type { SnoozeKind } from '../../snooze';
 import { FIELDS } from './options';
 import { SETTINGS, THEME_COLORS, type CacheAction } from './settings';
 
@@ -12,13 +13,18 @@ import { SETTINGS, THEME_COLORS, type CacheAction } from './settings';
 export type Modal = 'options' | 'settings' | 'theme' | 'snooze' | null;
 
 /**
- * Names the PR the snooze dialog is about, with the request time the
- * snooze records so a later re-request voids it.
+ * Names the ask the snooze dialog is about, a review request or a
+ * mention on the given PR, with the time of the ask the snooze records
+ * so a later re-request or a newer mention voids it. A mention target
+ * also names the texts that mention you, so an edit to one of them does
+ * not void the snooze.
  */
 export interface SnoozeTarget {
+  kind: SnoozeKind;
   ref: string;
   title: string;
-  requestedAt: number;
+  at: number;
+  ids?: readonly string[];
 }
 
 /**

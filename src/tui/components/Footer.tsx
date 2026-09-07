@@ -1,8 +1,8 @@
 import type { AppViews } from '../hooks/useViewModel';
-import type { AuthoredSubTab } from '../state/browse';
+import { activeQueueTab, nextPendingSubTab, type BrowseState, type QueueTabKey } from '../state/browse';
 import type { Modal } from '../state/ui';
 import { theme } from '../theme';
-import { queueRowAt, snoozeActionOf } from '../views/queue';
+import { mentionActionOf, queueRowAt, snoozeActionOf, unreadMentionRows, type QueueView } from '../views/queue';
 
 /**
  * Renders the footer, a full-width rule above one row with the key hints
@@ -12,10 +12,8 @@ export function Footer({
   width,
   modal,
   editing,
-  tab,
-  authoredTab,
+  browse,
   views,
-  pendingCursor,
   copyLinks,
   openError,
   successNotice,
@@ -24,15 +22,14 @@ export function Footer({
   width: number;
   modal: Modal;
   editing: boolean;
-  tab: number;
-  authoredTab: AuthoredSubTab;
-  views: AppViews | null;
   /**
-   * Holds the row cursor of the awaiting-review queue, which decides
-   * whether the s hint offers to snooze or to unsnooze the highlighted
-   * PR.
+   * Holds where the user is, the active tab and sub-tab, the scopes,
+   * and the row cursors, which decide the hints for the queue keys, like
+   * whether s offers to snooze or to unsnooze the highlighted row and
+   * whether d offers to mark its mention read or unread.
    */
-  pendingCursor: number;
+  browse: BrowseState;
+  views: AppViews | null;
   copyLinks: boolean;
   openError: string | null;
   successNotice: string | null;
@@ -55,10 +52,7 @@ export function Footer({
    */
   const noticeWidth = notice === '' ? 0 : notice.length + (check ? 2 : 0) + 2;
 
-  const hints = truncated(
-    hintsFor(modal, editing, tab, authoredTab, views, pendingCursor, copyLinks),
-    width - 2 - noticeWidth,
-  );
+  const hints = truncated(hintsFor(modal, editing, browse, views, copyLinks), width - 2 - noticeWidth);
 
   return (
     <>
@@ -104,20 +98,73 @@ function truncated(text: string, limit: number): string {
 }
 
 /**
+ * Resolves the derived view, the repo options, and the scope of the given
+ * queue tab.
+ */
+function queueViewsOf(key: QueueTabKey, views: AppViews) {
+  if (key === 'pending') {
+    return { view: views.pending, repos: views.pendingRepos, scope: views.pendingScope };
+  }
+
+  if (key === 'reviewed') {
+    return { view: views.reviewed, repos: views.reviewedRepos, scope: views.reviewedScope };
+  }
+
+  if (key === 'mentions') {
+    return { view: views.mentions, repos: views.mentionsRepos, scope: views.mentionsScope };
+  }
+
+  return { view: views.open, repos: views.openRepos, scope: views.openScope };
+}
+
+/**
+ * Names the t hint of the tabs with sub-tabs, which leads with the
+ * sub-tab the next press switches to, and is empty on the other tabs.
+ */
+function subTabHint(browse: BrowseState): string {
+  if (browse.tab === 0) {
+    return `t ${nextPendingSubTab(browse.pendingTab).label.toLowerCase()} · `;
+  }
+
+  if (browse.tab === 1) {
+    return browse.authoredTab === 'open' ? 't merged stats · ' : 't open PRs · ';
+  }
+
+  return '';
+}
+
+/**
+ * Names the hints of the queue keys for the highlighted row of the given
+ * queue view, what s does with it, snoozing an awaiting PR or an unread
+ * mention or unsnoozing a snoozed one, and what d does with a mention,
+ * marking it read or unread again, with the D hint offering to mark
+ * every unread mention read while the inbox shows any.
+ */
+function queueKeyHints(view: QueueView | null, cursor: number): string {
+  const row = queueRowAt(view, cursor);
+  const snoozeAction = snoozeActionOf(row);
+  const mentionAction = mentionActionOf(row);
+
+  const snooze = snoozeAction === null ? '' : `s ${snoozeAction} · `;
+  const mark = mentionAction === null ? '' : `d mark ${mentionAction} · `;
+  const markAll = unreadMentionRows(view).length > 0 ? 'D read all · ' : '';
+
+  return `${snooze}${mark}${markAll}`;
+}
+
+/**
  * Builds the footer hint line for the current input mode. The queue
  * detail hints name what enter does with the highlighted PR, which the
- * copy-links setting flips from opening to copying, and on the
- * awaiting-review queue what s does with it, snoozing an awaiting PR or
- * unsnoozing a snoozed one. On the Your PRs tab the hints lead with the t
- * toggle that switches between the open queue and the merged stats.
+ * copy-links setting flips from opening to copying, followed by the
+ * queue keys that apply to the highlighted row. On the tabs with
+ * sub-tabs the hints lead with the t toggle that switches to the next
+ * sub-tab.
  */
 function hintsFor(
   modal: Modal,
   editing: boolean,
-  tab: number,
-  authoredTab: AuthoredSubTab,
+  browse: BrowseState,
   views: AppViews | null,
-  pendingCursor: number,
   copyLinks: boolean,
 ): string {
   if (modal === 'options') {
@@ -136,27 +183,27 @@ function hintsFor(
     return 'enter snooze · esc cancel';
   }
 
-  const toggle = tab === 1 ? (authoredTab === 'open' ? 't merged stats · ' : 't open PRs · ') : '';
+  const { tab } = browse;
+  const toggle = subTabHint(browse);
+  const queue = activeQueueTab(browse);
 
-  if (tab === 0 || (tab === 1 && authoredTab === 'open')) {
-    const scope = views === null ? null : tab === 0 ? views.pendingScope : views.openScope;
-    const repos = views === null ? [] : tab === 0 ? views.pendingRepos : views.openRepos;
+  if (queue !== null) {
+    const { view, repos, scope } = views === null ? { view: null, repos: [], scope: null } : queueViewsOf(queue, views);
 
     if (scope?.view === 'list') {
       return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · S settings · r reload · R refetch · q quit`;
     }
 
-    const snoozeAction = tab === 0 && views !== null ? snoozeActionOf(queueRowAt(views.pending, pendingCursor)) : null;
-    const snooze = snoozeAction === null ? '' : `s ${snoozeAction} · `;
+    const queueKeys = queueKeyHints(view, browse.rowCursors[queue]);
     const action = copyLinks ? 'enter copy link' : 'enter open';
 
     if (scope !== null && repos.length > 0) {
       return scope.repo === null
-        ? `↑/↓ select · ${action} · ${snooze}${toggle}g group by repo · esc back · o options · S settings · r reload · q quit`
-        : `↑/↓ select · ${action} · ${snooze}${toggle}esc back · 1-5 tabs · o options · S settings · r reload · R refetch · q quit`;
+        ? `↑/↓ select · ${action} · ${queueKeys}${toggle}g group by repo · esc back · o options · S settings · r reload · q quit`
+        : `↑/↓ select · ${action} · ${queueKeys}${toggle}esc back · 1-5 tabs · o options · S settings · r reload · R refetch · q quit`;
     }
 
-    return `↑/↓ select · ${copyLinks ? 'enter copy link' : 'enter open in browser'} · ${snooze}${toggle}←/→ tabs · o options · S settings · r reload · R refetch · q quit`;
+    return `↑/↓ select · ${copyLinks ? 'enter copy link' : 'enter open in browser'} · ${queueKeys}${toggle}←/→ tabs · o options · S settings · r reload · R refetch · q quit`;
   }
 
   const scope =

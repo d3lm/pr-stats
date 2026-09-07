@@ -39,6 +39,8 @@ export function SettingsModal({
   autoReload,
   reloadInterval,
   notifications,
+  trackMentions,
+  notifyMentions,
   notifyChannel,
   copyLinks,
   snoozeDuration,
@@ -54,6 +56,8 @@ export function SettingsModal({
   autoReload: boolean;
   reloadInterval: string;
   notifications: boolean;
+  trackMentions: boolean;
+  notifyMentions: boolean;
   notifyChannel: NotifyChannel;
   copyLinks: boolean;
   snoozeDuration: string;
@@ -112,6 +116,8 @@ export function SettingsModal({
                   autoReload={autoReload}
                   reloadInterval={reloadInterval}
                   notifications={notifications}
+                  trackMentions={trackMentions}
+                  notifyMentions={notifyMentions}
                   channelValue={channelValue}
                   deliveryValue={deliveryValue}
                   copyLinks={copyLinks}
@@ -135,18 +141,21 @@ export function SettingsModal({
 /**
  * Renders the value slot of one setting row. The disable-cache, auto-reload,
  * notifications, copy-links, and theme rows show a toggle value with arrows
- * on the selected row, like the toggles in the options modal. The
- * reload-interval row shows the interval, dimmed while auto reload is off,
- * and turns into an input while editing. The notification-channel row
- * cycles auto, terminal, the platform command, and bell, and the
- * test-notification row names the channel the next send takes, or
- * unsupported where none exists. The default-snooze row shows the
- * duration and turns into an input while editing, like the interval. The
- * edit-colors row previews the current accent family as a swatch strip.
- * The clear-cache and reset-settings rows show the path they delete with
- * the home directory abbreviated, and flip to a confirm prompt after the
- * first enter. The export row shows the path it writes the same way,
- * without a confirm because an export only overwrites its own file.
+ * on the selected row, like the toggles in the options modal. The mention-
+ * notifications row is such a toggle too, dimmed while the notifications
+ * above it or the mention tracking below are off, because it only applies
+ * with both. The track-mentions row is a plain toggle. The reload-interval
+ * row shows the interval, dimmed while auto reload is off, and turns into
+ * an input while editing. The notification-channel row cycles auto, terminal,
+ * the platform command, and bell, and the test-notification row names the
+ * channel the next send takes, or unsupported where none exists.
+ * The default-snooze row shows the duration and turns into an input while
+ * editing, like the interval. The edit-colors row previews the current accent
+ * family as a swatch strip. The clear-cache and reset-settings rows show
+ * the path they delete with the home directory abbreviated, and flip to
+ * a confirm prompt after the first enter. The export row shows the path it
+ * writes the same way, without a confirm because an export only overwrites
+ * its own file.
  */
 function SettingValue({
   setting,
@@ -157,6 +166,8 @@ function SettingValue({
   autoReload,
   reloadInterval,
   notifications,
+  trackMentions,
+  notifyMentions,
   channelValue,
   deliveryValue,
   copyLinks,
@@ -173,6 +184,8 @@ function SettingValue({
   autoReload: boolean;
   reloadInterval: string;
   notifications: boolean;
+  trackMentions: boolean;
+  notifyMentions: boolean;
   channelValue: string;
   deliveryValue: string;
   copyLinks: boolean;
@@ -201,6 +214,15 @@ function SettingValue({
     case 'notifications': {
       return <ToggleValue value={notifications ? 'yes' : 'no'} isSelected={isSelected} />;
     }
+    case 'notifyMentions': {
+      return (
+        <ToggleValue
+          value={notifyMentions ? 'yes' : 'no'}
+          isSelected={isSelected}
+          active={notifications && trackMentions}
+        />
+      );
+    }
     case 'notifyChannel': {
       return <ToggleValue value={channelValue} isSelected={isSelected} />;
     }
@@ -213,6 +235,9 @@ function SettingValue({
     }
     case 'copyLinks': {
       return <ToggleValue value={copyLinks ? 'yes' : 'no'} isSelected={isSelected} />;
+    }
+    case 'trackMentions': {
+      return <ToggleValue value={trackMentions ? 'yes' : 'no'} isSelected={isSelected} />;
     }
     case 'snoozeDuration': {
       if (isEditing) {
@@ -249,21 +274,24 @@ function SettingValue({
 
 /**
  * Value slot of a row that left and right cycle through. The selected
- * row gets arrows around the value to show that.
+ * row gets arrows around the value to show that. A row whose setting
+ * only applies while another one is on passes active false while that
+ * one is off, which dims the value to the placeholder colors the way
+ * the reload interval dims without auto reload.
  */
-function ToggleValue({ value, isSelected }: { value: string; isSelected: boolean }) {
+function ToggleValue({ value, isSelected, active = true }: { value: string; isSelected: boolean; active?: boolean }) {
   if (isSelected) {
     return (
       <text wrapMode="none">
         <span fg={theme.muted}>‹ </span>
-        <b fg={theme.text}>{value}</b>
+        <b fg={active ? theme.text : theme.muted}>{value}</b>
         <span fg={theme.muted}> ›</span>
       </text>
     );
   }
 
   return (
-    <text wrapMode="none" fg={theme.muted}>
+    <text wrapMode="none" fg={active ? theme.muted : theme.dim}>
       {value}
     </text>
   );

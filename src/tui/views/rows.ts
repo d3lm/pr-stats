@@ -1,3 +1,4 @@
+import type { MentionMark } from '../../mentions';
 import { formatHoursOnly, weeksSuffix } from '../../report';
 
 export interface PrRow {
@@ -13,6 +14,22 @@ export interface PrRow {
    * tells the snooze key to leave them alone.
    */
   pending?: { requestedAt: number; snoozed: boolean };
+  /**
+   * Describes the mention behind a row of the mention inbox, with the
+   * mark of the PR's mentions, the time of the newest one and the ids of
+   * the texts, which the read mark and a snooze record so a mention the
+   * mark did not know brings the PR back, and the state that places the
+   * row in the unread, the snoozed, or the read list. The snooze and the
+   * read keys act on it.
+   */
+  mention?: { mark: MentionMark; state: 'unread' | 'snoozed' | 'read' };
+  /**
+   * Marks a review row whose PR also carries an unread mention of you,
+   * which the panel shows as a badge, so the awaiting and the reviewed
+   * queues show where a review also answers a question. The inbox rows
+   * carry none, because the inbox already sorts the mentions by state.
+   */
+  mentioned?: boolean;
 }
 
 export interface PrList {

@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test';
-import type { ReviewResult } from './load';
+import type { MentionEntry, ReviewResult } from './load';
 import {
+  describeMentions,
   describeReviewRequests,
   describeSnoozeWakeUps,
+  diffMentions,
   diffReviewRequests,
   type ReviewRequestChanges,
 } from './notifications';
@@ -42,6 +44,28 @@ function reviewedResult(repo: string, number: number, reviewedAt: string): Revie
     reviewedAt: new Date(reviewedAt),
     verdict: 'APPROVED',
     lines: 15,
+  };
+}
+
+/**
+ * Builds a mention entry, a PR that mentions you in the given texts,
+ * each named by its id with the time it became visible, open unless a
+ * state overrides it. The earlier ids stand for the texts the window
+ * cut from the entry.
+ */
+function mention(
+  repo: string,
+  number: number,
+  texts: [id: string, at: string][],
+  state = 'open',
+  earlier: string[] = [],
+): MentionEntry {
+  return {
+    pr: { ...pr(repo, number, state), updatedAt: new Date(texts.at(-1)?.[1] ?? '2026-07-01T00:00:00Z') },
+    mentions: texts.map(([id, at]) => {
+      return { id, at: new Date(at) };
+    }),
+    earlier,
   };
 }
 
@@ -170,6 +194,225 @@ test('describes a single PR by reference and several PRs by count with a capped 
   ]);
 
   expect(describeReviewRequests({ baseline: new Map(), newRequests: [], reRequests: [] })).toEqual([]);
+});
+
+test('the first mention list only establishes the baseline, and later ones report the texts that arrived since', () => {
+  const first = diffMentions(
+    null,
+    [
+      mention('acme/api', 1, [['a1', '2026-07-02T00:00:00Z']]),
+      mention('acme/web', 2, [['w1', '2026-07-01T00:00:00Z']], 'closed'),
+    ],
+    new Date('2026-07-03T00:00:00Z'),
+  );
+
+  expect(first.newMentions).toEqual([]);
+  expect([...first.baseline.seen]).toEqual(['a1', 'w1']);
+  expect(first.baseline.observedAt).toBe(Date.parse('2026-07-03T00:00:00Z'));
+
+  /**
+   * The text on api#1 is the one the baseline saw and stays quiet.
+   * Someone mentioned you again on the closed web#2, which counts because
+   * a closed PR can still ask for your attention, and api#3 mentions you
+   * for the first time. A PR that dropped out of the results is no news
+   * either.
+   */
+  const second = diffMentions(
+    first.baseline,
+    [
+      mention('acme/api', 1, [['a1', '2026-07-02T00:00:00Z']]),
+      mention(
+        'acme/web',
+        2,
+        [
+          ['w1', '2026-07-01T00:00:00Z'],
+          ['w2', '2026-07-05T00:00:00Z'],
+        ],
+        'closed',
+      ),
+      mention('acme/api', 3, [['a3', '2026-07-04T00:00:00Z']]),
+    ],
+    new Date('2026-07-06T00:00:00Z'),
+  );
+
+  expect(refs(second.newMentions)).toEqual(['acme/web#2', 'acme/api#3']);
+  expect([...second.baseline.seen]).toEqual(['a1', 'w1', 'w2', 'a3']);
+
+  /**
+   * A text the baseline saw stays quiet however its time moves, so a
+   * typo fix on a comment that already mentioned you reports nothing,
+   * and neither does a text that vanished.
+   */
+  const third = diffMentions(
+    second.baseline,
+    [mention('acme/web', 2, [['w2', '2026-07-07T00:00:00Z']], 'closed')],
+    new Date('2026-07-08T00:00:00Z'),
+  );
+
+  expect(third.newMentions).toEqual([]);
+});
+
+test('a text the baseline never saw only counts when it became visible after the previous observation', () => {
+  const observedAt = new Date('2026-07-10T12:00:00Z');
+  const baseline = diffMentions(null, [mention('acme/api', 1, [['a1', '2026-07-02T00:00:00Z']])], observedAt).baseline;
+
+  /**
+   * An old PR entered the update window after unrelated activity, so
+   * its mention from long ago turns up for the first time. It was old
+   * news when the baseline was taken, so it stays quiet. A mention that
+   * came in after the observation, whether on the same PR or on one the
+   * baseline knew, is news.
+   */
+  const next = diffMentions(
+    baseline,
+    [
+      mention('acme/api', 1, [['a1', '2026-07-02T00:00:00Z']]),
+      mention('acme/web', 2, [['w1', '2026-06-20T00:00:00Z']]),
+      mention('acme/web', 3, [
+        ['x1', '2026-06-20T00:00:00Z'],
+        ['x2', '2026-07-10T13:00:00Z'],
+      ]),
+    ],
+    new Date('2026-07-10T14:00:00Z'),
+  );
+
+  expect(refs(next.newMentions)).toEqual(['acme/web#3']);
+
+  /**
+   * The search that lists the mentioned PRs runs on an index that trails
+   * the live data, so a mention from shortly before the observation can
+   * miss the load that took the baseline and counts in the next one. A
+   * mention from well before it does not.
+   */
+  const lagged = diffMentions(
+    baseline,
+    [
+      mention('acme/web', 4, [['y1', '2026-07-10T11:55:00Z']]),
+      mention('acme/web', 5, [['z1', '2026-07-10T11:00:00Z']]),
+    ],
+    new Date('2026-07-10T14:00:00Z'),
+  );
+
+  expect(refs(lagged.newMentions)).toEqual(['acme/web#4']);
+
+  /**
+   * The baseline remembers every text it has seen, so a PR that drops
+   * out of the results and returns with the same texts, however their
+   * times compare to the latest observation, reports nothing twice.
+   */
+  const dropped = diffMentions(next.baseline, [], new Date('2026-07-10T15:00:00Z'));
+
+  const returned = diffMentions(
+    dropped.baseline,
+    [mention('acme/web', 3, [['x2', '2026-07-10T13:00:00Z']])],
+    new Date('2026-07-10T16:00:00Z'),
+  );
+
+  expect(returned.newMentions).toEqual([]);
+  expect([...returned.baseline.seen]).toEqual(['a1', 'w1', 'x1', 'x2']);
+
+  /**
+   * The texts the since window cut from a PR count as seen along with
+   * the ones it shows, so an edit that carries one of them back into the
+   * window with a fresh time reports nothing.
+   */
+  const cut = diffMentions(
+    returned.baseline,
+    [mention('acme/web', 6, [['v2', '2026-07-10T16:30:00Z']], 'open', ['v1'])],
+    new Date('2026-07-10T17:00:00Z'),
+  );
+
+  expect(refs(cut.newMentions)).toEqual(['acme/web#6']);
+  expect([...cut.baseline.seen]).toEqual(['a1', 'w1', 'x1', 'x2', 'v2', 'v1']);
+
+  const editedCut = diffMentions(
+    cut.baseline,
+    [
+      mention('acme/web', 6, [
+        ['v2', '2026-07-10T16:30:00Z'],
+        ['v1', '2026-07-10T17:30:00Z'],
+      ]),
+    ],
+    new Date('2026-07-10T18:00:00Z'),
+  );
+
+  expect(editedCut.newMentions).toEqual([]);
+});
+
+test('a PR the load could not read keeps its cutoff until a load reads it', () => {
+  const unread = (repo: string, number: number): MentionEntry => {
+    return { ...mention(repo, number, []), mentions: null };
+  };
+
+  const baseline = diffMentions(
+    null,
+    [mention('acme/api', 1, [['a1', '2026-07-10T11:00:00Z']])],
+    new Date('2026-07-10T12:00:00Z'),
+  ).baseline;
+
+  /**
+   * Someone mentioned you on web#2 at 12:05, and the load at 12:30 could
+   * not read the PR. That load must not count as having observed web#2,
+   * so the load at 12:31 that reads it compares the text against the
+   * observation at noon and reports it, although it predates the 12:30
+   * observation by more than the margin. Once read, the PR leaves the
+   * unread map.
+   */
+  const partial = diffMentions(baseline, [unread('acme/web', 2)], new Date('2026-07-10T12:30:00Z'));
+
+  expect(partial.newMentions).toEqual([]);
+  expect([...partial.baseline.unread]).toEqual([['acme/web#2', Date.parse('2026-07-10T12:00:00Z')]]);
+
+  const recovered = diffMentions(
+    partial.baseline,
+    [mention('acme/web', 2, [['w1', '2026-07-10T12:05:00Z']])],
+    new Date('2026-07-10T12:31:00Z'),
+  );
+
+  expect(refs(recovered.newMentions)).toEqual(['acme/web#2']);
+  expect(recovered.baseline.unread.size).toBe(0);
+
+  /**
+   * A PR that stays unreadable across loads, or drops out of the results
+   * while unread, keeps the same held cutoff, and a PR unreadable during
+   * the very first list gets that list's observation as its cutoff.
+   */
+  const again = diffMentions(partial.baseline, [unread('acme/web', 2)], new Date('2026-07-10T13:00:00Z'));
+
+  expect([...again.baseline.unread]).toEqual([['acme/web#2', Date.parse('2026-07-10T12:00:00Z')]]);
+
+  const gone = diffMentions(again.baseline, [], new Date('2026-07-10T14:00:00Z'));
+
+  expect([...gone.baseline.unread]).toEqual([['acme/web#2', Date.parse('2026-07-10T12:00:00Z')]]);
+
+  const first = diffMentions(null, [unread('acme/web', 3)], new Date('2026-07-10T15:00:00Z'));
+
+  expect([...first.baseline.unread]).toEqual([['acme/web#3', Date.parse('2026-07-10T15:00:00Z')]]);
+});
+
+test('describes new mentions like the request notifications', () => {
+  const empty = { seen: new Set<string>(), observedAt: 0, unread: new Map<string, number>() };
+  const now = new Date('2026-07-02T00:00:00Z');
+  const single = diffMentions(empty, [mention('acme/api', 1, [['a1', '2026-07-02T00:00:00Z']])], now);
+
+  expect(describeMentions(single)).toEqual([{ title: 'Mentioned on acme/api#1', body: 'pr 1' }]);
+
+  const several = diffMentions(
+    empty,
+    [
+      mention('acme/api', 1, [['a1', '2026-07-02T00:00:00Z']]),
+      mention('acme/web', 2, [['w2', '2026-07-02T00:00:00Z']]),
+      mention('acme/web', 3, [['w3', '2026-07-02T00:00:00Z']]),
+      mention('acme/web', 4, [['w4', '2026-07-02T00:00:00Z']]),
+    ],
+    now,
+  );
+
+  expect(describeMentions(several)).toEqual([
+    { title: '4 PRs mention you', body: 'acme/api#1 pr 1\nacme/web#2 pr 2\nacme/web#3 pr 3\nand 1 more' },
+  ]);
+
+  expect(describeMentions({ baseline: empty, newMentions: [] })).toEqual([]);
 });
 
 test('describes the PRs that came back from a snooze like the request notifications', () => {

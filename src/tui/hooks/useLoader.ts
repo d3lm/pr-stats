@@ -49,20 +49,37 @@ export interface LoaderCallbacks {
   onLoaded?: (data: RawData) => void;
 }
 
+export interface LoaderSettings {
+  /**
+   * Makes every load bypass the cache, from the --no-cache flag, the
+   * saved setting, or the settings dialog toggle. A noCache start also
+   * skips the startup snapshot like every other cache read.
+   */
+  noCache: boolean;
+  /**
+   * Makes every load also look for PRs that mention the user, which the
+   * mention notifications need. The loads skip the extra search and
+   * fetch while it is off.
+   */
+  mentions: boolean;
+}
+
 /**
  * Owns the data-loading lifecycle. The lazy snapshot initializer runs
  * once on mount, so the disk read happens exactly once and the charts
  * render instantly from the previous session while the first real load
- * runs in the background. While noCache is set, from the --no-cache flag,
- * the saved setting, or the settings dialog toggle, every load bypasses
- * the cache, and a noCache start also skips the snapshot like every
- * other cache read. Reload reads the options from the render it was
- * created in, which useKeyboard keeps current, so a reload always
- * fetches for the latest committed options. The callbacks report the
- * snapshot once and then every fresh load, always in that order, because
- * the snapshot callback runs before the first load even starts.
+ * runs in the background. Reload reads the options and the settings from
+ * the render it was created in, which useKeyboard keeps current, so a
+ * reload always fetches for the latest committed options. The callbacks
+ * report the snapshot once and then every fresh load, always in that
+ * order, because the snapshot callback runs before the first load even
+ * starts.
  */
-export function useLoader(options: OptionsState, noCache: boolean, callbacks: LoaderCallbacks = {}): Loader {
+export function useLoader(
+  options: OptionsState,
+  { noCache, mentions }: LoaderSettings,
+  callbacks: LoaderCallbacks = {},
+): Loader {
   const { onSnapshot, onLoaded } = callbacks;
 
   const [startupSnapshot] = useState(() => (noCache ? null : loadSnapshot(options)));
@@ -108,7 +125,7 @@ export function useLoader(options: OptionsState, noCache: boolean, callbacks: Lo
     };
 
     try {
-      const data = await loadData(options, publishPhase, { bypassCache });
+      const data = await loadData(options, publishPhase, { bypassCache, mentions });
 
       if (disposedRef.current) {
         return;

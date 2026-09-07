@@ -59,13 +59,15 @@ export function prKey(repo: string, number: number): string {
 }
 
 /**
- * Names of the data cache files, the two PR stores, the cached login, and
- * the TUI startup snapshot. This doubles as the list of files clearCache
- * deletes. The saved options live in options.json next to them and the
- * settings in settings.json. Both stay out of this list, because clearing
+ * Names of the data cache files, the three PR stores, the cached login,
+ * the TUI startup snapshot, and the mention notification baseline. This
+ * doubles as the list of files clearCache deletes. The saved options live
+ * in options.json next to them, the settings in settings.json, the
+ * snoozes in snoozes.json, and the read state of the mention inbox in
+ * mention-reads.json. All of them stay out of this list, because clearing
  * the cached data should not drop the saved preferences.
  */
-const CACHE_FILES = ['details', 'sizes', 'user', 'snapshot'] as const;
+const CACHE_FILES = ['details', 'sizes', 'mentions', 'user', 'snapshot', 'mention-baseline'] as const;
 
 /**
  * Deletes the cache files from disk, so the next load refetches every PR.

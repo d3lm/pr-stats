@@ -15,9 +15,11 @@ import {
   saveNoCache,
   saveNotifications,
   saveNotifyChannel,
+  saveNotifyMentions,
   saveReloadInterval,
   saveSnoozeDuration,
   saveTheme,
+  saveTrackMentions,
 } from './settings';
 import {
   applyTheme,
@@ -168,6 +170,54 @@ test('saveNotifications persists the toggle and keeps hand-written keys', () => 
   ).toBe(true);
 });
 
+test('saveNotifyMentions persists the toggle and keeps hand-written keys', () => {
+  writeSettingsFile({ notifications: true, theme: { accent: '#89b4f0' } });
+  loadSettings();
+
+  expect(saveNotifyMentions(true)).toBe(true);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+    notifications: true,
+    theme: { accent: '#89b4f0' },
+    notifyMentions: true,
+  });
+
+  expect(loadSettings().notifyMentions).toBe(true);
+
+  // a disabled cache stores nothing, the way debug runs stay isolated
+  configureCache(false);
+
+  expect(saveNotifyMentions(false)).toBe(false);
+
+  expect(
+    (JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { notifyMentions: boolean }).notifyMentions,
+  ).toBe(true);
+});
+
+test('saveTrackMentions persists the toggle and keeps hand-written keys', () => {
+  writeSettingsFile({ theme: { accent: '#89b4f0' }, notifications: true });
+  loadSettings();
+
+  expect(saveTrackMentions(false)).toBe(true);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+    notifications: true,
+    theme: { accent: '#89b4f0' },
+    trackMentions: false,
+  });
+
+  expect(loadSettings().trackMentions).toBe(false);
+
+  // a disabled cache stores nothing, the way debug runs stay isolated
+  configureCache(false);
+
+  expect(saveTrackMentions(true)).toBe(false);
+
+  expect(
+    (JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { trackMentions: boolean }).trackMentions,
+  ).toBe(false);
+});
+
 test('saveNotifyChannel persists the channel and keeps hand-written keys', () => {
   writeSettingsFile({ theme: { accent: '#89b4f0' }, notifications: true });
   loadSettings();
@@ -311,6 +361,14 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
   writeSettingsFile({ notifications: 'yes' });
 
   expect(() => loadSettings()).toThrow('"notifications"');
+
+  writeSettingsFile({ notifyMentions: 'yes' });
+
+  expect(() => loadSettings()).toThrow('"notifyMentions"');
+
+  writeSettingsFile({ trackMentions: 'no' });
+
+  expect(() => loadSettings()).toThrow('"trackMentions"');
 
   // only the four known channel names pass, anything else is a typo
   writeSettingsFile({ notifyChannel: 'osascript' });

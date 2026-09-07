@@ -50,8 +50,8 @@ function pendingResult(repo: string, number: number, requestedAt: string, state 
 
 const NOW = Date.parse('2026-08-01T12:00:00Z');
 
-function snooze(ref: string, until: string, requestedAt = '2026-07-20T09:00:00Z'): Snooze {
-  return { ref, until: Date.parse(until), requestedAt: Date.parse(requestedAt) };
+function snooze(ref: string, until: string, at = '2026-07-20T09:00:00Z', kind: Snooze['kind'] = 'review'): Snooze {
+  return { kind, ref, until: Date.parse(until), at: Date.parse(at) };
 }
 
 test('parses snooze durations in minutes, hours, days, and weeks up to four weeks', () => {
@@ -94,20 +94,27 @@ test('formats a wake-up time as a clock time today and with the date on any othe
   expect(formatWakeTime(tomorrow, now)).toBe(`${date} ${tomorrowTime}`);
 });
 
-test('writes and reads the snoozes as a file keyed by PR ref, soonest wake-up first', () => {
+test('writes and reads the snoozes as a file keyed by kind and PR ref, soonest wake-up first', () => {
   const snoozes = [
     snooze('acme/web#3', '2026-08-02T09:00:00Z', '2026-07-25T09:00:00Z'),
     snooze('acme/api#7', '2026-08-01T15:00:00Z'),
+    // a mention snooze on the same PR lives next to the review snooze and names its texts
+    { ...snooze('acme/api#7', '2026-08-01T18:00:00Z', '2026-07-30T09:00:00Z', 'mention'), ids: ['api7-c1', 'api7-r2'] },
   ];
 
   expect(writeSnoozes(snoozes)).toBe(true);
 
   expect(JSON.parse(readFileSync(join(dir, 'snoozes.json'), 'utf8'))).toEqual({
-    'acme/web#3': { until: '2026-08-02T09:00:00.000Z', requestedAt: '2026-07-25T09:00:00.000Z' },
-    'acme/api#7': { until: '2026-08-01T15:00:00.000Z', requestedAt: '2026-07-20T09:00:00.000Z' },
+    'review:acme/web#3': { until: '2026-08-02T09:00:00.000Z', at: '2026-07-25T09:00:00.000Z' },
+    'review:acme/api#7': { until: '2026-08-01T15:00:00.000Z', at: '2026-07-20T09:00:00.000Z' },
+    'mention:acme/api#7': {
+      until: '2026-08-01T18:00:00.000Z',
+      at: '2026-07-30T09:00:00.000Z',
+      ids: ['api7-c1', 'api7-r2'],
+    },
   });
 
-  expect(readSnoozes()).toEqual([snoozes[1], snoozes[0]]);
+  expect(readSnoozes()).toEqual([snoozes[1], snoozes[2], snoozes[0]]);
 
   // an empty list leaves an empty object behind, so a later read finds nothing
   expect(writeSnoozes([])).toBe(true);
@@ -132,33 +139,49 @@ test('reads nothing from a missing or damaged file and drops damaged entries', (
 
   expect(readSnoozes()).toEqual([]);
 
+  /**
+   * A file from before mention snoozes existed keys its entries by the
+   * PR ref alone and calls the ask time requestedAt, and still reads as
+   * review snoozes.
+   */
   writeFileSync(
     join(dir, 'snoozes.json'),
     JSON.stringify({
       'acme/api#7': { until: '2026-08-01T15:00:00Z', requestedAt: '2026-07-20T09:00:00Z' },
+      'mention:acme/api#9': { until: '2026-08-01T16:00:00Z', at: '2026-07-21T09:00:00Z' },
+      // damaged ids drop out one by one rather than taking the snooze with them
+      'mention:acme/api#10': { until: '2026-08-01T17:00:00Z', at: '2026-07-21T09:00:00Z', ids: ['api10-c1', 7] },
       'acme/web#3': { until: 'soon', requestedAt: '2026-07-20T09:00:00Z' },
       'acme/web#4': { until: '2026-08-01T15:00:00Z' },
       'acme/web#5': 'tomorrow',
     }),
   );
 
-  expect(readSnoozes()).toEqual([snooze('acme/api#7', '2026-08-01T15:00:00Z')]);
+  expect(readSnoozes()).toEqual([
+    snooze('acme/api#7', '2026-08-01T15:00:00Z'),
+    snooze('acme/api#9', '2026-08-01T16:00:00Z', '2026-07-21T09:00:00Z', 'mention'),
+    { ...snooze('acme/api#10', '2026-08-01T17:00:00Z', '2026-07-21T09:00:00Z', 'mention'), ids: ['api10-c1'] },
+  ]);
 });
 
-test('a snooze covers a request until it wakes up and only while the request is not newer', () => {
+test('a snooze covers an ask until it wakes up and only while the ask is not newer', () => {
   const snoozes = [snooze('acme/api#7', '2026-08-01T15:00:00Z', '2026-07-20T09:00:00Z')];
-  const requestedAt = new Date('2026-07-20T09:00:00Z');
+  const target = { kind: 'review' as const, ref: 'acme/api#7' };
+  const requestedAt = Date.parse('2026-07-20T09:00:00Z');
 
-  expect(activeSnooze(snoozes, 'acme/api#7', requestedAt, NOW)).toEqual(snoozes[0]);
+  expect(activeSnooze(snoozes, target, requestedAt, NOW)).toEqual(snoozes[0]);
 
   // the wake-up time itself counts as woken
-  expect(activeSnooze(snoozes, 'acme/api#7', requestedAt, Date.parse('2026-08-01T15:00:00Z'))).toBeUndefined();
+  expect(activeSnooze(snoozes, target, requestedAt, Date.parse('2026-08-01T15:00:00Z'))).toBeUndefined();
 
   // a re-request after the snooze voids it, an older request time still matches
-  expect(activeSnooze(snoozes, 'acme/api#7', new Date('2026-07-30T09:00:00Z'), NOW)).toBeUndefined();
-  expect(activeSnooze(snoozes, 'acme/api#7', new Date('2026-07-10T09:00:00Z'), NOW)).toEqual(snoozes[0]);
+  expect(activeSnooze(snoozes, target, Date.parse('2026-07-30T09:00:00Z'), NOW)).toBeUndefined();
+  expect(activeSnooze(snoozes, target, Date.parse('2026-07-10T09:00:00Z'), NOW)).toEqual(snoozes[0]);
 
-  expect(activeSnooze(snoozes, 'acme/api#8', requestedAt, NOW)).toBeUndefined();
+  expect(activeSnooze(snoozes, { kind: 'review', ref: 'acme/api#8' }, requestedAt, NOW)).toBeUndefined();
+
+  // a review snooze never covers a mention on the same PR
+  expect(activeSnooze(snoozes, { kind: 'mention', ref: 'acme/api#7' }, requestedAt, NOW)).toBeUndefined();
 });
 
 test('splitSnoozed keeps the awaiting order and sorts the snoozed entries by wake-up time', () => {
@@ -222,4 +245,9 @@ test('wokenPrs lists the PRs that still await the snoozed request', () => {
 
   expect(wokenPrs(due, results).map((woken) => woken.number)).toEqual([1]);
   expect(wokenPrs([], results)).toEqual([]);
+
+  // a mention snooze on a pending PR is not the review snooze module's to wake
+  const mentionDue = [snooze('acme/api#1', '2026-08-01T09:00:00Z', '2026-07-10T09:00:00Z', 'mention')];
+
+  expect(wokenPrs(mentionDue, results)).toEqual([]);
 });

@@ -2,7 +2,7 @@ import type { ScrollBoxRenderable } from '@opentui/core';
 import type { RefObject } from 'react';
 import type { LoadPhase } from '../data/load';
 import type { AppViews } from '../hooks/useViewModel';
-import type { BrowseState, PanelScope } from '../state/browse';
+import { AUTHORED_SUB_TABS, PENDING_SUB_TABS, type BrowseState, type PanelScope } from '../state/browse';
 import { queueRows, type QueueView } from '../views/queue';
 import type { RepoOption } from '../views/repos';
 import type { PrRow } from '../views/rows';
@@ -144,20 +144,49 @@ export function MainPanel({
       {views === null ? (
         <Placeholder error={error} loading={loading} load={load} />
       ) : browse.tab === 0 ? (
-        <QueueTab
-          prompt="Select a repository and press enter to open its review queue."
-          repos={views.pendingRepos}
-          scope={views.pendingScope}
-          view={views.pending}
-          repoCursor={browse.repoCursors.pending}
-          rowCursor={browse.rowCursors.pending}
-          grouped={browse.grouped.pending}
-          warning={warning}
-          onRefClick={onRefClick}
-        />
+        <box flexGrow={1} flexDirection="column">
+          <SubTabBar tabs={PENDING_SUB_TABS} active={browse.pendingTab} alerts={views.alerts} />
+          {browse.pendingTab === 'pending' ? (
+            <QueueTab
+              prompt="Select a repository and press enter to open its review queue."
+              repos={views.pendingRepos}
+              scope={views.pendingScope}
+              view={views.pending}
+              repoCursor={browse.repoCursors.pending}
+              rowCursor={browse.rowCursors.pending}
+              grouped={browse.grouped.pending}
+              warning={warning}
+              onRefClick={onRefClick}
+            />
+          ) : browse.pendingTab === 'reviewed' ? (
+            <QueueTab
+              prompt="Select a repository and press enter to list the open PRs you reviewed."
+              repos={views.reviewedRepos}
+              scope={views.reviewedScope}
+              view={views.reviewed}
+              repoCursor={browse.repoCursors.reviewed}
+              rowCursor={browse.rowCursors.reviewed}
+              grouped={browse.grouped.reviewed}
+              warning={warning}
+              onRefClick={onRefClick}
+            />
+          ) : (
+            <QueueTab
+              prompt="Select a repository and press enter to open its mention inbox."
+              repos={views.mentionsRepos}
+              scope={views.mentionsScope}
+              view={views.mentions}
+              repoCursor={browse.repoCursors.mentions}
+              rowCursor={browse.rowCursors.mentions}
+              grouped={browse.grouped.mentions}
+              warning={warning}
+              onRefClick={onRefClick}
+            />
+          )}
+        </box>
       ) : browse.tab === 1 ? (
         <box flexGrow={1} flexDirection="column">
-          <SubTabBar active={browse.authoredTab} />
+          <SubTabBar tabs={AUTHORED_SUB_TABS} active={browse.authoredTab} />
           {browse.authoredTab === 'open' ? (
             <QueueTab
               prompt="Select a repository and press enter to list its open PRs."

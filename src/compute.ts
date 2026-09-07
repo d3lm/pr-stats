@@ -19,16 +19,91 @@ export interface ReviewedEntry {
   lines: number;
 }
 
-export interface PendingEntry {
+/**
+ * One open PR with an unanswered review request, as pendingRequests lists
+ * them, before any duration is measured.
+ */
+export interface PendingRequest {
   pr: ReviewPr;
   requestedAt: Date;
+}
+
+export interface PendingEntry extends PendingRequest {
   hours: number;
 }
 
-export interface ReviewingEntry {
+/**
+ * One open PR you reviewed without an unanswered request, as
+ * latestReviews lists them, before any duration is measured.
+ */
+export interface LatestReview {
   pr: ReviewPr;
   reviewedAt: Date;
+}
+
+export interface ReviewingEntry extends LatestReview {
   hours: number;
+}
+
+/**
+ * Lists the open PRs with an unanswered review request, oldest request
+ * first, without measuring how long they waited. The queue views and the
+ * pickers of the Awaiting you tab read this instead of the full
+ * statistics, because they need no review durations and the durations
+ * are what makes the full computation expensive, so the tab rebuilds
+ * cheaply on every grouping, scope, or read-state change.
+ */
+export function pendingRequests(results: ReviewResult[]): PendingRequest[] {
+  const pending: PendingRequest[] = [];
+
+  for (const result of results) {
+    if (result.kind === 'pending' && result.pr.state === 'open') {
+      pending.push({ pr: result.pr, requestedAt: result.requestedAt });
+    }
+  }
+
+  return pending.toSorted((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
+}
+
+/**
+ * Lists the open PRs you already reviewed that carry no unanswered
+ * request, one entry per PR with your latest review time, longest since
+ * that review first, without measuring the durations. The per-cycle
+ * results collapse into one entry per PR, and unrequested results count
+ * too, because a review without a personal request still puts the PR on
+ * your plate until it closes. A PR with an unanswered request sits in
+ * the pending list instead, so the two lists never share a PR.
+ */
+export function latestReviews(results: ReviewResult[]): LatestReview[] {
+  const pendingKeys = new Set<string>();
+
+  for (const result of results) {
+    if (result.kind === 'pending' && result.pr.state === 'open') {
+      pendingKeys.add(`${result.pr.repo}#${result.pr.number}`);
+    }
+  }
+
+  const latest = new Map<string, LatestReview>();
+
+  for (const result of results) {
+    if ((result.kind !== 'reviewed' && result.kind !== 'unrequested') || result.pr.state !== 'open') {
+      continue;
+    }
+
+    const key = `${result.pr.repo}#${result.pr.number}`;
+
+    if (pendingKeys.has(key)) {
+      continue;
+    }
+
+    const known = latest.get(key);
+
+    if (known === undefined || result.reviewedAt > known.reviewedAt) {
+      latest.set(key, { pr: result.pr, reviewedAt: result.reviewedAt });
+    }
+  }
+
+  return [...latest.values()].toSorted((a, b) => a.reviewedAt.getTime() - b.reviewedAt.getTime());
 }
 
 export interface ReviewStats {
@@ -67,7 +142,6 @@ export function computeReviewStats(
   { targetHours, now = new Date() }: { targetHours?: number; now?: Date } = {},
 ): ReviewStats {
   const reviewed: ReviewedEntry[] = [];
-  const pending: PendingEntry[] = [];
 
   for (const result of results) {
     if (result.kind === 'reviewed') {
@@ -79,45 +153,16 @@ export function computeReviewStats(
         verdict: result.verdict,
         lines: result.lines,
       });
-    } else if (result.kind === 'pending' && result.pr.state === 'open') {
-      pending.push({ pr: result.pr, requestedAt: result.requestedAt, hours: durationHours(result.requestedAt, now) });
     }
   }
 
-  pending.sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
+  const pending = pendingRequests(results).map((entry) => {
+    return { ...entry, hours: durationHours(entry.requestedAt, now) };
+  });
 
-  /**
-   * The reviewing queue collapses the per-cycle results back into one
-   * entry per open PR, keeping the latest review time. Unrequested
-   * results count too, because a review without a personal request still
-   * puts the PR on your plate until it closes.
-   */
-  const pendingKeys = new Set(pending.map((entry) => `${entry.pr.repo}#${entry.pr.number}`));
-  const latestReviews = new Map<string, { pr: ReviewPr; reviewedAt: Date }>();
-
-  for (const result of results) {
-    if ((result.kind !== 'reviewed' && result.kind !== 'unrequested') || result.pr.state !== 'open') {
-      continue;
-    }
-
-    const key = `${result.pr.repo}#${result.pr.number}`;
-
-    if (pendingKeys.has(key)) {
-      continue;
-    }
-
-    const latest = latestReviews.get(key);
-
-    if (latest === undefined || result.reviewedAt > latest.reviewedAt) {
-      latestReviews.set(key, { pr: result.pr, reviewedAt: result.reviewedAt });
-    }
-  }
-
-  const reviewing = [...latestReviews.values()]
-    .map(({ pr, reviewedAt }) => {
-      return { pr, reviewedAt, hours: durationHours(reviewedAt, now) };
-    })
-    .toSorted((a, b) => a.reviewedAt.getTime() - b.reviewedAt.getTime());
+  const reviewing = latestReviews(results).map((entry) => {
+    return { ...entry, hours: durationHours(entry.reviewedAt, now) };
+  });
 
   const expired = results.filter((result) => result.kind === 'pending' && result.pr.state !== 'open');
   const unrequested = results.filter((result) => result.kind === 'unrequested');

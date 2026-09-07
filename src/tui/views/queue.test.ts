@@ -1,8 +1,25 @@
 import { expect, test } from 'bun:test';
+import { emptyMentionReads, type MentionReads } from '../../mentions';
 import { formatWakeTime, type Snooze } from '../../snooze';
-import type { RawData, ReviewResult, SizeEntry } from '../data/load';
-import { buildOpenAuthoredView, buildPendingReviewView, queueRowAt, queueRows, snoozeActionOf } from './queue';
-import { buildOpenRepoOptions, buildPendingRepoOptions } from './repos';
+import type { MentionEntry, RawData, ReviewResult, SizeEntry } from '../data/load';
+import {
+  buildMentionsView,
+  buildOpenAuthoredView,
+  buildPendingReviewView,
+  buildReviewedView,
+  mentionActionOf,
+  queueAlerts,
+  queueRowAt,
+  queueRows,
+  snoozeActionOf,
+  unreadMentionRows,
+} from './queue';
+import {
+  buildMentionRepoOptions,
+  buildOpenRepoOptions,
+  buildPendingRepoOptions,
+  buildReviewedRepoOptions,
+} from './repos';
 
 /**
  * Builds the PR descriptor shared by review results and size entries.
@@ -69,10 +86,37 @@ function sizeEntry(repo: string, number: number, state: string, createdAt = '202
 
 /**
  * Builds a snooze of the given PR ref that wakes up at the given time and
- * covers the request made at the given time.
+ * covers the ask made at the given time, a review request unless a kind
+ * overrides it.
  */
-function snooze(ref: string, until: string, requestedAt: string): Snooze {
-  return { ref, until: Date.parse(until), requestedAt: Date.parse(requestedAt) };
+function snooze(ref: string, until: string, at: string, kind: Snooze['kind'] = 'review'): Snooze {
+  return { kind, ref, until: Date.parse(until), at: Date.parse(at) };
+}
+
+/**
+ * Builds a mention entry with one mention of you at each of the given
+ * times, on an open PR unless a state overrides it.
+ */
+function mentionEntry(repo: string, number: number, times: string[], state = 'open'): MentionEntry {
+  return {
+    pr: { ...pr(repo, number, state), updatedAt: new Date(times.at(-1) ?? '2026-07-01T00:00:00Z') },
+    mentions: times.map((at, i) => {
+      return { id: `${repo}#${number}-${i}`, at: new Date(at) };
+    }),
+    earlier: [],
+  };
+}
+
+/**
+ * Builds a read state seeded at the given time with the given marks by
+ * hand, each a time or null for a PR marked unread, none of which knows
+ * any text.
+ */
+function reads(seededAt: string, marks: [string, number | null][] = []): MentionReads {
+  return {
+    seed: { at: Date.parse(seededAt), ids: [] },
+    reads: new Map(marks.map(([ref, at]) => [ref, at === null ? null : { at, ids: [] }])),
+  };
 }
 
 /**
@@ -87,6 +131,7 @@ function rawData(overrides: Partial<RawData>): RawData {
     reviewResults: [],
     sizes: [],
     authoredTotal: 0,
+    mentions: null,
     searchCapped: false,
     fetchedAt: new Date('2026-08-01T00:00:00Z'),
     ...overrides,
@@ -112,15 +157,24 @@ test('the pending picker lists every repo with review activity and skips the pic
   });
 
   expect(buildPendingRepoOptions(raw)).toEqual([
-    { repo: null, label: 'All repos', detail: '3 PRs awaiting your review, 1 reviewed' },
+    { repo: null, label: 'All repos', detail: '3 PRs awaiting your review' },
     { repo: 'acme/api', label: 'acme/api', detail: '2 PRs awaiting your review' },
-    { repo: 'acme/web', label: 'acme/web', detail: '1 PR awaiting your review, 1 reviewed' },
+    { repo: 'acme/web', label: 'acme/web', detail: '1 PR awaiting your review' },
     { repo: 'acme/zulu', label: 'acme/zulu', detail: '0 PRs awaiting your review' },
   ]);
 
-  expect(
-    buildPendingRepoOptions(rawData({ reviewResults: [pendingResult('acme/api', 1, '2026-07-01T00:00:00Z')] })),
-  ).toEqual([]);
+  // the reviewed picker lists the same repos, most reviewed first
+  expect(buildReviewedRepoOptions(raw)).toEqual([
+    { repo: null, label: 'All repos', detail: '1 reviewed PR still open' },
+    { repo: 'acme/web', label: 'acme/web', detail: '1 reviewed PR still open' },
+    { repo: 'acme/api', label: 'acme/api', detail: '0 reviewed PRs still open' },
+    { repo: 'acme/zulu', label: 'acme/zulu', detail: '0 reviewed PRs still open' },
+  ]);
+
+  const single = rawData({ reviewResults: [pendingResult('acme/api', 1, '2026-07-01T00:00:00Z')] });
+
+  expect(buildPendingRepoOptions(single)).toEqual([]);
+  expect(buildReviewedRepoOptions(single)).toEqual([]);
 });
 
 test('the open picker lists every repo with an analyzed PR and skips the picker below two repos', () => {
@@ -184,12 +238,10 @@ test('the pending view narrows to a repo and groups the aggregate by repo', () =
 
   expect(buildPendingReviewView(raw, 'acme/api', true)).toEqual(narrowed);
 
-  expect(buildPendingReviewView(rawData({}), null, true).empty).toBe(
-    'No PRs are awaiting your review, and none you reviewed are still open.',
-  );
+  expect(buildPendingReviewView(rawData({}), null, true).empty).toBe('No PRs are awaiting your review.');
 });
 
-test('the pending view lists PRs you reviewed that are still open in the reviewed queue', () => {
+test('the reviewed view lists PRs you reviewed that are still open, apart from the awaiting queue', () => {
   const raw = rawData({
     reviewResults: [
       pendingResult('acme/api', 1, '2026-07-01T00:00:00Z'),
@@ -214,53 +266,37 @@ test('the pending view lists PRs you reviewed that are still open in the reviewe
     ],
   });
 
-  const flat = buildPendingReviewView(raw);
+  const pending = buildPendingReviewView(raw);
 
-  expect(flat.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)', 'Reviewed (n=2)']);
+  expect(pending.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)']);
+  expect(queueRows(pending).map((row) => row.ref)).toEqual(['acme/api#1', 'acme/zulu#7', 'acme/web#4']);
 
-  expect(queueRows(flat).map((row) => row.ref)).toEqual([
-    'acme/api#1',
-    'acme/zulu#7',
-    'acme/web#4',
-    'acme/web#3',
-    'acme/api#2',
-  ]);
+  const flat = buildReviewedView(raw);
 
-  // narrowing to a repo filters both queues
-  const narrowed = buildPendingReviewView(raw, 'acme/api');
+  expect(flat.sections.map((section) => section.title)).toEqual(['Reviewed (n=2)']);
+  expect(queueRows(flat).map((row) => row.ref)).toEqual(['acme/web#3', 'acme/api#2']);
+  expect(queueRows(flat)[0].pending).toBeUndefined();
 
-  expect(narrowed.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=1)', 'Reviewed (n=1)']);
-  expect(queueRows(narrowed).map((row) => row.ref)).toEqual(['acme/api#1', 'acme/api#2']);
+  // narrowing to a repo filters the list
+  const narrowed = buildReviewedView(raw, 'acme/api');
 
-  // a scope without reviewed PRs skips that section
-  expect(buildPendingReviewView(raw, 'acme/zulu').sections.map((section) => section.title)).toEqual([
-    'Awaiting your review (n=1)',
-  ]);
+  expect(narrowed.sections.map((section) => section.title)).toEqual(['Reviewed (n=1)']);
+  expect(queueRows(narrowed).map((row) => row.ref)).toEqual(['acme/api#2']);
+
+  // a scope without reviewed PRs says so
+  expect(buildReviewedView(raw, 'acme/zulu').empty).toBe('No PRs you reviewed are still open.');
 
   /**
-   * Grouping keeps the two sections in order and splits each one into
-   * per-repo sub-lists, ordered largest repo first with ties broken by
-   * name, so both sections can list the same repo.
+   * Grouping splits the list into per-repo sub-lists, ordered largest
+   * repo first with ties broken by name.
    */
-  const grouped = buildPendingReviewView(raw, null, true);
+  const grouped = buildReviewedView(raw, null, true);
 
-  expect(grouped.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=3)', 'Reviewed (n=2)']);
+  expect(grouped.sections[0].rows).toEqual([]);
+  expect(grouped.sections[0].lists.map((list) => list.title)).toEqual(['acme/api (n=1)', 'acme/web (n=1)']);
+  expect(queueRows(grouped).map((row) => row.ref)).toEqual(['acme/api#2', 'acme/web#3']);
 
-  expect(grouped.sections[0].lists.map((list) => list.title)).toEqual([
-    'acme/api (n=1)',
-    'acme/web (n=1)',
-    'acme/zulu (n=1)',
-  ]);
-
-  expect(grouped.sections[1].lists.map((list) => list.title)).toEqual(['acme/api (n=1)', 'acme/web (n=1)']);
-
-  expect(queueRows(grouped).map((row) => row.ref)).toEqual([
-    'acme/api#1',
-    'acme/web#4',
-    'acme/zulu#7',
-    'acme/api#2',
-    'acme/web#3',
-  ]);
+  expect(buildReviewedView(raw, 'acme/api', true)).toEqual(narrowed);
 });
 
 test('the pending view parks snoozed PRs in their own section until they wake up', () => {
@@ -286,26 +322,17 @@ test('the pending view parks snoozed PRs in their own section until they wake up
   ];
 
   /**
-   * The snoozed section sits between the awaiting and the reviewed
-   * queue, soonest wake-up first, and its rows lead with the wake-up
-   * time instead of the wait. Every pending row carries its request
-   * time, and the snoozed rows mark themselves for the snooze key.
+   * The snoozed section sits below the awaiting queue, soonest wake-up
+   * first, and its rows lead with the wake-up time instead of the wait.
+   * Every pending row carries its request time, and the snoozed rows
+   * mark themselves for the snooze key. The reviewed PR belongs to the
+   * reviewed sub-tab and stays out.
    */
-  const flat = buildPendingReviewView(raw, null, false, snoozes, now);
+  const flat = buildPendingReviewView(raw, null, false, snoozes, emptyMentionReads(), now);
 
-  expect(flat.sections.map((section) => section.title)).toEqual([
-    'Awaiting your review (n=2)',
-    'Snoozed (n=2)',
-    'Reviewed (n=1)',
-  ]);
+  expect(flat.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=2)', 'Snoozed (n=2)']);
 
-  expect(queueRows(flat).map((row) => row.ref)).toEqual([
-    'acme/api#3',
-    'acme/web#4',
-    'acme/web#2',
-    'acme/api#1',
-    'acme/api#5',
-  ]);
+  expect(queueRows(flat).map((row) => row.ref)).toEqual(['acme/api#3', 'acme/web#4', 'acme/web#2', 'acme/api#1']);
 
   const rows = queueRows(flat);
 
@@ -313,33 +340,26 @@ test('the pending view parks snoozed PRs in their own section until they wake up
   expect(rows[2].pending).toEqual({ requestedAt: Date.parse('2026-07-02T00:00:00Z'), snoozed: true });
   expect(rows[2].lead.trimEnd()).toBe(`until ${formatWakeTime(Date.parse('2026-08-01T15:00:00Z'), now)}`);
   expect(rows[3].lead.trimEnd()).toBe(`until ${formatWakeTime(Date.parse('2026-08-02T09:00:00Z'), now)}`);
-  expect(rows[4].pending).toBeUndefined();
 
   expect(snoozeActionOf(queueRowAt(flat, 0))).toBe('snooze');
   expect(snoozeActionOf(queueRowAt(flat, 2))).toBe('unsnooze');
-  expect(snoozeActionOf(queueRowAt(flat, 4))).toBeNull();
-  expect(snoozeActionOf(queueRowAt(flat, 99))).toBeNull();
+  expect(snoozeActionOf(queueRowAt(buildReviewedView(raw), 0))).toBeNull();
+  expect(snoozeActionOf(queueRowAt(flat, 99))).toBe('unsnooze');
   expect(snoozeActionOf(queueRowAt(null, 0))).toBeNull();
 
   // narrowing to a repo filters the snoozed queue like the others
-  const narrowed = buildPendingReviewView(raw, 'acme/web', false, snoozes, now);
+  const narrowed = buildPendingReviewView(raw, 'acme/web', false, snoozes, emptyMentionReads(), now);
 
   expect(narrowed.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=1)', 'Snoozed (n=1)']);
   expect(queueRows(narrowed).map((row) => row.ref)).toEqual(['acme/web#4', 'acme/web#2']);
 
   // grouping splits the snoozed section into per-repo sub-lists too
-  const grouped = buildPendingReviewView(raw, null, true, snoozes, now);
+  const grouped = buildPendingReviewView(raw, null, true, snoozes, emptyMentionReads(), now);
 
   expect(grouped.sections[1].rows).toEqual([]);
   expect(grouped.sections[1].lists.map((list) => list.title)).toEqual(['acme/api (n=1)', 'acme/web (n=1)']);
 
-  expect(queueRows(grouped).map((row) => row.ref)).toEqual([
-    'acme/api#3',
-    'acme/web#4',
-    'acme/api#1',
-    'acme/web#2',
-    'acme/api#5',
-  ]);
+  expect(queueRows(grouped).map((row) => row.ref)).toEqual(['acme/api#3', 'acme/web#4', 'acme/api#1', 'acme/web#2']);
 
   // a queue with nothing but snoozed PRs still renders its section instead of the empty message
   const onlySnoozed = buildPendingReviewView(
@@ -347,6 +367,7 @@ test('the pending view parks snoozed PRs in their own section until they wake up
     null,
     false,
     snoozes,
+    emptyMentionReads(),
     now,
   );
 
@@ -358,12 +379,212 @@ test('the pending view parks snoozed PRs in their own section until they wake up
    * a repo without snoozed PRs skips that part of the detail.
    */
   expect(buildPendingRepoOptions(raw, snoozes, now)).toEqual([
-    { repo: null, label: 'All repos', detail: '2 PRs awaiting your review, 2 snoozed, 1 reviewed' },
-    { repo: 'acme/api', label: 'acme/api', detail: '1 PR awaiting your review, 1 snoozed, 1 reviewed' },
+    { repo: null, label: 'All repos', detail: '2 PRs awaiting your review, 2 snoozed' },
+    { repo: 'acme/api', label: 'acme/api', detail: '1 PR awaiting your review, 1 snoozed' },
     { repo: 'acme/web', label: 'acme/web', detail: '1 PR awaiting your review, 1 snoozed' },
   ]);
 
-  expect(buildPendingRepoOptions(raw)[0].detail).toBe('4 PRs awaiting your review, 1 reviewed');
+  expect(buildPendingRepoOptions(raw)[0].detail).toBe('4 PRs awaiting your review');
+});
+
+test('the mentions view lists the inbox in unread, snoozed, and read sections', () => {
+  const raw = rawData({
+    reviewResults: [
+      pendingResult('acme/api', 1, '2026-07-01T00:00:00Z'),
+      pendingResult('acme/web', 2, '2026-07-02T00:00:00Z'),
+      reviewedResult('acme/api', 3, '2026-07-05T00:00:00Z'),
+    ],
+    mentions: [
+      // api#1 also awaits your review, so its awaiting row carries the badge
+      mentionEntry('acme/api', 1, ['2026-07-21T00:00:00Z']),
+      // a mention on a PR without a review request, and a closed PR counts too
+      mentionEntry('acme/zulu', 4, ['2026-07-22T00:00:00Z'], 'merged'),
+      mentionEntry('acme/web', 5, ['2026-07-19T00:00:00Z', '2026-07-24T00:00:00Z']),
+      // older than the seed, so it starts out read
+      mentionEntry('acme/web', 6, ['2026-07-10T00:00:00Z']),
+      // older than the seed too, but marked unread by hand
+      mentionEntry('acme/api', 7, ['2026-07-11T00:00:00Z']),
+      // marked read by hand
+      mentionEntry('acme/api', 8, ['2026-07-23T00:00:00Z']),
+      // snoozed
+      mentionEntry('acme/web', 9, ['2026-07-25T00:00:00Z']),
+      // unreadable during the load, so it stays out until a load reads it
+      { ...mentionEntry('acme/api', 10, ['2026-07-26T00:00:00Z']), mentions: null },
+    ],
+  });
+
+  const now = Date.parse('2026-08-01T12:00:00Z');
+
+  const state = reads('2026-07-20T00:00:00Z', [
+    ['acme/api#7', null],
+    ['acme/api#8', Date.parse('2026-07-23T00:00:00Z')],
+  ]);
+
+  const snoozes = [
+    snooze('acme/web#9', '2026-08-02T09:00:00Z', '2026-07-25T00:00:00Z', 'mention'),
+    snooze('acme/web#2', '2026-08-01T15:00:00Z', '2026-07-02T00:00:00Z'),
+  ];
+
+  /**
+   * The inbox lists the unread mentions newest first, then the parked
+   * ones soonest wake-up first, and the read ones close the tab. The
+   * review queues keep their own rows, the awaiting api#1 with the badge
+   * because the PR also mentions you, and the snoozed web#2 without one.
+   */
+  const flat = buildMentionsView(raw, null, false, snoozes, state, now);
+
+  expect(flat.sections.map((section) => section.title)).toEqual(['Unread (n=4)', 'Snoozed (n=1)', 'Read (n=2)']);
+
+  expect(queueRows(flat).map((row) => row.ref)).toEqual([
+    'acme/web#5',
+    'acme/zulu#4',
+    'acme/api#1',
+    'acme/api#7',
+    'acme/web#9',
+    'acme/api#8',
+    'acme/web#6',
+  ]);
+
+  const rows = queueRows(flat);
+
+  // the unread rows carry the mark of their mentions, lead with the time since the newest one, and carry no badge of their own
+  expect(rows[0].mention).toEqual({
+    mark: { at: Date.parse('2026-07-24T00:00:00Z'), ids: ['acme/web#5-0', 'acme/web#5-1'] },
+    state: 'unread',
+  });
+
+  expect(rows[0].mentioned).toBeUndefined();
+  expect(rows[0].pending).toBeUndefined();
+  expect(rows[0].lead.trim()).not.toBe('');
+  expect(rows[0].lead).not.toContain('until');
+
+  // the snoozed row leads with its wake-up time
+  expect(rows[4].mention).toEqual({
+    mark: { at: Date.parse('2026-07-25T00:00:00Z'), ids: ['acme/web#9-0'] },
+    state: 'snoozed',
+  });
+
+  expect(rows[4].lead.trimEnd()).toBe(`until ${formatWakeTime(Date.parse('2026-08-02T09:00:00Z'), now)}`);
+
+  // the read rows carry their mention
+  expect(rows[5].mention).toEqual({
+    mark: { at: Date.parse('2026-07-23T00:00:00Z'), ids: ['acme/api#8-0'] },
+    state: 'read',
+  });
+
+  // the snooze key parks an unread mention, unsnoozes a parked one, and skips a read one
+  expect(snoozeActionOf(rows[0])).toBe('snooze');
+  expect(snoozeActionOf(rows[4])).toBe('unsnooze');
+  expect(snoozeActionOf(rows[5])).toBeNull();
+
+  // the read key marks unread and snoozed mentions read and read ones unread
+  expect(mentionActionOf(rows[0])).toBe('read');
+  expect(mentionActionOf(rows[4])).toBe('read');
+  expect(mentionActionOf(rows[5])).toBe('unread');
+  expect(mentionActionOf(undefined)).toBeNull();
+
+  expect(unreadMentionRows(flat).map((row) => row.ref)).toEqual([
+    'acme/web#5',
+    'acme/zulu#4',
+    'acme/api#1',
+    'acme/api#7',
+  ]);
+
+  expect(unreadMentionRows(null)).toEqual([]);
+
+  /**
+   * The review queues badge the rows of a PR with an unread mention and
+   * nothing else, so a snoozed mention or a read one leaves the badge
+   * off, and the read key ignores their rows.
+   */
+  const pending = buildPendingReviewView(raw, null, false, snoozes, state, now);
+  const pendingRows = queueRows(pending);
+
+  expect(pendingRows.map((row) => row.ref)).toEqual(['acme/api#1', 'acme/web#2']);
+  expect(pendingRows[0].pending).toEqual({ requestedAt: Date.parse('2026-07-01T00:00:00Z'), snoozed: false });
+  expect(pendingRows[0].mentioned).toBe(true);
+  expect(pendingRows[0].mention).toBeUndefined();
+  expect(pendingRows[1].mentioned).toBeUndefined();
+  expect(mentionActionOf(pendingRows[0])).toBeNull();
+
+  const reviewedRows = queueRows(buildReviewedView(raw, null, false, snoozes, state, now));
+
+  expect(reviewedRows.map((row) => [row.ref, row.mentioned])).toEqual([['acme/api#3', undefined]]);
+
+  const withReviewedMention = rawData({
+    ...raw,
+    mentions: [...(raw.mentions ?? []), mentionEntry('acme/api', 3, ['2026-07-27T00:00:00Z'])],
+  });
+
+  expect(queueRows(buildReviewedView(withReviewedMention, null, false, snoozes, state, now))[0].mentioned).toBe(true);
+
+  // narrowing to a repo filters every inbox section
+  const narrowed = buildMentionsView(raw, 'acme/web', false, snoozes, state, now);
+
+  expect(narrowed.sections.map((section) => section.title)).toEqual(['Unread (n=1)', 'Snoozed (n=1)', 'Read (n=1)']);
+  expect(queueRows(narrowed).map((row) => row.ref)).toEqual(['acme/web#5', 'acme/web#9', 'acme/web#6']);
+
+  // grouping splits every inbox section into per-repo sub-lists
+  const grouped = buildMentionsView(raw, null, true, snoozes, state, now);
+
+  expect(grouped.sections[0].rows).toEqual([]);
+
+  expect(grouped.sections[0].lists.map((list) => list.title)).toEqual([
+    'acme/api (n=2)',
+    'acme/web (n=1)',
+    'acme/zulu (n=1)',
+  ]);
+
+  expect(grouped.sections[2].lists.map((list) => list.title)).toEqual(['acme/api (n=1)', 'acme/web (n=1)']);
+  expect(buildMentionsView(raw, 'acme/web', true, snoozes, state, now)).toEqual(narrowed);
+
+  /**
+   * Before the seed lands every mention reads as read, so a session
+   * never flashes a full inbox, and data without mentions says how to
+   * turn the tracking on.
+   */
+  const unseeded = buildMentionsView(raw, null, false, snoozes, emptyMentionReads(), now);
+
+  expect(unseeded.sections.map((section) => section.title)).toEqual(['Read (n=7)']);
+
+  expect(buildMentionsView({ ...raw, mentions: null }).empty).toBe(
+    'Mention tracking is off. Turn on Track mentions in the settings (S) to list the PRs that mention you.',
+  );
+
+  expect(buildMentionsView(rawData({ mentions: [] })).empty).toBe('No PR mentions you.');
+  expect(buildMentionsView(raw, 'acme/other', false, snoozes, state, now).empty).toBe('No PR mentions you.');
+
+  /**
+   * The picker lists every repo with a mention, most unread first, and
+   * counts the snoozed and the read mentions apart from the unread ones.
+   */
+  expect(buildMentionRepoOptions(raw, snoozes, state, now)).toEqual([
+    { repo: null, label: 'All repos', detail: '4 unread mentions, 1 snoozed, 2 read' },
+    { repo: 'acme/api', label: 'acme/api', detail: '2 unread mentions, 1 read' },
+    { repo: 'acme/web', label: 'acme/web', detail: '1 unread mention, 1 snoozed, 1 read' },
+    { repo: 'acme/zulu', label: 'acme/zulu', detail: '1 unread mention' },
+  ]);
+
+  /**
+   * The sub-tab alerts flag the awaiting queue while a PR awaits your
+   * review outside a snooze and the inbox while a mention is unread,
+   * across every repo. Snoozing the last awaiting PR or reading the last
+   * mention clears the flag, and so does a load without mention data.
+   */
+  expect(queueAlerts(raw, snoozes, state, now)).toEqual({ pending: true, mentions: true });
+  expect(queueAlerts(raw, snoozes, emptyMentionReads(), now)).toEqual({ pending: true, mentions: false });
+  expect(queueAlerts({ ...raw, mentions: null }, snoozes, state, now)).toEqual({ pending: true, mentions: false });
+
+  const allSnoozed = [...snoozes, snooze('acme/api#1', '2026-08-02T09:00:00Z', '2026-07-01T00:00:00Z')];
+
+  expect(queueAlerts(raw, allSnoozed, state, now)).toEqual({ pending: false, mentions: true });
+  expect(queueAlerts(rawData({}))).toEqual({ pending: false, mentions: false });
+
+  expect(buildMentionRepoOptions(rawData({ mentions: null }))).toEqual([]);
+
+  expect(
+    buildMentionRepoOptions(rawData({ mentions: [mentionEntry('acme/api', 1, ['2026-07-21T00:00:00Z'])] })),
+  ).toEqual([]);
 });
 
 test('the open view narrows to a repo and groups the aggregate by repo', () => {

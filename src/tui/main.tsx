@@ -11,10 +11,13 @@ const {
   autoReload,
   reloadInterval,
   notifications,
+  trackMentions,
+  notifyMentions,
   notifyChannel,
   copyLinks,
   snoozeDuration,
   snoozes,
+  mentionReads,
   theme,
   json,
 } = bootstrap();
@@ -60,10 +63,13 @@ createRoot(renderer).render(
     initialAutoReload={autoReload}
     initialReloadInterval={reloadInterval}
     initialNotifications={notifications}
+    initialTrackMentions={trackMentions}
+    initialNotifyMentions={notifyMentions}
     initialNotifyChannel={notifyChannel}
     initialCopyLinks={copyLinks}
     initialSnoozeDuration={snoozeDuration}
     initialSnoozes={snoozes}
+    initialMentionReads={mentionReads}
     initialTheme={theme}
     onQuit={() => {
       renderer.destroy();

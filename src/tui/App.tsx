@@ -1,6 +1,7 @@
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { wokenMentions, type MentionReadsByUser } from '../mentions';
 import {
   DEFAULT_RELOAD_INTERVAL,
   parseReloadInterval,
@@ -17,6 +18,7 @@ import {
   parseSnoozeDuration,
   wokenPrs,
   type Snooze,
+  type SnoozeTargetKey,
 } from '../snooze';
 import { CliError } from '../utils';
 import { Footer } from './components/Footer';
@@ -24,10 +26,13 @@ import { Header } from './components/Header';
 import { MainPanel } from './components/MainPanel';
 import { Modals } from './components/Modals';
 import { TabBar } from './components/TabBar';
+import type { RawData } from './data/load';
 import { describeSnoozeWakeUps } from './data/notifications';
 import { useAutoReload } from './hooks/useAutoReload';
 import { useDeferredLoading } from './hooks/useDeferredLoading';
 import { useLoader } from './hooks/useLoader';
+import { useMentionNotifications } from './hooks/useMentionNotifications';
+import { useMentionReads } from './hooks/useMentionReads';
 import { useReviewNotifications } from './hooks/useReviewNotifications';
 import { useSnoozes } from './hooks/useSnoozes';
 import { useSnoozeWakeups } from './hooks/useSnoozeWakeups';
@@ -57,12 +62,15 @@ import { createClipboardCopier } from './utils/clipboard';
 import { createNotifier, notificationBoundary, type Notifier } from './utils/notify';
 import {
   buildCommentRepoOptions,
+  buildMentionRepoOptions,
   buildMergedRepoOptions,
   buildOpenRepoOptions,
   buildPendingRepoOptions,
+  buildReviewedRepoOptions,
   buildReviewRepoOptions,
   buildSizeRepoOptions,
 } from './views/repos';
+import type { PrRow } from './views/rows';
 
 interface AppProps {
   initial: OptionsState;
@@ -98,6 +106,22 @@ interface AppProps {
    */
   initialNotifications?: boolean;
   /**
+   * Seeds the mention tracking state from the saved setting, on unless
+   * the setting turns it off. While it is on, every load also searches
+   * the PRs that mention you and the awaiting-you tab lists the unread
+   * ones in the mention inbox. The settings dialog toggles it at
+   * runtime.
+   */
+  initialTrackMentions?: boolean;
+  /**
+   * Seeds the mention notifications state from the saved setting. While
+   * it is on together with the notifications and the mention tracking,
+   * every load sends a desktop notification for the mentions that
+   * arrived since the data shown before it. The settings dialog toggles
+   * it at runtime.
+   */
+  initialNotifyMentions?: boolean;
+  /**
    * Seeds the notification channel from the saved setting. The settings
    * dialog cycles it at runtime, and the default notifier follows it.
    */
@@ -121,6 +145,14 @@ interface AppProps {
    * end them and report the PRs that came back while the TUI was closed.
    */
   initialSnoozes?: Snooze[];
+  /**
+   * Seeds the read state of the mention inbox with what bootstrap read
+   * from its file in the cache directory, the state of every login that
+   * used this machine, so the inbox continues where the previous session
+   * of the same account left it. A login without one starts empty and
+   * gets seeded by the first data with mentions.
+   */
+  initialMentionReads?: MentionReadsByUser;
   /**
    * Seeds the theme state with what bootstrap parsed from settings.json
    * and already applied. The settings dialog changes it at runtime.
@@ -166,10 +198,13 @@ export function App({
   initialAutoReload = false,
   initialReloadInterval = DEFAULT_RELOAD_INTERVAL,
   initialNotifications = false,
+  initialTrackMentions = true,
+  initialNotifyMentions = false,
   initialNotifyChannel = 'auto',
   initialCopyLinks = false,
   initialSnoozeDuration = DEFAULT_SNOOZE_DURATION,
   initialSnoozes = [],
+  initialMentionReads = new Map(),
   initialTheme = defaultThemeState(),
   openUrl = openInBrowser,
   copyUrl,
@@ -195,11 +230,14 @@ export function App({
   const [autoReload, setAutoReload] = useState(initialAutoReload);
   const [reloadInterval, setReloadInterval] = useState(initialReloadInterval);
   const [notifications, setNotifications] = useState(initialNotifications);
+  const [trackMentions, setTrackMentions] = useState(initialTrackMentions);
+  const [notifyMentions, setNotifyMentions] = useState(initialNotifyMentions);
   const [notifyChannel, setNotifyChannel] = useState(initialNotifyChannel);
   const [copyLinks, setCopyLinks] = useState(initialCopyLinks);
   const [snoozeDuration, setSnoozeDuration] = useState(initialSnoozeDuration);
   const [themeState, setThemeState] = useState(initialTheme);
   const snoozeStore = useSnoozes(initialSnoozes);
+  const readStore = useMentionReads(initialMentionReads);
 
   /**
    * Falls back to the channel-following notifier when no notify override
@@ -229,13 +267,67 @@ export function App({
   };
 
   /**
-   * Ends the snooze of a PR from the snoozed queue, which puts it back
-   * on the awaiting list right away, and confirms in the footer notice
-   * slot.
+   * Ends a snooze from the snoozed queue, which puts the request back on
+   * the awaiting list or the mention back in the inbox right away, and
+   * confirms in the footer notice slot.
    */
-  const unsnooze = (ref: string) => {
-    snoozeStore.remove([ref]);
-    dispatchUi({ type: 'successReported', message: `unsnoozed ${ref}` });
+  const unsnooze = (target: SnoozeTargetKey) => {
+    snoozeStore.remove([target]);
+    dispatchUi({ type: 'successReported', message: `unsnoozed ${target.ref}` });
+  };
+
+  /**
+   * Reports a change of the mention inbox in the footer, as a success
+   * notice when the change reached the read state file and in the error
+   * slot with the reason when the disabled cache kept it in the session.
+   */
+  const reportMark = (message: string, saved: boolean) => {
+    if (saved) {
+      dispatchUi({ type: 'successReported', message });
+    } else {
+      dispatchUi({
+        type: 'openErrorReported',
+        message: `${message} · the cache is disabled for this session, so the mark is not saved`,
+      });
+    }
+  };
+
+  /**
+   * Marks the mention behind an inbox row read, which moves the PR into
+   * the read list right away. A snoozed mention ends its snooze with the
+   * mark, because a read mention has nothing left to park.
+   */
+  const markRead = (row: PrRow) => {
+    if (row.mention === undefined) {
+      return;
+    }
+
+    if (row.mention.state === 'snoozed') {
+      snoozeStore.remove([{ kind: 'mention', ref: row.ref }]);
+    }
+
+    reportMark(`marked ${row.ref} read`, readStore.markRead(row.ref, row.mention.mark));
+  };
+
+  /**
+   * Marks the mentions behind the given unread rows read in one change,
+   * which empties the inbox of the opened scope.
+   */
+  const markAllRead = (rows: readonly PrRow[]) => {
+    const marks = rows.flatMap((row) => (row.mention === undefined ? [] : [{ ref: row.ref, mark: row.mention.mark }]));
+
+    reportMark(
+      `marked ${marks.length} ${marks.length === 1 ? 'mention' : 'mentions'} read`,
+      readStore.markAllRead(marks),
+    );
+  };
+
+  /**
+   * Marks the mention behind a read row unread again, which moves the PR
+   * back into the inbox right away.
+   */
+  const markUnread = (row: PrRow) => {
+    reportMark(`marked ${row.ref} unread`, readStore.markUnread(row.ref));
   };
 
   /**
@@ -272,37 +364,73 @@ export function App({
   });
 
   /**
+   * The loads look for mentions while the tracking is on, which feeds
+   * the inbox and keeps the notification baseline current. The mention
+   * notifications hang off the notifications toggle on top, so a mention
+   * notification never goes out on its own while the desktop
+   * notifications are off, and never without the data behind it.
+   */
+  const notifyMentionChanges = useMentionNotifications(
+    trackMentions && notifications && notifyMentions,
+    notifier,
+    (message) => {
+      dispatchUi({ type: 'openErrorReported', message });
+    },
+    !initialNoCache,
+  );
+
+  /**
+   * Keys the notification baselines by the fetch params and the login
+   * the load resolved, because an empty user option leaves the params
+   * key the same across a switch of the authenticated account, and the
+   * baseline of one account must never seed another.
+   */
+  const baselineKey = (data: RawData) => `${fetchParamsKey(options)} ${data.user.toLowerCase()}`;
+
+  /**
    * Every fresh load clears an opened repo that the new data no longer
    * contains, reconciling all five scopes in one dataLoaded transition.
    * The render falls back to the picker either way, and clearing the
    * state too keeps the vanished repo from reopening on its own if a
    * later reload brings it back. The same load feeds the notification
-   * diff, keyed by the options it fetched for, which this closure holds
+   * diffs, keyed by the options it fetched for, which this closure holds
    * because the loader calls back the render that started the load. The
-   * startup snapshot feeds the diff first, so the first fresh load
+   * startup snapshot feeds the diffs first, so the first fresh load
    * reports what changed since the previous session instead of only
-   * recording the baseline.
+   * recording the baseline. The same lists seed the mention inbox, so
+   * the snapshot decides where a fresh inbox starts and the first load
+   * of a session lists the mentions since the previous one as unread.
    */
-  const { raw, isSnapshot, loading, load, error, stale, reload } = useLoader(options, noCache, {
-    onSnapshot: (data) => {
-      notifyReviewChanges(fetchParamsKey(options), data.reviewResults);
-    },
-    onLoaded: (data) => {
-      dispatchBrowse({
-        type: 'dataLoaded',
-        repos: {
-          pending: buildPendingRepoOptions(data),
-          open: buildOpenRepoOptions(data),
-          review: buildReviewRepoOptions(data),
-          size: buildSizeRepoOptions(data),
-          comment: buildCommentRepoOptions(data),
-          merged: buildMergedRepoOptions(data),
-        },
-      });
+  const { raw, isSnapshot, loading, load, error, stale, reload } = useLoader(
+    options,
+    { noCache, mentions: trackMentions },
+    {
+      onSnapshot: (data) => {
+        readStore.observe(data);
+        notifyReviewChanges(baselineKey(data), data.reviewResults);
+        notifyMentionChanges(baselineKey(data), data.mentions, data.fetchedAt);
+      },
+      onLoaded: (data) => {
+        dispatchBrowse({
+          type: 'dataLoaded',
+          repos: {
+            pending: buildPendingRepoOptions(data),
+            reviewed: buildReviewedRepoOptions(data),
+            mentions: buildMentionRepoOptions(data),
+            open: buildOpenRepoOptions(data),
+            review: buildReviewRepoOptions(data),
+            size: buildSizeRepoOptions(data),
+            comment: buildCommentRepoOptions(data),
+            merged: buildMergedRepoOptions(data),
+          },
+        });
 
-      notifyReviewChanges(fetchParamsKey(options), data.reviewResults);
+        readStore.observe(data);
+        notifyReviewChanges(baselineKey(data), data.reviewResults);
+        notifyMentionChanges(baselineKey(data), data.mentions, data.fetchedAt);
+      },
     },
-  });
+  );
 
   /**
    * A background reload starts one interval after the last load finished
@@ -313,13 +441,15 @@ export function App({
 
   /**
    * A snooze that reaches its wake-up time ends, which rebuilds the
-   * queue with the PR back on the awaiting list. When the PR still awaits
-   * the review the snooze parked, a desktop notification says so while
-   * the setting is on. A PR that got reviewed, closed, or re-requested in
-   * the meantime ends its snooze quietly, because the queue already shows
-   * the right thing for it. Snoozes that ended while the TUI was closed
-   * wake up as soon as data is on screen, the startup snapshot included,
-   * so a restart reports them like the new requests it finds.
+   * queue with the PR back on the awaiting list or the mention back in
+   * the inbox. When the PR still awaits the review or the mention the
+   * snooze parked, a desktop notification says so while the setting is
+   * on. A PR that got reviewed, closed, re-requested, marked read, or
+   * mentioned you again in the meantime ends its snooze quietly, because
+   * the queue already shows the right thing for it. Snoozes that ended
+   * while the TUI was closed wake up as soon as data is on screen, the
+   * startup snapshot included, so a restart reports them like the new
+   * requests it finds.
    */
   useSnoozeWakeups(snoozeStore.snoozes, raw !== null, () => {
     if (raw === null) {
@@ -332,9 +462,9 @@ export function App({
       return;
     }
 
-    const woken = wokenPrs(due, raw.reviewResults);
+    const woken = [...wokenPrs(due, raw.reviewResults), ...wokenMentions(due, raw.mentions ?? [], readStore.reads)];
 
-    snoozeStore.remove(due.map((snooze) => snooze.ref));
+    snoozeStore.remove(due);
 
     if (!notifications) {
       return;
@@ -355,6 +485,7 @@ export function App({
     browse.grouped,
     browse.expanded,
     snoozeStore.snoozes,
+    readStore.reads,
     themeState,
   );
 
@@ -458,12 +589,12 @@ export function App({
   };
 
   /**
-   * Commits the snooze dialog. A valid duration parks the highlighted PR
-   * until now plus the duration, closes the dialog, and confirms in the
-   * footer with the wake-up time, or reports in the error slot that the
-   * snooze only lasts the session when the disabled cache stored
-   * nothing. A bad duration keeps the dialog open and shows the error in
-   * place of its hint.
+   * Commits the snooze dialog. A valid duration parks the highlighted
+   * request or mention until now plus the duration, closes the dialog,
+   * and confirms in the footer with the wake-up time, or reports in the
+   * error slot that the snooze only lasts the session when the disabled
+   * cache stored nothing. A bad duration keeps the dialog open and shows
+   * the error in place of its hint.
    */
   const commitSnooze = () => {
     const target = ui.snoozeTarget;
@@ -476,7 +607,14 @@ export function App({
 
     try {
       const until = Date.now() + parseSnoozeDuration(value);
-      const saved = snoozeStore.add({ ref: target.ref, until, requestedAt: target.requestedAt });
+
+      const saved = snoozeStore.add({
+        kind: target.kind,
+        ref: target.ref,
+        until,
+        at: target.at,
+        ...(target.ids === undefined ? {} : { ids: target.ids }),
+      });
 
       dispatchUi({
         type: 'snoozeCommitted',
@@ -538,6 +676,8 @@ export function App({
       autoReload,
       reloadInterval,
       notifications,
+      trackMentions,
+      notifyMentions,
       notifyChannel,
       copyLinks,
       snoozeDuration,
@@ -552,6 +692,8 @@ export function App({
       setNoCache,
       setAutoReload,
       setNotifications,
+      setTrackMentions,
+      setNotifyMentions,
       setNotifyChannel,
       setCopyLinks,
       setThemeState,
@@ -561,6 +703,9 @@ export function App({
       notify: notifier,
       copyRow,
       unsnooze,
+      markRead,
+      markAllRead,
+      markUnread,
       beginEdit: (value) => {
         draftRef.current = value;
         dispatchUi({ type: 'editStarted' });
@@ -618,10 +763,8 @@ export function App({
         width={width}
         modal={ui.modal}
         editing={ui.editing}
-        tab={browse.tab}
-        authoredTab={browse.authoredTab}
+        browse={browse}
         views={views}
-        pendingCursor={browse.rowCursors.pending}
         copyLinks={copyLinks}
         openError={ui.openError}
         successNotice={ui.successNotice === null ? null : ui.successNotice.text}
@@ -636,6 +779,8 @@ export function App({
         autoReload={autoReload}
         reloadInterval={reloadInterval}
         notifications={notifications}
+        trackMentions={trackMentions}
+        notifyMentions={notifyMentions}
         notifyChannel={notifyChannel}
         copyLinks={copyLinks}
         snoozeDuration={snoozeDuration}

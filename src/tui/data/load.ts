@@ -1,10 +1,13 @@
 import { readCacheFile, writeCacheFile } from '../../cache';
 import {
   collectAuthoredPrs,
+  collectMentionedPrs,
   collectReviewPrs,
+  fetchMentionsRaw,
   fetchReviewRaw,
   fetchSizeRaw,
   resolveUser,
+  type MentionEntry,
   type ReviewResult,
   type SizeEntry,
 } from '../../data';
@@ -12,7 +15,7 @@ import { parseReviewTypes, parseSince } from '../../flags';
 import { resolveRepos, searchPrs } from '../../github';
 import type { FetchParams } from '../state/options';
 
-export type { ReviewResult, SizeEntry } from '../../data';
+export type { MentionEntry, ReviewResult, SizeEntry } from '../../data';
 
 export interface RawData {
   user: string;
@@ -21,8 +24,34 @@ export interface RawData {
   reviewResults: ReviewResult[];
   sizes: SizeEntry[];
   authoredTotal: number;
+  /**
+   * Lists the PRs that mention you with the time of the newest mention,
+   * or null when the load did not look for mentions, which is the case
+   * while mention notifications are off. The null keeps a load without
+   * the data apart from a load that found no mention, so turning the
+   * setting on starts from a fresh baseline instead of reporting every
+   * mention already there.
+   */
+  mentions: MentionEntry[] | null;
   searchCapped: boolean;
   fetchedAt: Date;
+}
+
+/**
+ * Options of one load beyond the fetch params.
+ */
+export interface LoadOptions {
+  /**
+   * Skips reading the cache so every PR gets refetched from GitHub.
+   * Fresh results still get written back.
+   */
+  bypassCache?: boolean;
+  /**
+   * Runs the mentions search and fetch on top of the review and size
+   * fetches, so the load can report new mentions. The mention
+   * notifications setting drives it.
+   */
+  mentions?: boolean;
 }
 
 /**
@@ -47,12 +76,33 @@ interface Snapshot {
 
 /**
  * Rebuilds the Date fields after a JSON round trip, which turns them into
- * ISO strings.
+ * ISO strings. Snapshots written before loads looked for mentions carry
+ * no mentions field at all, which reads like a load that did not look,
+ * and entries written before the window cut kept the earlier ids carry
+ * none, which reads like a cut that dropped nothing, so the casts cover
+ * stored data that predates the fields.
  */
 function reviveRawData(data: RawData): RawData {
+  const mentions = (data as { mentions?: MentionEntry[] | null }).mentions ?? null;
+
   return {
     ...data,
     fetchedAt: new Date(data.fetchedAt),
+    mentions:
+      mentions === null
+        ? null
+        : mentions.map((entry) => {
+            return {
+              pr: { ...entry.pr, createdAt: new Date(entry.pr.createdAt), updatedAt: new Date(entry.pr.updatedAt) },
+              mentions:
+                entry.mentions === null
+                  ? null
+                  : entry.mentions.map((mention) => {
+                      return { id: mention.id, at: new Date(mention.at) };
+                    }),
+              earlier: (entry as { earlier?: string[] }).earlier ?? [],
+            };
+          }),
     reviewResults: data.reviewResults.map((result) => {
       const pr = { ...result.pr, createdAt: new Date(result.pr.createdAt) };
 
@@ -85,16 +135,44 @@ function reviveRawData(data: RawData): RawData {
 }
 
 /**
+ * Cuts the mention entries of a snapshot down to a narrower window the
+ * way a fresh load would fill it. The mentions of an entry are cut by
+ * the time they became visible, the ids of the cut ones join the earlier
+ * ids of the entry, and an entry left without any mention drops out. An
+ * entry the load could not read keeps its null mentions while the PR's
+ * update time falls in the window, because that is the rule the search
+ * applies, and a fresh load would carry the PR the same way.
+ */
+function cutMentions(entries: MentionEntry[], cutoff: Date): MentionEntry[] {
+  return entries.flatMap((entry) => {
+    if (entry.mentions === null) {
+      return entry.pr.updatedAt >= cutoff ? [entry] : [];
+    }
+
+    const mentions = entry.mentions.filter((mention) => mention.at >= cutoff);
+
+    if (mentions.length === 0) {
+      return [];
+    }
+
+    const cut = entry.mentions.filter((mention) => mention.at < cutoff).map((mention) => mention.id);
+
+    return [{ ...entry, mentions, earlier: [...entry.earlier, ...cut] }];
+  });
+}
+
+/**
  * Returns the snapshot of the last successful load when the requested
  * options can be served from it, so the TUI can render instantly on
  * startup while the real load runs in the background. The repos, user,
  * drafts, and review-types options must match exactly, because the
  * review-types filter is baked into the classified results the snapshot
- * stores. The since window may be narrower
- * than the stored one, because a narrower window is a subset that gets cut
- * from the snapshot by PR creation date. This also trims relative values
- * like 2w to the current day when the snapshot is from an earlier day.
- * The background refresh replaces the snapshot either way.
+ * stores. The since window may be narrower than the stored one, because
+ * a narrower window is a subset that gets cut from the snapshot, by PR
+ * creation date for the review results and the sizes and by mention time
+ * for the mentions. This also trims relative values like 2w to the
+ * current day when the snapshot is from an earlier day. The background
+ * refresh replaces the snapshot either way.
  */
 export function loadSnapshot(options: FetchParams): RawData | null {
   const stored = readCacheFile('snapshot') as Snapshot | null;
@@ -161,11 +239,14 @@ export function loadSnapshot(options: FetchParams): RawData | null {
   const reviewResults = data.reviewResults.filter((result) => result.pr.createdAt >= cutoff);
   const sizes = data.sizes.filter((entry) => entry.pr.createdAt >= cutoff);
 
+  const mentions = data.mentions === null ? null : cutMentions(data.mentions, cutoff);
+
   return {
     ...data,
     sinceIso,
     reviewResults,
     sizes,
+    mentions,
     /**
      * The creation dates of inaccessible authored PRs are unknown, so the
      * inaccessible count carries over unchanged.
@@ -194,15 +275,16 @@ export function saveSnapshot(options: FetchParams, data: RawData): void {
  * Runs the full fetch pipeline, resolving the user, searching PRs, and
  * fetching timelines and sizes in batches. Closed PRs and the login come
  * from the on-disk cache unless bypassCache is set, which refetches
- * everything and rewrites the cached entries. A successful load also
- * becomes the next startup snapshot. Reports progress through onPhase so
- * the UI can show what is happening. Throws CliError on expected failures
- * like a broken gh login.
+ * everything and rewrites the cached entries. With the mentions option
+ * the pipeline also searches the PRs that mention the user and fetches
+ * their newest mention. A successful load also becomes the next startup
+ * snapshot. Reports progress through onPhase so the UI can show what is
+ * happening. Throws CliError on expected failures like a broken gh login.
  */
 export async function loadData(
   options: FetchParams,
   onPhase: (phase: LoadPhase) => void,
-  { bypassCache = false }: { bypassCache?: boolean } = {},
+  { bypassCache = false, mentions = false }: LoadOptions = {},
 ): Promise<RawData> {
   const sinceIso = parseSince(options.since).toISOString().slice(0, 10);
 
@@ -221,34 +303,46 @@ export async function loadData(
 
   const includeDrafts = options.includeDrafts;
 
-  const [requested, reviewed, authored] = await Promise.all([
+  /**
+   * The mentions search only runs when the load looks for mentions, so
+   * a session without mention notifications pays nothing for them.
+   */
+  const [requested, reviewed, authored, mentioned] = await Promise.all([
     searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'requested' }),
     searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'reviewed' }),
     searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'authored' }),
+    mentions ? searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'mentioned' }) : null,
   ]);
 
-  const reviewPrs = collectReviewPrs(requested, reviewed);
-  const authoredPrs = collectAuthoredPrs(authored);
+  const reviewPrs = collectReviewPrs(requested.items, reviewed.items);
+  const authoredPrs = collectAuthoredPrs(authored.items);
+  const mentionedPrs = mentioned === null ? null : collectMentionedPrs(mentioned.items);
 
   /**
-   * The timeline and size fetches are independent, so they run
-   * concurrently and the load takes as long as the slower one. The shared
-   * batch gate in the data module keeps the combined request rate within
-   * the same bound a single fetch uses. Each fetch reports its own
+   * Each search judges its own cap, because the mentioned search unites
+   * two queries and their combined count says nothing about either one.
+   */
+  const searchCapped = [requested, reviewed, authored, mentioned].some((result) => result?.capped === true);
+
+  /**
+   * The timeline, size, and mention fetches are independent, so they run
+   * concurrently and the load takes as long as the slowest one. The
+   * shared batch gate in the data module keeps the combined request rate
+   * within the same bound a single fetch uses. Each fetch reports its own
    * counter, and the sum drives one combined progress bar.
    */
-  const progress = { review: 0, sizes: 0 };
-  const total = reviewPrs.length + authoredPrs.length;
+  const progress = { review: 0, sizes: 0, mentions: 0 };
+  const total = reviewPrs.length + authoredPrs.length + (mentionedPrs?.length ?? 0);
 
   const report = () => {
-    onPhase({ phase: 'details', done: progress.review + progress.sizes, total });
+    onPhase({ phase: 'details', done: progress.review + progress.sizes + progress.mentions, total });
   };
 
   report();
 
   const countedStates = options.reviewTypes === '' ? undefined : parseReviewTypes(options.reviewTypes);
 
-  const [review, size] = await Promise.all([
+  const [review, size, mention] = await Promise.all([
     reviewPrs.length === 0
       ? { results: [], cacheHits: 0 }
       : fetchReviewRaw(
@@ -270,6 +364,20 @@ export async function loadData(
           },
           { bypassCache },
         ),
+    mentionedPrs === null || mentionedPrs.length === 0
+      ? { mentions: [], cacheHits: 0 }
+      : fetchMentionsRaw(
+          mentionedPrs,
+          user,
+          (done) => {
+            progress.mentions = done;
+            report();
+          },
+          {
+            bypassCache,
+            since: new Date(sinceIso),
+          },
+        ),
   ]);
 
   const data: RawData = {
@@ -279,7 +387,8 @@ export async function loadData(
     reviewResults: review.results,
     sizes: size.sizes,
     authoredTotal: authoredPrs.length,
-    searchCapped: requested.length >= 1000 || reviewed.length >= 1000 || authored.length >= 1000,
+    mentions: mentionedPrs === null ? null : mention.mentions,
+    searchCapped,
     fetchedAt: new Date(),
   };
 

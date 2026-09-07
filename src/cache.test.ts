@@ -3,10 +3,19 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clearCache, configureCache, PrCache, prKey, readCachedLogin, writeCachedLogin } from './cache';
-import { collectAuthoredPrs, collectReviewPrs, fetchReviewRaw, fetchSizeRaw, resolveUser } from './data';
+import {
+  collectAuthoredPrs,
+  collectMentionedPrs,
+  collectReviewPrs,
+  fetchMentionsRaw,
+  fetchReviewRaw,
+  fetchSizeRaw,
+  resolveUser,
+} from './data';
 import { parseCliArgs } from './flags';
 import { authFingerprint, configureAuth, searchPrs, type PrDetails } from './github';
 import { loadSnapshot, saveSnapshot, type RawData } from './tui/data/load';
+import { loadMentionBaseline, saveMentionBaseline } from './tui/data/notifications';
 import { applySavedOptions, readSavedOptions, writeSavedOptions, type OptionsState } from './tui/state/options';
 
 let dir: string;
@@ -73,6 +82,33 @@ test('clearCache deletes the store files only while enabled', () => {
   expect(existsSync(join(dir, 'details.json'))).toBe(false);
   expect(existsSync(join(dir, 'sizes.json'))).toBe(false);
   expect(new PrCache('details').has('acme/api#1')).toBe(false);
+});
+
+test('the mention baseline persists with its key, clears on null, and goes with the cache', () => {
+  const baseline = {
+    seen: new Set(['web13-c3', 'api7-r3-c3']),
+    observedAt: Date.parse('2026-08-24T18:00:00Z'),
+    unread: new Map([['acme/api#7', Date.parse('2026-08-24T12:00:00Z')]]),
+  };
+
+  expect(saveMentionBaseline('key', baseline)).toBe(true);
+  expect(loadMentionBaseline('key')).toEqual(baseline);
+
+  // a baseline built for other options never seeds a session
+  expect(loadMentionBaseline('other')).toBeNull();
+
+  expect(saveMentionBaseline('key', null)).toBe(true);
+  expect(loadMentionBaseline('key')).toBeNull();
+
+  saveMentionBaseline('key', baseline);
+  clearCache();
+
+  expect(loadMentionBaseline('key')).toBeNull();
+
+  configureCache(false);
+
+  expect(saveMentionBaseline('key', baseline)).toBe(false);
+  expect(loadMentionBaseline('key')).toBeNull();
 });
 
 const SAVED_OPTIONS: OptionsState = {
@@ -196,7 +232,7 @@ async function loadReviewPrs() {
     searchPrs({ ...searchArgs, mode: 'reviewed' }),
   ]);
 
-  return collectReviewPrs(requested, reviewed);
+  return collectReviewPrs(requested.items, reviewed.items);
 }
 
 test('serves closed review PRs from the cache and repairs entries on bypass', async () => {
@@ -372,6 +408,50 @@ const SNAPSHOT_DATA: RawData = {
     },
   ],
   authoredTotal: 2,
+  mentions: [
+    {
+      pr: {
+        repo: 'acme/web',
+        number: 13,
+        title: 'e',
+        url: 'https://example.com/13',
+        state: 'open',
+        createdAt: new Date('2026-07-20T10:00:00Z'),
+        updatedAt: new Date('2026-08-25T14:00:00Z'),
+      },
+      mentions: [
+        { id: 'web13-c1', at: new Date('2026-06-20T10:00:00Z') },
+        { id: 'web13-c3', at: new Date('2026-08-25T14:00:00Z') },
+      ],
+      earlier: ['web13-c0'],
+    },
+    {
+      pr: {
+        repo: 'acme/web',
+        number: 14,
+        title: 'f',
+        url: 'https://example.com/14',
+        state: 'open',
+        createdAt: new Date('2026-06-10T10:00:00Z'),
+        updatedAt: new Date('2026-06-12T10:00:00Z'),
+      },
+      mentions: [{ id: 'web14-c1', at: new Date('2026-06-11T10:00:00Z') }],
+      earlier: [],
+    },
+    {
+      pr: {
+        repo: 'acme/web',
+        number: 15,
+        title: 'g',
+        url: 'https://example.com/15',
+        state: 'open',
+        createdAt: new Date('2026-06-10T10:00:00Z'),
+        updatedAt: new Date('2026-08-20T10:00:00Z'),
+      },
+      mentions: null,
+      earlier: [],
+    },
+  ],
   searchCapped: false,
   fetchedAt: new Date('2026-08-26T10:00:00Z'),
 };
@@ -444,13 +524,254 @@ test('snapshot serves a narrower since window by creation date and rejects a wid
   expect(narrowed?.sizes).toEqual([]);
   expect(narrowed?.authoredTotal).toBe(1);
 
+  /**
+   * Mentions are cut by their own time. The July window drops the June
+   * mention on web#13 and keeps the August one, with the id of the cut
+   * mention joining the earlier ids the entry already had, drops web#14
+   * whose only mention is from June, and keeps the unreadable web#15
+   * because its update time falls in the window, which is the rule the
+   * search applies to a PR the load cannot read. A window that starts
+   * after every mention and update leaves nothing.
+   */
+  const [web13, , web15] = SNAPSHOT_DATA.mentions ?? [];
+
+  expect(narrowed?.mentions).toEqual([
+    {
+      pr: web13.pr,
+      mentions: [{ id: 'web13-c3', at: new Date('2026-08-25T14:00:00Z') }],
+      earlier: ['web13-c0', 'web13-c1'],
+    },
+    web15,
+  ]);
+
+  expect(loadSnapshot({ ...SNAPSHOT_OPTIONS, since: '2026-08-26' })?.mentions).toEqual([]);
+
   expect(loadSnapshot({ ...SNAPSHOT_OPTIONS, since: '2026-05-01' })).toBeNull();
+});
+
+test('a snapshot written before loads looked for mentions reads as a load without them', () => {
+  const { mentions, ...legacy } = SNAPSHOT_DATA;
+
+  expect(mentions).not.toBeNull();
+
+  saveSnapshot(SNAPSHOT_OPTIONS, legacy as RawData);
+
+  expect(loadSnapshot(SNAPSHOT_OPTIONS)).toEqual({ ...legacy, mentions: null });
+});
+
+test('serves mentioned PRs from the mention cache until the search reports a newer update', async () => {
+  useFakeGh();
+
+  const mentioned = await searchPrs({ ...searchArgs, mode: 'mentioned' });
+  const prs = collectMentionedPrs(mentioned.items);
+  const first = await fetchMentionsRaw(prs, 'testuser');
+
+  /**
+   * The canned data mentions testuser in the third comment on web#13 and
+   * in the third inline comment of the third review on api#7, and the
+   * fake serves two entries per page, so both mentions only turn up once
+   * the fetch follows every list past its first page. The mention on
+   * web#3 names a longer login and never counts, which also proves that
+   * a PR without a mention is cached and does not refetch.
+   */
+  expect(first.cacheHits).toBe(0);
+
+  expect(first.mentions.map((entry) => [`${entry.pr.repo}#${entry.pr.number}`, entry.mentions])).toEqual([
+    ['acme/web#13', [{ id: 'web13-c3', at: new Date('2026-08-25T14:00:00Z') }]],
+    ['acme/api#7', [{ id: 'api7-r3-c3', at: new Date('2026-08-24T16:00:00Z') }]],
+  ]);
+
+  const second = await fetchMentionsRaw(prs, 'testuser');
+
+  expect(second.cacheHits).toBe(3);
+  expect(second.mentions).toEqual(first.mentions);
+
+  // a newer update time on one PR sends only that PR back to GitHub
+  const bumped = prs.map((pr) => (pr.number === 13 ? { ...pr, updatedAt: new Date('2026-08-26T09:00:00Z') } : pr));
+  const third = await fetchMentionsRaw(bumped, 'testuser');
+
+  expect(third.cacheHits).toBe(2);
+  expect(third.mentions.map((entry) => entry.mentions)).toEqual(first.mentions.map((entry) => entry.mentions));
+
+  const bypassed = await fetchMentionsRaw(prs, 'testuser', undefined, { bypassCache: true });
+
+  expect(bypassed.cacheHits).toBe(0);
+  expect(bypassed.mentions).toEqual(first.mentions);
+
+  /**
+   * A PR the fake has no texts for reads like one the token cannot read.
+   * It stays in the result with null mentions, so the notification diff
+   * knows the load did not observe it, and stays out of the cache, so
+   * the next load retries it.
+   */
+  const unreadable = { ...prs[0], number: 99, updatedAt: new Date('2026-08-26T09:00:00Z') };
+  const withUnreadable = await fetchMentionsRaw([...prs, unreadable], 'testuser');
+
+  expect(withUnreadable.cacheHits).toBe(3);
+  expect(withUnreadable.mentions).toEqual([...first.mentions, { pr: unreadable, mentions: null, earlier: [] }]);
+
+  const retried = await fetchMentionsRaw([...prs, unreadable], 'testuser');
+
+  expect(retried.cacheHits).toBe(3);
+});
+
+test('the since option cuts mentions by their time after the cache is read', async () => {
+  useFakeGh();
+
+  const mentioned = await searchPrs({ ...searchArgs, mode: 'mentioned' });
+  const prs = collectMentionedPrs(mentioned.items);
+  const all = await fetchMentionsRaw(prs, 'testuser');
+
+  expect(all.mentions.map((entry) => [entry.pr.number, entry.earlier])).toEqual([
+    [13, []],
+    [7, []],
+  ]);
+
+  /**
+   * The mention on api#7 predates the window and drops out with its PR,
+   * while the one on web#13 stays. The cut runs on the cached texts, so
+   * the narrower window hits the cache for every PR instead of
+   * refetching, and a PR the fetch could not read stays in the result
+   * regardless, because nothing is known about its mentions.
+   */
+  const unreadable = { ...prs[0], number: 99, updatedAt: new Date('2026-08-26T09:00:00Z') };
+  const since = new Date('2026-08-25T00:00:00Z');
+  const cut = await fetchMentionsRaw([...prs, unreadable], 'testuser', undefined, { since });
+
+  expect(cut.cacheHits).toBe(3);
+
+  expect(cut.mentions).toEqual([
+    { pr: all.mentions[0].pr, mentions: [{ id: 'web13-c3', at: new Date('2026-08-25T14:00:00Z') }], earlier: [] },
+    { pr: unreadable, mentions: null, earlier: [] },
+  ]);
+
+  // a mention at the exact start of the window counts as inside it
+  const edge = await fetchMentionsRaw(prs, 'testuser', undefined, { since: new Date('2026-08-24T16:00:00Z') });
+
+  expect(edge.mentions.map((entry) => entry.pr.number)).toEqual([13, 7]);
+
+  /**
+   * A PR that keeps a mention in the window carries the ids of the ones
+   * the window cut as its earlier ids, so a mark made on it covers them.
+   * No canned PR mentions testuser twice, so the cached texts of web#13
+   * gain an older mention by hand, which the cache serves because the
+   * update time still matches the search.
+   */
+  const store = new PrCache<{ user: string; updatedAt: string; mentions: { id: string; at: string }[] }>('mentions');
+  const web13 = prKey('acme/web', 13);
+  const cached = store.get(web13);
+
+  store.set(web13, {
+    user: 'testuser',
+    updatedAt: cached?.updatedAt ?? '',
+    mentions: [{ id: 'web13-c0', at: '2026-08-01T10:00:00Z' }, ...(cached?.mentions ?? [])],
+  });
+
+  store.save();
+
+  const between = await fetchMentionsRaw(prs, 'testuser', undefined, { since });
+
+  expect(between.cacheHits).toBe(3);
+
+  expect(between.mentions).toEqual([
+    {
+      pr: all.mentions[0].pr,
+      mentions: [{ id: 'web13-c3', at: new Date('2026-08-25T14:00:00Z') }],
+      earlier: ['web13-c0'],
+    },
+  ]);
+});
+
+test('a search counts as capped per query and not on the united mention results', async () => {
+  /**
+   * A throwaway gh that answers each search with a run of distinct PRs,
+   * 600 each for the two mention queries, which unite to 1200 without
+   * either query being cut, the full limit for the authored one, and a
+   * handful for the requested one.
+   */
+  const counts = {
+    '--mentions': [1, 600],
+    '--involves': [601, 1200],
+    '--author': [1, 1000],
+    '--review-requested': [1, 3],
+  };
+
+  writeFileSync(
+    join(dir, 'gh.mjs'),
+    `const args = process.argv.slice(2);
+const counts = ${JSON.stringify(counts)};
+const mode = args.find((arg) => arg in counts);
+const [from, to] = counts[mode];
+const items = [];
+for (let number = from; number <= to; number++) {
+  items.push({
+    number,
+    repository: { nameWithOwner: 'acme/web' },
+    title: 'pr ' + number,
+    url: 'https://github.com/acme/web/pull/' + number,
+    createdAt: '2026-07-01T10:00:00Z',
+    updatedAt: '2026-07-02T10:00:00Z',
+    isDraft: false,
+    state: 'open',
+  });
+}
+process.stdout.write(JSON.stringify(items));
+`,
+  );
+
+  writeFileSync(join(dir, 'gh'), '#!/bin/sh\nexec node "$(dirname "$0")/gh.mjs" "$@"\n', { mode: 0o755 });
+  configureAuth(undefined, dir);
+
+  const mentioned = await searchPrs({ ...searchArgs, mode: 'mentioned' });
+
+  expect(mentioned.items).toHaveLength(1200);
+  expect(mentioned.capped).toBe(false);
+
+  const authored = await searchPrs({ ...searchArgs, mode: 'authored' });
+
+  expect(authored.items).toHaveLength(1000);
+  expect(authored.capped).toBe(true);
+
+  const requested = await searchPrs({ ...searchArgs, mode: 'requested' });
+
+  expect(requested.items).toHaveLength(3);
+  expect(requested.capped).toBe(false);
+});
+
+test('the mention cache only serves the login it was written for', async () => {
+  useFakeGh();
+
+  const mentioned = await searchPrs({ ...searchArgs, mode: 'mentioned' });
+  const prs = collectMentionedPrs(mentioned.items);
+
+  /**
+   * Nothing on the canned PRs mentions alice, and her own comment on
+   * web#13 does not count for her, so every PR caches as one without a
+   * mention for her. The same PRs unchanged must still refetch for
+   * testuser and find the mentions, instead of serving alice's empty
+   * results. Logins compare case-insensitively, so a differently cased
+   * spelling of the same login hits the cache.
+   */
+  const alice = await fetchMentionsRaw(prs, 'alice');
+
+  expect(alice.mentions).toEqual([]);
+
+  const testuser = await fetchMentionsRaw(prs, 'testuser');
+
+  expect(testuser.cacheHits).toBe(0);
+  expect(testuser.mentions.map((entry) => entry.pr.number)).toEqual([13, 7]);
+
+  const recased = await fetchMentionsRaw(prs, 'TestUser');
+
+  expect(recased.cacheHits).toBe(3);
+  expect(recased.mentions).toEqual(testuser.mentions);
 });
 
 test('serves closed authored PRs from the size cache', async () => {
   useFakeGh();
 
-  const prs = collectAuthoredPrs(await searchPrs({ ...searchArgs, mode: 'authored' }));
+  const authored = await searchPrs({ ...searchArgs, mode: 'authored' });
+  const prs = collectAuthoredPrs(authored.items);
   const first = await fetchSizeRaw(prs);
 
   expect(first.cacheHits).toBe(0);
