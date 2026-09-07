@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -49,6 +49,41 @@ export function cacheDir(): string {
   }
 
   return join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'pr-stats');
+}
+
+/**
+ * Sums the sizes in bytes of the files in the cache directory, which
+ * the settings dialog shows next to the clear-cache action. The cache
+ * directory is flat, so the sum only covers its direct files, including
+ * the saved options and settings that a clear leaves behind. A missing
+ * or unreadable directory counts as zero. The size reflects the disk
+ * regardless of whether the cache is enabled, because it describes what
+ * is there, not what this process wrote.
+ */
+export function cacheSize(): number {
+  const dir = cacheDir();
+
+  let total = 0;
+
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      try {
+        total += statSync(join(dir, entry.name)).size;
+      } catch {
+        // a file removed between the listing and the stat adds nothing
+      }
+    }
+  } catch {
+    // a missing directory holds nothing
+  }
+
+  return total;
 }
 
 /**

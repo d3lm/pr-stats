@@ -1,7 +1,8 @@
 import { useRenderer } from '@opentui/react';
 import { homedir } from 'node:os';
-import { cacheDir } from '../../cache';
+import { cacheDir, cacheSize } from '../../cache';
 import { settingsFile, type NotifyChannel } from '../../settings';
+import { formatBytes } from '../../utils';
 import { exportFile } from '../data/export';
 import { CACHE_MESSAGES, SETTINGS, type CacheAction, type SettingSpec } from '../state/settings';
 import { theme, type ThemeName } from '../theme';
@@ -153,9 +154,12 @@ export function SettingsModal({
  * editing, like the interval. The edit-colors row previews the current accent
  * family as a swatch strip. The clear-cache and reset-settings rows show
  * the path they delete with the home directory abbreviated, and flip to
- * a confirm prompt after the first enter. The export row shows the path it
- * writes the same way, without a confirm because an export only overwrites
- * its own file.
+ * a confirm prompt after the first enter. The clear-cache row also shows
+ * the size of the cache directory after the path, sized on every render
+ * so a clear or a background reload shows up right away. The directory
+ * holds a handful of files, so the listing costs nothing noticeable. The
+ * export row shows the path it writes the same way, without a confirm
+ * because an export only overwrites its own file.
  */
 function SettingValue({
   setting,
@@ -199,7 +203,14 @@ function SettingValue({
       return <ToggleValue value={noCache ? 'yes' : 'no'} isSelected={isSelected} />;
     }
     case 'clearCache': {
-      return <PathValue path={cacheDir()} confirming={cacheAction === 'confirm'} isSelected={isSelected} />;
+      return (
+        <PathValue
+          path={cacheDir()}
+          detail={formatBytes(cacheSize())}
+          confirming={cacheAction === 'confirm'}
+          isSelected={isSelected}
+        />
+      );
     }
     case 'autoReload': {
       return <ToggleValue value={autoReload ? 'yes' : 'no'} isSelected={isSelected} />;
@@ -330,10 +341,21 @@ function IntervalValue({ value, active, isSelected }: { value: string; active: b
 
 /**
  * Value slot of an action row that targets a file. It shows the path with
- * the home directory abbreviated, and the destructive rows flip it to a
- * confirm prompt after the first enter.
+ * the home directory abbreviated, followed by a dimmed detail like the
+ * size of the target when the row passes one, and the destructive rows
+ * flip it to a confirm prompt after the first enter.
  */
-function PathValue({ path, confirming, isSelected }: { path: string; confirming: boolean; isSelected: boolean }) {
+function PathValue({
+  path,
+  detail,
+  confirming,
+  isSelected,
+}: {
+  path: string;
+  detail?: string;
+  confirming: boolean;
+  isSelected: boolean;
+}) {
   if (confirming) {
     return (
       <text wrapMode="none">
@@ -343,8 +365,9 @@ function PathValue({ path, confirming, isSelected }: { path: string; confirming:
   }
 
   return (
-    <text wrapMode="none" fg={isSelected ? theme.text : theme.muted}>
-      {path.replace(homedir(), '~')}
+    <text wrapMode="none">
+      <span fg={isSelected ? theme.text : theme.muted}>{path.replace(homedir(), '~')}</span>
+      {detail === undefined ? null : <span fg={isSelected ? theme.muted : theme.dim}> · {detail}</span>}
     </text>
   );
 }

@@ -99,7 +99,7 @@ The report holds a `review`, `authored`, and `comments` object with one entry pe
 
 Closed and merged PRs are cached on disk per PR, because their timelines and sizes no longer change. Searches and open PRs are fetched fresh on each run. The TUI also snapshots the last successful load, so a later start with the same options renders instantly while the real load refreshes in the background.
 
-The cache lives in `~/Library/Caches/pr-stats` on macOS and in `$XDG_CACHE_HOME/pr-stats` or `~/.cache/pr-stats` elsewhere. The `PR_STATS_CACHE_DIR` environment variable overrides the location. `--no-cache` skips every cache read for one run, and the settings dialog can disable the cache permanently.
+The cache lives in `~/Library/Caches/pr-stats` on macOS and in `$XDG_CACHE_HOME/pr-stats` or `~/.cache/pr-stats` elsewhere. The `PR_STATS_CACHE_DIR` environment variable overrides the location. `--no-cache` skips every cache read for one run, and the settings dialog can disable the cache permanently. The Clear cache row in the settings dialog shows the path next to the size of the directory on disk, and deletes the cached PR data while keeping the saved options and settings.
 
 The options modal saves the current options to the cache directory with the `s` key. Later runs start from the saved options wherever no flag was given, and flags always take precedence.
 

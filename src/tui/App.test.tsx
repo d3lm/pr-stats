@@ -1,5 +1,7 @@
 import { KeyCodes } from '@opentui/core/testing';
 import { expect, test } from 'bun:test';
+import { cacheSize } from '../cache';
+import { formatBytes } from '../utils';
 import { App } from './App';
 import { destroyApp, initial, lineWith, renderApp, scrollToText, waitForText } from './testing/harness';
 import { applyThemeState, defaultThemeState } from './theme';
@@ -358,6 +360,9 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(settingsFrame).toContain('Settings');
     expect(settingsFrame).toContain('Clear cache');
+
+    // the clear-cache row shows the size of the cache directory after its path
+    expect(settingsFrame).toContain(`pr-stats · ${formatBytes(cacheSize())}`);
     expect(settingsFrame).toContain('refetch everything on every load');
     expect(settingsFrame).toContain('‹ no ›');
 

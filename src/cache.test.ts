@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { clearCache, configureCache, PrCache, prKey, readCachedLogin, writeCachedLogin } from './cache';
+import { cacheSize, clearCache, configureCache, PrCache, prKey, readCachedLogin, writeCachedLogin } from './cache';
 import {
   collectAuthoredPrs,
   collectMentionedPrs,
@@ -17,6 +17,7 @@ import { authFingerprint, configureAuth, searchPrs, type PrDetails } from './git
 import { loadSnapshot, saveSnapshot, type RawData } from './tui/data/load';
 import { loadMentionBaseline, saveMentionBaseline } from './tui/data/notifications';
 import { applySavedOptions, readSavedOptions, writeSavedOptions, type OptionsState } from './tui/state/options';
+import { formatBytes } from './utils';
 
 let dir: string;
 
@@ -82,6 +83,47 @@ test('clearCache deletes the store files only while enabled', () => {
   expect(existsSync(join(dir, 'details.json'))).toBe(false);
   expect(existsSync(join(dir, 'sizes.json'))).toBe(false);
   expect(new PrCache('details').has('acme/api#1')).toBe(false);
+});
+
+test('cacheSize sums the files in the cache directory and survives a missing one', () => {
+  // the temp directory starts empty
+  expect(cacheSize()).toBe(0);
+
+  writeFileSync(join(dir, 'details.json'), 'x'.repeat(1500));
+  writeFileSync(join(dir, 'settings.json'), 'y'.repeat(48));
+  mkdirSync(join(dir, 'nested'));
+  writeFileSync(join(dir, 'nested', 'ignored.json'), 'z'.repeat(4096));
+
+  // only the direct files count, and the settings file counts like the data
+  expect(cacheSize()).toBe(1548);
+
+  // a clear takes the data file out of the sum and leaves the settings in
+  clearCache();
+
+  expect(cacheSize()).toBe(48);
+
+  // the size reads the disk whether or not the cache is enabled
+  configureCache(false);
+
+  expect(cacheSize()).toBe(48);
+
+  rmSync(dir, { recursive: true, force: true });
+
+  expect(cacheSize()).toBe(0);
+});
+
+test('formatBytes picks a binary unit and keeps the text short', () => {
+  expect(formatBytes(0)).toBe('0 B');
+  expect(formatBytes(512)).toBe('512 B');
+  expect(formatBytes(1023)).toBe('1023 B');
+  expect(formatBytes(1024)).toBe('1.0 KiB');
+  expect(formatBytes(1536)).toBe('1.5 KiB');
+  expect(formatBytes(10 * 1024)).toBe('10 KiB');
+  expect(formatBytes(700 * 1024 + 700)).toBe('701 KiB');
+  expect(formatBytes(1024 * 1024 - 1)).toBe('1.0 MiB');
+  expect(formatBytes(3.4 * 1024 * 1024)).toBe('3.4 MiB');
+  expect(formatBytes(12.6 * 1024 * 1024)).toBe('13 MiB');
+  expect(formatBytes(2 * 1024 ** 3)).toBe('2.0 GiB');
 });
 
 test('the mention baseline persists with its key, clears on null, and goes with the cache', () => {
