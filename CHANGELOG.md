@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.22](https://github.com/d3lm/pr-stats/releases/tag/v0.2.22) - 2026-09-07
+
+### Features
+
+- feat: track @-mentions in a Mentions inbox on the Awaiting you tab ([2051372](https://github.com/d3lm/pr-stats/commit/20513721fff732de445106147a63ce4ef08bb1b6))
+
 ## [0.2.21](https://github.com/d3lm/pr-stats/releases/tag/v0.2.21) - 2026-09-04
 
 ### Bug Fixes
