@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.24](https://github.com/d3lm/pr-stats/releases/tag/v0.2.24) - 2026-09-07
+
+### Features
+
+- feat: show the cache directory size on the clear cache row ([97c4634](https://github.com/d3lm/pr-stats/commit/97c4634a651121c093bd27b2e2b502e14cf3adb4))
+
 ## [0.2.23](https://github.com/d3lm/pr-stats/releases/tag/v0.2.23) - 2026-09-07
 
 ### Features
