@@ -431,7 +431,11 @@ test('resolveTeams caches the lookup per login and credentials, and a hard reloa
    */
   expect(readCachedTeams(auth, 'testuser')).toBeNull();
   expect(await resolveTeams('testuser')).toEqual(new Set(['acme/backend', 'acme/oncall', 'globex/platform']));
-  expect(readCachedTeams(auth, 'testuser')).toEqual({ teams: ['acme/backend', 'acme/oncall', 'globex/platform'], fresh: true });
+
+  expect(readCachedTeams(auth, 'testuser')).toEqual({
+    teams: ['acme/backend', 'acme/oncall', 'globex/platform'],
+    fresh: true,
+  });
 
   /**
    * A poisoned cached entry proves the next resolve reads the cache
@@ -441,7 +445,11 @@ test('resolveTeams caches the lookup per login and credentials, and a hard reloa
 
   expect(await resolveTeams('testuser')).toEqual(new Set(['acme/cached']));
   expect(await resolveTeams('testuser', true)).toEqual(new Set(['acme/backend', 'acme/oncall', 'globex/platform']));
-  expect(readCachedTeams(auth, 'testuser')).toEqual({ teams: ['acme/backend', 'acme/oncall', 'globex/platform'], fresh: true });
+
+  expect(readCachedTeams(auth, 'testuser')).toEqual({
+    teams: ['acme/backend', 'acme/oncall', 'globex/platform'],
+    fresh: true,
+  });
 
   // an entry of another login or other credentials never serves
   expect(readCachedTeams(auth, 'someone')).toBeNull();
@@ -509,10 +517,6 @@ test('resolveTeams keeps the expired teams when the token path answers with an i
         value: { login: 'testuser', auth, teams: ['acme/stale'], cachedAt: '2020-01-01T00:00:00Z' },
       }),
     );
-
-    const page = <T>(nodes: (T | null)[]) => {
-      return { pageInfo: { hasNextPage: false, endCursor: null }, nodes };
-    };
 
     const acme = { login: 'acme', teams: page([{ combinedSlug: 'acme/backend' }]) };
     const errors = [{ message: 'Resource not accessible by integration' }];
@@ -1065,3 +1069,7 @@ test('serves closed authored PRs from the size cache', async () => {
   expect(bypassed.cacheHits).toBe(0);
   expect(bypassed.sizes).toEqual(first.sizes);
 });
+
+function page<T>(nodes: (T | null)[]) {
+  return { pageInfo: { hasNextPage: false, endCursor: null }, nodes };
+}
