@@ -12,12 +12,28 @@ body = """
 {% for group, commits in commits | group_by(attribute="group") %}
   ### {{ group | striptags | trim | upper_first }}
   {% for commit in commits %}
+    {% set_global credits = [] %}\
+    {%- for footer in commit.footers | filter(attribute="token", value="Credit") %}\
+      {%- for name in footer.value | split(pat=",") %}\
+        {%- set login = name | trim | trim_start_matches(pat="@") %}\
+        {%- if login and login not in credits %}\
+          {%- set_global credits = credits | concat(with=login) %}\
+        {%- endif %}\
+      {%- endfor %}\
+    {%- endfor %}\
     - {% if commit.breaking %}**Breaking!** {% endif %}\
       {{ commit.raw_message | split(pat="\n") | first | trim }} \
       ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/d3lm/pr-stats/commit/{{ commit.id }}))\
+      {% for login in credits %}{% if loop.first %} by{% else %} and{% endif %} [@{{ login }}](https://github.com/{{ login }}){% endfor %}\
   {% endfor %}
 {% endfor %}\n
 """
+# The credit behind an entry comes from a Credit trailer in the commit body
+# and from nowhere else. The trailer takes GitHub logins, with or without the
+# at sign, separated by commas, as in "Credit: @yuanminglee, @someone".
+# Co-authored-by trailers and the commit author are ignored on purpose, so
+# coding tools that sign commits never end up in the changelog and every
+# credit is one the release deliberately hands out.
 trim = true
 
 [git]
