@@ -17,6 +17,34 @@ export const NOTIFY_CHANNELS = ['auto', 'terminal', 'command', 'bell'] as const;
 export type NotifyChannel = (typeof NOTIFY_CHANNELS)[number];
 
 /**
+ * Sites a PR link opens on. GitHub opens the PR page itself, and Linear
+ * opens the same PR in Linear's review view, which shows any PR your
+ * GitHub login can see without a linked issue. The settings dialog
+ * cycles through them in this order.
+ */
+export const LINK_TARGETS = ['github', 'linear'] as const;
+
+export type LinkTarget = (typeof LINK_TARGETS)[number];
+
+const GITHUB_ORIGIN = 'https://github.com/';
+
+const LINEAR_REVIEW_ORIGIN = 'https://linear.review/';
+
+/**
+ * Rewrites a GitHub PR link for the given target. Linear serves its
+ * review view of a PR under linear.review at the PR's GitHub path, so
+ * the rewrite swaps the origin and keeps the rest. The github target
+ * returns the link unchanged, and so does a link outside github.com.
+ */
+export function linkUrl(url: string, target: LinkTarget): string {
+  if (target === 'linear' && url.startsWith(GITHUB_ORIGIN)) {
+    return `${LINEAR_REVIEW_ORIGIN}${url.slice(GITHUB_ORIGIN.length)}`;
+  }
+
+  return url;
+}
+
+/**
  * Shape of settings.json in the cache directory. Unlike the cached data
  * and the saved options, the file is meant to be edited by hand, so it
  * carries no version wrapper and a rewrite preserves keys this interface
@@ -28,6 +56,12 @@ export interface Settings {
    * of reading the cached PRs, and fresh results still update the cache.
    */
   noCache?: boolean;
+  /**
+   * Picks the site enter and a click on a PR reference open, the PR
+   * page on GitHub or the PR's review view on Linear. The copied link
+   * stays the GitHub link either way.
+   */
+  openIn?: LinkTarget;
   /**
    * Makes enter and a click on a PR reference copy the PR's link to the
    * clipboard instead of opening it in the browser.
@@ -204,6 +238,10 @@ export function loadSettings(): Settings {
     throw new CliError(`"noCache" in ${settingsFile()} must be true or false`);
   }
 
+  if (settings.openIn !== undefined && !LINK_TARGETS.includes(settings.openIn)) {
+    throw new CliError(`"openIn" in ${settingsFile()} must be "github" or "linear"`);
+  }
+
   if (settings.copyLinks !== undefined && typeof settings.copyLinks !== 'boolean') {
     throw new CliError(`"copyLinks" in ${settingsFile()} must be true or false`);
   }
@@ -259,6 +297,17 @@ export function loadSettings(): Settings {
  */
 export function saveNoCache(on: boolean): boolean {
   current = { ...current, noCache: on };
+
+  return writeCurrent();
+}
+
+/**
+ * Persists the open-in target to settings.json, keeping every other key
+ * the file holds. Returns false without writing while the cache is
+ * disabled, which keeps debug runs from writing settings.
+ */
+export function saveOpenIn(target: LinkTarget): boolean {
+  current = { ...current, openIn: target };
 
   return writeCurrent();
 }

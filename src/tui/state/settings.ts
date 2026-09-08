@@ -66,6 +66,12 @@ export const SETTINGS: SettingSpec[] = [
     hint: 'sends a sample notification through the channel shown, so you can check that your desktop displays it',
   },
   {
+    key: 'openIn',
+    section: 'Links',
+    label: 'Open PRs in',
+    hint: 'github opens the PR page · linear opens the PR in Linear review, which shows any PR your login can see',
+  },
+  {
     key: 'copyLinks',
     section: 'Links',
     label: 'Copy instead of open',

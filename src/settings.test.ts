@@ -6,6 +6,7 @@ import { configureCache } from './cache';
 import { parseCliArgs } from './flags';
 import {
   applySettings,
+  linkUrl,
   loadSettings,
   parseReloadInterval,
   reloadIntervalMs,
@@ -16,6 +17,7 @@ import {
   saveNotifications,
   saveNotifyChannel,
   saveNotifyMentions,
+  saveOpenIn,
   saveReloadInterval,
   saveSnoozeDuration,
   saveTheme,
@@ -105,6 +107,39 @@ test('saveCopyLinks persists the toggle and keeps hand-written keys', () => {
   expect(saveCopyLinks(false)).toBe(false);
 
   expect((JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { copyLinks: boolean }).copyLinks).toBe(true);
+});
+
+test('saveOpenIn persists the target and keeps hand-written keys', () => {
+  writeSettingsFile({ theme: { accent: '#89b4f0' }, copyLinks: true });
+  loadSettings();
+
+  expect(saveOpenIn('linear')).toBe(true);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+    theme: { accent: '#89b4f0' },
+    copyLinks: true,
+    openIn: 'linear',
+  });
+
+  expect(loadSettings().openIn).toBe('linear');
+
+  // a disabled cache stores nothing, the way debug runs stay isolated
+  configureCache(false);
+
+  expect(saveOpenIn('github')).toBe(false);
+
+  expect((JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as { openIn: string }).openIn).toBe('linear');
+});
+
+test('linkUrl swaps the origin for Linear and leaves every other link alone', () => {
+  const pr = 'https://github.com/acme/api/pull/7';
+
+  expect(linkUrl(pr, 'github')).toBe(pr);
+  expect(linkUrl(pr, 'linear')).toBe('https://linear.review/acme/api/pull/7');
+
+  // a link that is not a github.com link has no Linear counterpart
+  expect(linkUrl('https://example.com/acme/api/pull/7', 'linear')).toBe('https://example.com/acme/api/pull/7');
+  expect(linkUrl('http://github.com/acme/api/pull/7', 'linear')).toBe('http://github.com/acme/api/pull/7');
 });
 
 test('saveAutoReload and saveReloadInterval persist next to each other and keep hand-written keys', () => {
@@ -353,6 +388,14 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
   writeSettingsFile({ copyLinks: 'yes' });
 
   expect(() => loadSettings()).toThrow(CliError);
+
+  writeSettingsFile({ openIn: 'gitlab' });
+
+  expect(() => loadSettings()).toThrow('"openIn"');
+
+  writeSettingsFile({ openIn: 'linear' });
+
+  expect(loadSettings().openIn).toBe('linear');
 
   writeSettingsFile({ autoReload: 'yes' });
 

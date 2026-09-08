@@ -2,6 +2,8 @@ import type { KeyEvent } from '@opentui/core';
 import type { Dispatch, SetStateAction } from 'react';
 import { clearCache } from '../cache';
 import {
+  LINK_TARGETS,
+  linkUrl,
   NOTIFY_CHANNELS,
   resetSettings,
   saveAutoReload,
@@ -10,8 +12,10 @@ import {
   saveNotifications,
   saveNotifyChannel,
   saveNotifyMentions,
+  saveOpenIn,
   saveTheme,
   saveTrackMentions,
+  type LinkTarget,
   type NotifyChannel,
 } from '../settings';
 import type { SnoozeTargetKey } from '../snooze';
@@ -56,6 +60,11 @@ export interface KeymapContext {
   trackMentions: boolean;
   notifyMentions: boolean;
   notifyChannel: NotifyChannel;
+  /**
+   * Holds the site a PR opens on. Enter on a queue row passes the row's
+   * link through linkUrl with it before the open.
+   */
+  openIn: LinkTarget;
   copyLinks: boolean;
   /**
    * Holds the default snooze duration. Enter on its settings row seeds
@@ -83,6 +92,7 @@ export interface KeymapContext {
   setTrackMentions: Dispatch<SetStateAction<boolean>>;
   setNotifyMentions: Dispatch<SetStateAction<boolean>>;
   setNotifyChannel: Dispatch<SetStateAction<NotifyChannel>>;
+  setOpenIn: Dispatch<SetStateAction<LinkTarget>>;
   setCopyLinks: Dispatch<SetStateAction<boolean>>;
   setThemeState: Dispatch<SetStateAction<ThemeState>>;
   quit: () => void;
@@ -356,6 +366,21 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
 
           break;
         }
+        case 'openIn': {
+          /**
+           * Cycles github and linear, and persists the choice like the
+           * notification channel above. The next enter on a queue row
+           * already opens on the new site.
+           */
+          const index = LINK_TARGETS.indexOf(context.openIn);
+          const step = key.name === 'left' ? -1 : 1;
+          const next = LINK_TARGETS[(index + step + LINK_TARGETS.length) % LINK_TARGETS.length];
+
+          context.setOpenIn(next);
+          context.dispatchUi({ type: 'cacheActionReported', action: saveOpenIn(next) ? 'saved' : 'notSaved' });
+
+          break;
+        }
         case 'copyLinks': {
           /**
            * The toggle flips the session state and persists it right
@@ -602,7 +627,7 @@ function handleQueueKey(key: KeyEvent, queue: QueueTabKey, context: KeymapContex
       if (context.copyLinks) {
         context.copyRow(row);
       } else {
-        context.openUrl(row.url, (message) => {
+        context.openUrl(linkUrl(row.url, context.openIn), (message) => {
           context.dispatchUi({ type: 'openErrorReported', message });
         });
       }

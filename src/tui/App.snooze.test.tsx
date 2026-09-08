@@ -288,6 +288,7 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
       'also notifies you when someone @-mentions you',
       'auto tries the terminal',
       'sends a sample notification',
+      'github opens the PR page',
       'clipboard',
       'searches the PRs that @-mention you',
       'the duration the snooze dialog starts with',

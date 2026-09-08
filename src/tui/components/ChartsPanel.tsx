@@ -1,6 +1,7 @@
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useTerminalDimensions } from '@opentui/react';
 import type { RefObject } from 'react';
+import { linkUrl, type LinkTarget } from '../../settings';
 import { overlayScrollbar, useScrollbarSettle } from '../hooks/scrollbar';
 import { theme } from '../theme';
 import { cardWidth, type Card, type Line, type Span } from '../views/charts/model';
@@ -28,12 +29,17 @@ export function ChartsPanel({
   heading,
   warning,
   view,
+  openIn,
 }: {
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   focused: boolean;
   heading: string | null;
   warning: string | null;
   view: StatsView;
+  /**
+   * Names the site the PR hyperlinks in the lists point at.
+   */
+  openIn: LinkTarget;
 }) {
   useScrollbarSettle(scrollRef, view.empty === null);
 
@@ -144,7 +150,7 @@ export function ChartsPanel({
                 {'  '}
                 {row.lead}
                 {'  '}
-                <a href={row.url} fg={theme.accent}>
+                <a href={linkUrl(row.url, openIn)} fg={theme.accent}>
                   {row.ref}
                 </a>
                 {'  '}

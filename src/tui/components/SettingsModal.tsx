@@ -1,7 +1,7 @@
 import { useRenderer } from '@opentui/react';
 import { homedir } from 'node:os';
 import { cacheDir, cacheSize } from '../../cache';
-import { settingsFile, type NotifyChannel } from '../../settings';
+import { settingsFile, type LinkTarget, type NotifyChannel } from '../../settings';
 import { formatBytes } from '../../utils';
 import { exportFile } from '../data/export';
 import { CACHE_MESSAGES, SETTINGS, type CacheAction, type SettingSpec } from '../state/settings';
@@ -43,6 +43,7 @@ export function SettingsModal({
   trackMentions,
   notifyMentions,
   notifyChannel,
+  openIn,
   copyLinks,
   snoozeDuration,
   preset,
@@ -60,6 +61,7 @@ export function SettingsModal({
   trackMentions: boolean;
   notifyMentions: boolean;
   notifyChannel: NotifyChannel;
+  openIn: LinkTarget;
   copyLinks: boolean;
   snoozeDuration: string;
   preset: ThemeName;
@@ -121,6 +123,7 @@ export function SettingsModal({
                   notifyMentions={notifyMentions}
                   channelValue={channelValue}
                   deliveryValue={deliveryValue}
+                  openIn={openIn}
                   copyLinks={copyLinks}
                   snoozeDuration={snoozeDuration}
                   preset={preset}
@@ -142,7 +145,8 @@ export function SettingsModal({
 /**
  * Renders the value slot of one setting row. The disable-cache, auto-reload,
  * notifications, copy-links, and theme rows show a toggle value with arrows
- * on the selected row, like the toggles in the options modal. The mention-
+ * on the selected row, like the toggles in the options modal. The open-in
+ * row cycles github and linear the same way. The mention-
  * notifications row is such a toggle too, dimmed while the notifications
  * above it or the mention tracking below are off, because it only applies
  * with both. The track-mentions row is a plain toggle. The reload-interval
@@ -174,6 +178,7 @@ function SettingValue({
   notifyMentions,
   channelValue,
   deliveryValue,
+  openIn,
   copyLinks,
   snoozeDuration,
   preset,
@@ -192,6 +197,7 @@ function SettingValue({
   notifyMentions: boolean;
   channelValue: string;
   deliveryValue: string;
+  openIn: LinkTarget;
   copyLinks: boolean;
   snoozeDuration: string;
   preset: ThemeName;
@@ -243,6 +249,9 @@ function SettingValue({
           {deliveryValue}
         </text>
       );
+    }
+    case 'openIn': {
+      return <ToggleValue value={openIn} isSelected={isSelected} />;
     }
     case 'copyLinks': {
       return <ToggleValue value={copyLinks ? 'yes' : 'no'} isSelected={isSelected} />;

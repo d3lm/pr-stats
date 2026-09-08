@@ -2,7 +2,7 @@ import { configureCache } from '../cache';
 import { canonicalWorkDays, HELP, parseCliArgs } from '../flags';
 import { configureAuth } from '../github';
 import { readMentionReads, type MentionReadsByUser } from '../mentions';
-import { applySettings, DEFAULT_RELOAD_INTERVAL, type NotifyChannel } from '../settings';
+import { applySettings, DEFAULT_RELOAD_INTERVAL, type LinkTarget, type NotifyChannel } from '../settings';
 import { DEFAULT_SNOOZE_DURATION, readSnoozes, type Snooze } from '../snooze';
 import { CliError, fail } from '../utils';
 import { applySavedOptions, FIELDS, validateField, type OptionsState } from './state/options';
@@ -56,6 +56,11 @@ export interface BootstrapResult {
    * validated by loadSettings, or auto while the file names none.
    */
   notifyChannel: NotifyChannel;
+  /**
+   * Holds the open-in target from settings.json, already validated by
+   * loadSettings, or github while the file names none.
+   */
+  openIn: LinkTarget;
   /**
    * Mirrors the copy-links setting from settings.json. While it is set,
    * enter and a click on a PR reference copy the PR's link to the
@@ -156,6 +161,7 @@ export function bootstrap(): BootstrapResult {
       trackMentions: settings.trackMentions !== false,
       notifyMentions: settings.notifyMentions === true,
       notifyChannel: settings.notifyChannel ?? 'auto',
+      openIn: settings.openIn ?? 'github',
       copyLinks: settings.copyLinks === true,
       snoozeDuration: settings.snoozeDuration ?? DEFAULT_SNOOZE_DURATION,
       snoozes: readSnoozes(),

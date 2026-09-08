@@ -14,6 +14,7 @@ const {
   trackMentions,
   notifyMentions,
   notifyChannel,
+  openIn,
   copyLinks,
   snoozeDuration,
   snoozes,
@@ -66,6 +67,7 @@ createRoot(renderer).render(
     initialTrackMentions={trackMentions}
     initialNotifyMentions={notifyMentions}
     initialNotifyChannel={notifyChannel}
+    initialOpenIn={openIn}
     initialCopyLinks={copyLinks}
     initialSnoozeDuration={snoozeDuration}
     initialSnoozes={snoozes}

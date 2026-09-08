@@ -452,7 +452,26 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(setup.captureCharFrame()).toContain('Send test notification');
 
-    // the copy-links toggle sits between the notification rows and the awaiting-you rows
+    /**
+     * The link rows sit between the notification rows and the
+     * awaiting-you rows. The open-in row starts on github and cycles
+     * to linear and back, and the copy-links toggle follows it.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'github opens the PR page');
+
+    expect(setup.captureCharFrame()).toContain('Open PRs in');
+    expect(setup.captureCharFrame()).toContain('‹ github ›');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ linear ›');
+
+    setup.mockInput.pressArrow('left');
+
+    await waitForText(setup, '‹ github ›');
+
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'clipboard');

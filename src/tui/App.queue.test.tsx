@@ -420,6 +420,100 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
   }
 }, 30_000);
 
+test('opens the PR on Linear while the open-in setting names it, and copies the GitHub link regardless', async () => {
+  const opened: string[] = [];
+  const copied: string[] = [];
+
+  const setup = await renderApp(
+    <App
+      initial={initial}
+      initialOpenIn="linear"
+      onQuit={() => {}}
+      openUrl={(url) => {
+        opened.push(url);
+      }}
+      copyUrl={(url) => {
+        copied.push(url);
+      }}
+    />,
+    { width: 128, height: 44 },
+  );
+
+  try {
+    await waitForText(setup, '2 PRs awaiting your review');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Awaiting your review (n=2)');
+
+    /**
+     * Enter passes the highlighted PR's GitHub link through the Linear
+     * rewrite, so the opener receives the linear.review counterpart at
+     * the same path.
+     */
+    expect(await pressEnterToOpen(setup, opened)).toBe('https://linear.review/acme/api/pull/7');
+
+    /**
+     * The settings row shows the saved target and cycles back to github,
+     * after which the next enter opens the GitHub page again.
+     */
+    setup.mockInput.pressKey('S');
+
+    await waitForText(setup, 'Disable cache');
+
+    for (let index = 0; index < 8; index += 1) {
+      setup.mockInput.pressArrow('down');
+    }
+
+    await waitForText(setup, 'github opens the PR page');
+
+    expect(setup.captureCharFrame()).toContain('‹ linear ›');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ github ›');
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'esc back');
+
+    expect(setup.captureCharFrame()).toContain('enter open ·');
+
+    expect(await pressEnterToOpen(setup, opened)).toBe('https://github.com/acme/api/pull/7');
+
+    /**
+     * With the target back on linear and copy-links on, enter copies the
+     * GitHub link, because a copied link is for sharing and GitHub is
+     * the canonical address. The dialog reopens on the open-in row it
+     * was closed on, so the cycle needs no walk this time.
+     */
+    setup.mockInput.pressKey('S');
+
+    await waitForText(setup, '‹ github ›');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ linear ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'clipboard');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, '‹ yes ›');
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'enter copy link');
+
+    expect(await pressEnterToOpen(setup, copied)).toBe('https://github.com/acme/api/pull/7');
+    expect(opened).toEqual(['https://linear.review/acme/api/pull/7', 'https://github.com/acme/api/pull/7']);
+  } finally {
+    destroyApp(setup);
+  }
+}, 30_000);
+
 test('copies the PR link instead of opening it while the copy-links setting is on', async () => {
   const opened: string[] = [];
   const copied: string[] = [];
@@ -503,6 +597,10 @@ test('copies the PR link instead of opening it while the copy-links setting is o
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'sends a sample notification');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'github opens the PR page');
 
     setup.mockInput.pressArrow('down');
 
