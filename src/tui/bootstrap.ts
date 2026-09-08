@@ -52,6 +52,24 @@ export interface BootstrapResult {
    */
   notifyMentions: boolean;
   /**
+   * Mirrors the team review requests setting from settings.json, on
+   * unless the file turns it off. While it is set, the awaiting-you tab
+   * lists the open PRs where only a team the user belongs to was asked.
+   */
+  teamReviews: boolean;
+  /**
+   * Mirrors the team request notifications setting from settings.json.
+   * While it is set together with notifications and the team requests,
+   * loads notify about PRs newly requested of a team the user belongs to.
+   */
+  notifyTeamReviews: boolean;
+  /**
+   * Mirrors the team review stats setting from settings.json. While it
+   * is set, the review stats and the JSON export count the cycles a team
+   * the user belongs to was asked for.
+   */
+  teamReviewStats: boolean;
+  /**
    * Holds the notification channel from settings.json, already
    * validated by loadSettings, or auto while the file names none.
    */
@@ -160,6 +178,9 @@ export function bootstrap(): BootstrapResult {
       notifications: settings.notifications === true,
       trackMentions: settings.trackMentions !== false,
       notifyMentions: settings.notifyMentions === true,
+      teamReviews: settings.teamReviews !== false,
+      notifyTeamReviews: settings.notifyTeamReviews === true,
+      teamReviewStats: settings.teamReviewStats === true,
       notifyChannel: settings.notifyChannel ?? 'auto',
       openIn: settings.openIn ?? 'github',
       copyLinks: settings.copyLinks === true,

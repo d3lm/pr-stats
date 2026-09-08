@@ -78,6 +78,21 @@ const reviewResults: ReviewResult[] = [
     lines: 200,
   },
   { kind: 'pending', pr: reviewPr(3, 'open'), requestedAt: new Date('2026-07-09T00:00:00Z') },
+  {
+    kind: 'team-reviewed',
+    pr: reviewPr(4),
+    requestedAt: new Date('2026-07-02T00:00:00Z'),
+    reviewedAt: new Date('2026-07-02T10:00:00Z'),
+    verdict: 'APPROVED',
+    lines: 80,
+    team: 'acme/backend',
+  },
+  {
+    kind: 'team-pending',
+    pr: reviewPr(5, 'open'),
+    requestedAt: new Date('2026-07-09T12:00:00Z'),
+    team: 'acme/backend',
+  },
 ];
 
 const sizes: SizeEntry[] = [
@@ -125,16 +140,24 @@ test('builds the report with durations, targets, and per-PR entries', () => {
     expect(report.options.wallClock).toBe(true);
     expect(report.options.reviewTypes).toBeNull();
 
+    /**
+     * The team cycles count in their own fields and stay out of the
+     * summaries until the team stats flag folds them in.
+     */
     expect(report.review.counts).toEqual({
       reviewed: 2,
       pending: 1,
       reviewing: 0,
       closedUnreviewed: 0,
       reviewedUnrequested: 0,
+      reviewedTeam: 1,
+      pendingTeam: 1,
     });
 
     expect(report.review.reviewTimeHours).toEqual({ count: 2, mean: 2.5, p50: 1, p90: 4, min: 1, max: 4 });
     expect(report.review.verdicts).toEqual({ approved: 1, changesRequested: 1, commented: 0, other: 0 });
+    expect(report.review.reviewed.map((entry) => entry.number)).toEqual([1, 2]);
+    expect(report.review.pending.map((entry) => entry.number)).toEqual([3]);
 
     /**
      * The pending request has waited 24 wall-clock hours by fetch time,
@@ -208,6 +231,31 @@ test('builds the report with durations, targets, and per-PR entries', () => {
       prsWithoutComments: 1,
       perPr: { count: 2, mean: 1.5, p50: 0, p90: 3, min: 0, max: 3 },
     });
+  } finally {
+    restoreTimeMode();
+  }
+});
+
+test('the team stats flag folds the team cycles into the review counts and summaries', () => {
+  try {
+    const report = buildStatsReport(raw, options, true);
+
+    expect(report.review.counts).toEqual({
+      reviewed: 3,
+      pending: 2,
+      reviewing: 0,
+      closedUnreviewed: 0,
+      reviewedUnrequested: 0,
+      reviewedTeam: 1,
+      pendingTeam: 1,
+    });
+
+    // the ten-hour team review joins the two direct ones
+    expect(report.review.reviewTimeHours).toEqual({ count: 3, mean: 5, p50: 4, p90: 10, min: 1, max: 10 });
+    expect(report.review.verdicts).toEqual({ approved: 2, changesRequested: 1, commented: 0, other: 0 });
+    expect(report.review.reviewed.map((entry) => entry.number)).toEqual([1, 2, 4]);
+    expect(report.review.pending.map((entry) => entry.number)).toEqual([3, 5]);
+    expect(report.review.target?.pendingOverdue).toBe(2);
   } finally {
     restoreTimeMode();
   }
@@ -301,12 +349,20 @@ test('the --json flag prints the full report to stdout', async () => {
   expect(report.searchCapped).toBe(false);
   expect(report.options.timezone).toBe('Europe/Berlin');
 
+  /**
+   * The backend team is still asked on api#9, which counts as a team
+   * request and stays out of the pending count while the team stats
+   * setting is off, and a teammate already answered on web#16, which
+   * leaves nothing to count.
+   */
   expect(report.review.counts).toEqual({
     reviewed: 3,
     pending: 2,
     reviewing: 1,
     closedUnreviewed: 1,
     reviewedUnrequested: 2,
+    reviewedTeam: 0,
+    pendingTeam: 1,
   });
 
   // the same three cycles the review tab headlines as p50 6h and mean 10.1h

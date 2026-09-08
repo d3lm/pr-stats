@@ -12,7 +12,10 @@ import {
   saveNotifications,
   saveNotifyChannel,
   saveNotifyMentions,
+  saveNotifyTeamReviews,
   saveOpenIn,
+  saveTeamReviews,
+  saveTeamReviewStats,
   saveTheme,
   saveTrackMentions,
   type LinkTarget,
@@ -59,6 +62,14 @@ export interface KeymapContext {
   notifications: boolean;
   trackMentions: boolean;
   notifyMentions: boolean;
+  teamReviews: boolean;
+  notifyTeamReviews: boolean;
+  /**
+   * Holds the team review stats toggle. The JSON export in the settings
+   * dialog passes it to the report builder, so the export counts the
+   * team cycles the way the review tab does.
+   */
+  teamReviewStats: boolean;
   notifyChannel: NotifyChannel;
   /**
    * Holds the site a PR opens on. Enter on a queue row passes the row's
@@ -91,6 +102,9 @@ export interface KeymapContext {
   setNotifications: Dispatch<SetStateAction<boolean>>;
   setTrackMentions: Dispatch<SetStateAction<boolean>>;
   setNotifyMentions: Dispatch<SetStateAction<boolean>>;
+  setTeamReviews: Dispatch<SetStateAction<boolean>>;
+  setNotifyTeamReviews: Dispatch<SetStateAction<boolean>>;
+  setTeamReviewStats: Dispatch<SetStateAction<boolean>>;
   setNotifyChannel: Dispatch<SetStateAction<NotifyChannel>>;
   setOpenIn: Dispatch<SetStateAction<LinkTarget>>;
   setCopyLinks: Dispatch<SetStateAction<boolean>>;
@@ -332,6 +346,56 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
 
           break;
         }
+        case 'notifyTeamReviews': {
+          /**
+           * The toggle flips the session state and persists it right
+           * away, like the mention notifications above. The loads keep
+           * the team requests in the baseline while the toggle is off,
+           * so only the requests after the toggle notify.
+           */
+          const next = !context.notifyTeamReviews;
+
+          context.setNotifyTeamReviews(next);
+
+          context.dispatchUi({
+            type: 'cacheActionReported',
+            action: saveNotifyTeamReviews(next) ? 'saved' : 'notSaved',
+          });
+
+          break;
+        }
+        case 'teamReviews': {
+          /**
+           * The toggle flips the session state and persists it right
+           * away, like the notifications toggle above. The queue reads
+           * the flag at render time, so the team section shows or hides
+           * without a reload.
+           */
+          const next = !context.teamReviews;
+
+          context.setTeamReviews(next);
+          context.dispatchUi({ type: 'cacheActionReported', action: saveTeamReviews(next) ? 'saved' : 'notSaved' });
+
+          break;
+        }
+        case 'teamReviewStats': {
+          /**
+           * The toggle flips the session state and persists it right
+           * away, like the team requests toggle above. The review tab
+           * recomputes from the loaded results, so the charts follow
+           * without a reload.
+           */
+          const next = !context.teamReviewStats;
+
+          context.setTeamReviewStats(next);
+
+          context.dispatchUi({
+            type: 'cacheActionReported',
+            action: saveTeamReviewStats(next) ? 'saved' : 'notSaved',
+          });
+
+          break;
+        }
         case 'notifyChannel': {
           /**
            * Cycles auto, terminal, the platform command, and bell, and
@@ -356,7 +420,9 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
           /**
            * The send is fire and forget, so the message slot reports the
            * attempt right away and a failure arrives later in the footer
-           * notice slot, the same way a failed copy does.
+           * notice slot, the same way a failed copy does. The dialog's
+           * bottom line mirrors the failure, because the dialog covers the
+           * footer on a short terminal.
            */
           context.notify(TEST_NOTIFICATION.title, TEST_NOTIFICATION.body, (message) => {
             context.dispatchUi({ type: 'openErrorReported', message });
@@ -464,7 +530,7 @@ function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
           }
 
           try {
-            exportStatsFile(context.raw, context.options);
+            exportStatsFile(context.raw, context.options, context.teamReviewStats);
             context.dispatchUi({ type: 'cacheActionReported', action: 'exported' });
           } catch {
             context.dispatchUi({ type: 'cacheActionReported', action: 'exportFailed' });

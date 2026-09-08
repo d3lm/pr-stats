@@ -34,13 +34,23 @@ test('sends notifications through the injected notifier and keeps the first load
 
   const sent: { title: string; body: string }[] = [];
 
+  /**
+   * The failure of a send waits until the test releases it, the way a
+   * spawn error arrives after the send returned, so the frame in between
+   * can prove that the message slot reported the attempt first.
+   */
+  const pending: { fail: (() => void) | null } = { fail: null };
+
   const setup = await renderApp(
     <App
       initial={initial}
       onQuit={() => {}}
       notify={(title, body, onError) => {
         sent.push({ title, body });
-        onError('could not send the notification (spawn notify-send ENOENT)');
+
+        pending.fail = () => {
+          onError('could not send the notification (spawn notify-send ENOENT)');
+        };
       }}
     />,
     { width: 140, height: 44 },
@@ -109,6 +119,28 @@ test('sends notifications through the injected notifier and keeps the first load
     });
 
     /**
+     * The team request toggle below it persists the same way. The
+     * canned backend request on api#9 already sits in the baseline, so
+     * the reload at the end sends nothing for it either.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'also notifies you when a PR gets requested');
+
+    expect(setup.captureCharFrame()).toContain('Team request notifications');
+    expect(lineWith(setup.captureCharFrame(), 'Team request notifications')).toContain('‹ no ›');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, '‹ yes ›');
+
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+      notifications: true,
+      notifyMentions: true,
+      notifyTeamReviews: true,
+    });
+
+    /**
      * The channel row below the toggles cycles auto, terminal, the
      * platform command, and bell with wrap-around, and persists each
      * step. The cycle ends back on auto, so the send below keeps the
@@ -127,6 +159,7 @@ test('sends notifications through the injected notifier and keeps the first load
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
       notifications: true,
       notifyMentions: true,
+      notifyTeamReviews: true,
       notifyChannel: 'terminal',
     });
 
@@ -142,6 +175,7 @@ test('sends notifications through the injected notifier and keeps the first load
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
       notifications: true,
       notifyMentions: true,
+      notifyTeamReviews: true,
       notifyChannel: 'bell',
     });
 
@@ -152,6 +186,7 @@ test('sends notifications through the injected notifier and keeps the first load
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
       notifications: true,
       notifyMentions: true,
+      notifyTeamReviews: true,
       notifyChannel: 'auto',
     });
 
@@ -199,9 +234,10 @@ test('sends notifications through the injected notifier and keeps the first load
 
     /**
      * Enter on the test row sends the sample notification through the
-     * injected notifier and reports the attempt in the message slot,
-     * while the notifier's failure report lands in the footer notice
-     * slot next to the still-open dialog.
+     * injected notifier and reports the attempt in the message slot. The
+     * notifier's failure report then takes the dialog's bottom line over,
+     * because at this height the dialog covers the footer notice slot the
+     * failure also lands in.
      */
     setup.mockInput.pressArrow('down');
 
@@ -210,9 +246,14 @@ test('sends notifications through the injected notifier and keeps the first load
     setup.mockInput.pressEnter();
 
     await waitForText(setup, 'test notification sent');
-    await waitForText(setup, 'could not send the notification');
 
     expect(sent).toEqual([TEST_NOTIFICATION]);
+
+    pending.fail?.();
+
+    await waitForText(setup, 'could not send the notification');
+
+    expect(setup.captureCharFrame()).not.toContain('test notification sent');
 
     /**
      * A reload of the unchanged canned data finds nothing new against
@@ -248,7 +289,8 @@ test('seeds the notification baseline from the startup snapshot, so the first lo
    * like the notifications test above. It holds web#3 awaiting a review
    * since the same request the canned data reports, and api#7 sitting on
    * the reviewed queue after a review without a personal request, while
-   * the canned data has api#7 awaiting a review again.
+   * the canned data has api#7 awaiting a review again. It knows nothing
+   * of the backend team's request on api#9.
    */
   const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
 
@@ -302,6 +344,7 @@ test('seeds the notification baseline from the startup snapshot, so the first lo
     <App
       initial={initial}
       initialNotifications
+      initialNotifyTeamReviews
       onQuit={() => {}}
       notify={(title, body) => {
         sent.push({ title, body });
@@ -313,9 +356,11 @@ test('seeds the notification baseline from the startup snapshot, so the first lo
   try {
     /**
      * The snapshot renders first with its single awaiting PR, and the
-     * fresh load then brings the second one. Only api#7 is news against
-     * the snapshot, and without a completed request cycle of yours on
-     * it, the notification calls it a new request.
+     * fresh load then brings the second one and the team request. Only
+     * api#7 and api#9 are news against the snapshot. Without a completed
+     * request cycle of yours on it, the notification calls api#7 a new
+     * request, and the backend team's request on api#9 reports under its
+     * own heading because the team notifications are on.
      */
     await waitForText(setup, '1 PR awaiting your review');
     await waitForText(setup, '2 PRs awaiting your review');
@@ -323,7 +368,10 @@ test('seeds the notification baseline from the startup snapshot, so the first lo
     const firstRefresh = await waitForRefresh(setup);
     const firstRefreshSeen = Date.now();
 
-    expect(sent).toEqual([{ title: 'Review requested on acme/api#7', body: 'Refactor the billing worker' }]);
+    expect(sent).toEqual([
+      { title: 'Review requested on acme/api#7', body: 'Refactor the billing worker' },
+      { title: 'Review requested of your team on acme/api#9', body: 'Migrate the queue consumers' },
+    ]);
 
     /**
      * A reload of the unchanged canned data finds nothing new against the
@@ -335,7 +383,7 @@ test('seeds the notification baseline from the startup snapshot, so the first lo
 
     await waitForRefreshAfter(setup, firstRefresh);
 
-    expect(sent).toHaveLength(1);
+    expect(sent).toHaveLength(2);
   } finally {
     destroyApp(setup);
     configureCache(false);

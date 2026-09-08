@@ -18,9 +18,10 @@ import type { PrRow } from '../views/rows';
  * stay clickable terminal hyperlinks as well, unless the copy-links
  * setting routes clicks to the clipboard instead. A row whose PR carries
  * a mention of you that still awaits attention shows an at-sign badge in
- * front of its title. The heading names the opened repo scope when the
- * data spans multiple repos, framed by rules like the stats header, and
- * stays away otherwise.
+ * front of its title, and a row that stands for a request of a team of
+ * yours names the team after its title. The heading names the opened repo
+ * scope when the data spans multiple repos, framed by rules like the stats
+ * header, and stays away otherwise.
  */
 export function QueuePanel({
   heading,
@@ -198,6 +199,11 @@ export function QueuePanel({
         <span fg={fg} bg={bg}>
           {row.title}
         </span>
+        {row.team !== undefined && (
+          <span fg={theme.muted} bg={bg}>
+            {` · ${row.team}`}
+          </span>
+        )}
       </text>
     );
   };

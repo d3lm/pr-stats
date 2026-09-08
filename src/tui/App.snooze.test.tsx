@@ -95,7 +95,7 @@ test('snoozes the highlighted PR through the snooze dialog and unsnoozes it with
      */
     setup.mockInput.pressEscape();
 
-    await waitForText(setup, '1 PR awaiting your review, 1 snoozed');
+    await waitForText(setup, '1 PR awaiting your review, 1 requested of your team, 1 snoozed');
 
     setup.mockInput.pressEnter();
 
@@ -104,9 +104,11 @@ test('snoozes the highlighted PR through the snooze dialog and unsnoozes it with
     expect(setup.captureCharFrame()).toContain('s snooze');
 
     /**
-     * Moving onto the snoozed row flips the hint to unsnooze, and the s
-     * key puts the PR straight back on the awaiting list.
+     * Moving past the team request onto the snoozed row flips the hint
+     * to unsnooze, and the s key puts the PR straight back on the
+     * awaiting list.
      */
+    setup.mockInput.pressArrow('down');
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 's unsnooze');
@@ -180,6 +182,19 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
         },
         reviewedAt: new Date('2026-08-24T09:00:00Z'),
       },
+      {
+        kind: 'team-pending',
+        pr: {
+          repo: 'acme/api',
+          number: 9,
+          title: 'Migrate the queue consumers',
+          url: 'https://github.com/acme/api/pull/9',
+          state: 'open',
+          createdAt: new Date('2026-08-25T08:00:00Z'),
+        },
+        requestedAt: new Date('2026-08-25T09:00:00Z'),
+        team: 'acme/backend',
+      },
     ],
     sizes: [],
     authoredTotal: 0,
@@ -193,7 +208,9 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
   /**
    * The snooze on api#7 covers the request the canned data reports and
    * wakes up a few seconds into the test, long enough for the snapshot
-   * to render the snoozed section first.
+   * to render the snoozed section first. The snapshot also carries the
+   * team request the canned data reports, so the picker reads the same
+   * before and after the fresh load.
    */
   const until = Date.now() + 4000;
 
@@ -220,7 +237,7 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
      * the picker counts one snoozed PR and the aggregate queue parks it
      * in the snoozed section with its wake-up time.
      */
-    await waitForText(setup, '1 PR awaiting your review, 1 snoozed');
+    await waitForText(setup, '1 PR awaiting your review, 1 requested of your team, 1 snoozed');
 
     setup.mockInput.pressEnter();
 
@@ -286,11 +303,14 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
       'time between the background reloads',
       'notifies you when a load finds',
       'also notifies you when someone @-mentions you',
+      'also notifies you when a PR gets requested',
       'auto tries the terminal',
       'sends a sample notification',
       'github opens the PR page',
       'clipboard',
       'searches the PRs that @-mention you',
+      'only a team of yours is asked',
+      'counts the team requests you reviewed',
       'the duration the snooze dialog starts with',
     ]) {
       setup.mockInput.pressArrow('down');

@@ -13,6 +13,9 @@ const {
   notifications,
   trackMentions,
   notifyMentions,
+  teamReviews,
+  notifyTeamReviews,
+  teamReviewStats,
   notifyChannel,
   openIn,
   copyLinks,
@@ -30,7 +33,7 @@ const {
  * way, so nothing below it runs.
  */
 if (json) {
-  await runJsonStats(initial, noCache);
+  await runJsonStats(initial, noCache, teamReviewStats);
 }
 
 /**
@@ -66,6 +69,9 @@ createRoot(renderer).render(
     initialNotifications={notifications}
     initialTrackMentions={trackMentions}
     initialNotifyMentions={notifyMentions}
+    initialTeamReviews={teamReviews}
+    initialNotifyTeamReviews={notifyTeamReviews}
+    initialTeamReviewStats={teamReviewStats}
     initialNotifyChannel={notifyChannel}
     initialOpenIn={openIn}
     initialCopyLinks={copyLinks}

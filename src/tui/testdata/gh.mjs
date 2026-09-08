@@ -7,6 +7,50 @@
 
 const args = process.argv.slice(2);
 
+/**
+ * The teams testuser belongs to, as the teams query pages them by their
+ * combined org/slug. The first organization page holds acme, whose first
+ * team page holds the backend team and points at a second team page with
+ * the oncall team, and the page points at a second organization page,
+ * which holds globex with the platform team. A lookup that stops at the
+ * first pages therefore misses two of the three teams. The team requests
+ * below name acme/backend, so they classify as team cycles.
+ */
+const ORGANIZATION_PAGES = [
+  {
+    after: null,
+    endCursor: 'orgs-1',
+    nodes: [{ login: 'acme', teams: ['acme/backend'], endCursor: 'acme-teams-1' }],
+  },
+  {
+    after: 'orgs-1',
+    endCursor: null,
+    nodes: [{ login: 'globex', teams: ['globex/platform'], endCursor: null }],
+  },
+];
+
+const TEAM_PAGES = [{ organization: 'acme', after: 'acme-teams-1', teams: ['acme/oncall'], endCursor: null }];
+
+/**
+ * Builds one page of a teams connection from the slugs on it and the
+ * cursor of the page after it, null on the last page.
+ */
+function teamPage(teams, endCursor) {
+  return {
+    pageInfo: { hasNextPage: endCursor !== null, endCursor },
+    nodes: teams.map((combinedSlug) => {
+      return { combinedSlug };
+    }),
+  };
+}
+
+/**
+ * Review timelines keyed by PR. A request names a user by login or a
+ * team by its combined slug, and the outstanding list holds the review
+ * requests still open on the PR the same way, which the team
+ * classification checks a team request against. A PR without the list
+ * has no outstanding request.
+ */
 const REVIEW_TIMELINES = {
   'acme/api#1': {
     additions: 150,
@@ -25,6 +69,7 @@ const REVIEW_TIMELINES = {
     deletions: 30,
     requests: [{ at: '2026-08-23T09:00:00Z', login: 'testuser' }],
     reviews: [],
+    outstanding: [{ login: 'testuser' }],
   },
   'acme/web#4': {
     additions: 400,
@@ -49,12 +94,37 @@ const REVIEW_TIMELINES = {
     deletions: 700,
     requests: [{ at: '2026-08-20T09:00:00Z', login: 'testuser' }],
     reviews: [],
+    outstanding: [{ login: 'testuser' }],
   },
   'acme/api#8': {
     additions: 120,
     deletions: 15,
     requests: [],
     reviews: [{ login: 'testuser', at: '2026-08-24T09:00:00Z', state: 'COMMENTED' }],
+  },
+  'acme/api#9': {
+    /**
+     * Only the backend team was asked, and the request is still open, so
+     * the PR sits in the team section of the awaiting queue and stays out
+     * of the direct counts.
+     */
+    additions: 210,
+    deletions: 35,
+    requests: [{ at: '2026-08-25T09:00:00Z', team: 'acme/backend' }],
+    reviews: [],
+    outstanding: [{ team: 'acme/backend' }],
+  },
+  'acme/web#16': {
+    /**
+     * The backend team was asked and a teammate answered, which cleared
+     * the team's request without a trace on the timeline, so the PR
+     * classifies as inaccessible like a request of a team testuser is
+     * not on.
+     */
+    additions: 60,
+    deletions: 12,
+    requests: [{ at: '2026-08-10T09:00:00Z', team: 'acme/backend' }],
+    reviews: [{ login: 'otheruser', at: '2026-08-11T09:00:00Z', state: 'APPROVED' }],
   },
 };
 
@@ -294,10 +364,18 @@ function searchItem(repo, number, title, createdAt, state, updatedAt = createdAt
 }
 
 const SEARCHES = {
+  /**
+   * The review-requested search also returns the PRs where only a team
+   * of the user is asked, and keeps returning web#16 here although a
+   * teammate already answered, so the classification has to tell the
+   * two team requests apart by the outstanding review requests.
+   */
   '--review-requested': [
     searchItem('acme/web', 3, 'Add pagination to the list view', '2026-08-22T10:00:00Z', 'open'),
     searchItem('acme/web', 4, 'Rework session handling', '2026-06-19T10:00:00Z', 'closed'),
     searchItem('acme/api', 7, 'Refactor the billing worker', '2026-08-19T10:00:00Z', 'open'),
+    searchItem('acme/api', 9, 'Migrate the queue consumers', '2026-08-25T08:00:00Z', 'open'),
+    searchItem('acme/web', 16, 'Tidy the settings layout', '2026-08-09T10:00:00Z', 'open'),
   ],
   '--reviewed-by': [
     searchItem('acme/api', 1, 'Fix retry logic in the api client', '2026-06-30T10:00:00Z', 'closed'),
@@ -336,8 +414,76 @@ const SEARCHES = {
   ],
 };
 
+/**
+ * Maps a canned reviewer, a login or a team slug, onto the User or Team
+ * union node the API returns for a requested reviewer.
+ */
+function requestedReviewer(reviewer) {
+  if (reviewer.login !== undefined) {
+    return { login: reviewer.login };
+  }
+
+  return { slug: reviewer.team.split('/')[1], combinedSlug: reviewer.team };
+}
+
+/**
+ * Answers the teams queries, the one that lists the organizations of one
+ * login with the first team page of each, and the follow-up that asks
+ * one organization for a later team page. Both name the login in the
+ * userLogins filter and page with an after cursor. Only testuser is
+ * known, and any other login fails the way a token without the read:org
+ * scope would, so the tests can drive the soft failure of the team
+ * lookup. A cursor the canned pages do not know fails too, which catches
+ * a lookup that pages from the wrong place.
+ */
+function handleTeamsQuery(query) {
+  const login = /userLogins: \["([^"]+)"\]/.exec(query)?.[1];
+
+  if (login !== 'testuser') {
+    process.stderr.write(`fake gh cannot resolve the teams of ${login}\n`);
+    process.exit(1);
+  }
+
+  const after = /after: "([^"]+)"/.exec(query)?.[1] ?? null;
+  const organization = /organization\(login: "([^"]+)"\)/.exec(query)?.[1];
+
+  if (organization !== undefined) {
+    const page = TEAM_PAGES.find((candidate) => candidate.organization === organization && candidate.after === after);
+
+    if (page === undefined) {
+      process.stderr.write(`fake gh has no team page of ${organization} after ${after}\n`);
+      process.exit(1);
+    }
+
+    return { organization: { teams: teamPage(page.teams, page.endCursor) } };
+  }
+
+  const page = ORGANIZATION_PAGES.find((candidate) => candidate.after === after);
+
+  if (page === undefined) {
+    process.stderr.write(`fake gh has no organization page after ${after}\n`);
+    process.exit(1);
+  }
+
+  return {
+    user: {
+      organizations: {
+        pageInfo: { hasNextPage: page.endCursor !== null, endCursor: page.endCursor },
+        nodes: page.nodes.map((node) => {
+          return { login: node.login, teams: teamPage(node.teams, node.endCursor) };
+        }),
+      },
+    },
+  };
+}
+
 function handleGraphql(query) {
   const aliasPattern = /pr(\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\)\s*\{\s*pullRequest\(number: (\d+)\)/g;
+
+  // both team queries filter the teams by the login, which no PR query does
+  if (query.includes('userLogins')) {
+    return JSON.stringify({ data: handleTeamsQuery(query) });
+  }
 
   /**
    * The review and size queries both fetch additions and deletions, so
@@ -376,7 +522,7 @@ function handleGraphql(query) {
           nodes: timeline.requests.map((request) => {
             return {
               createdAt: request.at,
-              requestedReviewer: { login: request.login },
+              requestedReviewer: requestedReviewer(request),
             };
           }),
         },
@@ -387,6 +533,11 @@ function handleGraphql(query) {
               submittedAt: review.at,
               state: review.state,
             };
+          }),
+        },
+        reviewRequests: {
+          nodes: (timeline.outstanding ?? []).map((reviewer) => {
+            return { requestedReviewer: requestedReviewer(reviewer) };
           }),
         },
       },

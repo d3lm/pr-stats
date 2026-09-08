@@ -104,10 +104,21 @@ export interface AppViews {
 }
 
 /**
+ * The settings that steer how the views treat the review requests of a
+ * team you belong to. The team flag lists them on the awaiting queue,
+ * and the stats flag folds them into the review tab and its pickers.
+ */
+export interface TeamViewSettings {
+  teamReviews: boolean;
+  teamReviewStats: boolean;
+}
+
+/**
  * Derives everything the tabs render from the loaded data, the live
  * options, the per-tab scopes with the queue grouping, the snoozes, the
- * read state of the mention inbox, and the terminal width. Returns null
- * before the first data arrives. Pure apart from configuring the shared
+ * read state of the mention inbox, the team settings, and the terminal
+ * width. Returns null before the first data arrives. Pure apart from
+ * configuring the shared
  * time-mode singleton the compute layers read, which happens right
  * before they run so it stays consistent for this render, and apart from
  * the awaiting-you queue reading the clock to place the snoozed PRs,
@@ -128,6 +139,7 @@ export function useViewModel(
   expanded: Record<StatsTabKey, boolean>,
   snoozes: Snooze[],
   reads: MentionReads,
+  { teamReviews, teamReviewStats }: TeamViewSettings,
   themeEpoch: unknown,
 ): AppViews | null {
   return useMemo(() => {
@@ -168,12 +180,19 @@ export function useViewModel(
 
     const sizeTarget = options.sizeTarget === '' ? undefined : parseSizeTarget(options.sizeTarget);
 
-    const pendingRepos = buildPendingRepoOptions(raw, snoozes);
+    /**
+     * The queue builders read the clock themselves through their defaults,
+     * so the flag passes behind an undefined time rather than a clock
+     * read in the memo.
+     */
+    const now = undefined;
+
+    const pendingRepos = buildPendingRepoOptions(raw, snoozes, now, teamReviews);
     const reviewedRepos = buildReviewedRepoOptions(raw);
     const mentionsRepos = buildMentionRepoOptions(raw, snoozes, reads);
     const openRepos = buildOpenRepoOptions(raw);
     const mergedRepos = buildMergedRepoOptions(raw);
-    const reviewRepos = buildReviewRepoOptions(raw);
+    const reviewRepos = buildReviewRepoOptions(raw, teamReviewStats);
     const sizeRepos = buildSizeRepoOptions(raw);
     const commentRepos = buildCommentRepoOptions(raw);
     const pendingScope = resolveScope(scopes.pending, pendingRepos);
@@ -187,7 +206,7 @@ export function useViewModel(
 
     const review =
       reviewScope.view === 'detail'
-        ? buildReviewView(raw, reviewTarget, reviewScope.repo, width, expanded.review)
+        ? buildReviewView(raw, reviewTarget, reviewScope.repo, width, expanded.review, teamReviewStats)
         : null;
 
     return {
@@ -209,7 +228,7 @@ export function useViewModel(
       commentScope,
       pending:
         pendingScope.view === 'detail'
-          ? buildPendingReviewView(raw, pendingScope.repo, grouping.pending, snoozes, reads)
+          ? buildPendingReviewView(raw, pendingScope.repo, grouping.pending, snoozes, reads, now, teamReviews)
           : null,
       reviewed:
         reviewedScope.view === 'detail'
@@ -220,7 +239,7 @@ export function useViewModel(
           ? buildMentionsView(raw, mentionsScope.repo, grouping.mentions, snoozes, reads)
           : null,
       open: openScope.view === 'detail' ? buildOpenAuthoredView(raw, openScope.repo, grouping.open) : null,
-      alerts: queueAlerts(raw, snoozes, reads),
+      alerts: queueAlerts(raw, snoozes, reads, now, teamReviews),
       merged: mergedScope.view === 'detail' ? buildMergedView(raw, mergedScope.repo, width, expanded.merged) : null,
       review,
       size: sizeScope.view === 'detail' ? buildSizeView(raw, sizeTarget, sizeScope.repo, width) : null,
@@ -252,6 +271,8 @@ export function useViewModel(
     expanded.merged,
     snoozes,
     reads,
+    teamReviews,
+    teamReviewStats,
     themeEpoch,
   ]);
 }

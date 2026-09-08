@@ -6,6 +6,7 @@ import {
   fetchMentionsRaw,
   fetchReviewRaw,
   fetchSizeRaw,
+  resolveTeams,
   resolveUser,
   type MentionEntry,
   type ReviewResult,
@@ -106,11 +107,11 @@ function reviveRawData(data: RawData): RawData {
     reviewResults: data.reviewResults.map((result) => {
       const pr = { ...result.pr, createdAt: new Date(result.pr.createdAt) };
 
-      if (result.kind === 'pending') {
+      if (result.kind === 'pending' || result.kind === 'team-pending') {
         return { ...result, pr, requestedAt: new Date(result.requestedAt) };
       }
 
-      if (result.kind === 'reviewed') {
+      if (result.kind === 'reviewed' || result.kind === 'team-reviewed') {
         return { ...result, pr, requestedAt: new Date(result.requestedAt), reviewedAt: new Date(result.reviewedAt) };
       }
 
@@ -272,10 +273,11 @@ export function saveSnapshot(options: FetchParams, data: RawData): void {
 }
 
 /**
- * Runs the full fetch pipeline, resolving the user, searching PRs, and
- * fetching timelines and sizes in batches. Closed PRs and the login come
- * from the on-disk cache unless bypassCache is set, which refetches
- * everything and rewrites the cached entries. With the mentions option
+ * Runs the full fetch pipeline, resolving the user and the teams, searching
+ * PRs, and fetching timelines and sizes in batches. Closed PRs, the login,
+ * and the team memberships come from the on-disk cache unless bypassCache
+ * is set, which refetches everything and rewrites the cached entries. With
+ * the mentions option
  * the pipeline also searches the PRs that mention the user and fetches
  * their newest mention. A successful load also becomes the next startup
  * snapshot. Reports progress through onPhase so the UI can show what is
@@ -305,13 +307,16 @@ export async function loadData(
 
   /**
    * The mentions search only runs when the load looks for mentions, so
-   * a session without mention notifications pays nothing for them.
+   * a session without mention notifications pays nothing for them. The
+   * team lookup rides along with the searches, because the classification
+   * that needs it only runs once the details are fetched.
    */
-  const [requested, reviewed, authored, mentioned] = await Promise.all([
+  const [requested, reviewed, authored, mentioned, teams] = await Promise.all([
     searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'requested' }),
     searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'reviewed' }),
     searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'authored' }),
     mentions ? searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'mentioned' }) : null,
+    resolveTeams(user, bypassCache),
   ]);
 
   const reviewPrs = collectReviewPrs(requested.items, reviewed.items);
@@ -352,7 +357,7 @@ export async function loadData(
             progress.review = done;
             report();
           },
-          { bypassCache, countedStates },
+          { bypassCache, countedStates, teams },
         ),
     authoredPrs.length === 0
       ? { sizes: [], cacheHits: 0 }

@@ -104,6 +104,27 @@ export interface Settings {
    */
   notifyMentions?: boolean;
   /**
+   * Lists the open PRs where only a team you belong to was asked for a
+   * review in their own section below the awaiting queue. Defaults to
+   * on, and turning it off hides the section and the team requests from
+   * the awaiting-you tab while the load still classifies them.
+   */
+  teamReviews?: boolean;
+  /**
+   * Also sends a desktop notification when a load finds a PR newly
+   * requested of a team you belong to. Only applies while notifications
+   * and teamReviews are both set, because a notification about a request
+   * the queue hides would lead nowhere.
+   */
+  notifyTeamReviews?: boolean;
+  /**
+   * Folds the reviews you gave on a request of a team you belong to, and
+   * the team requests still open, into the review stats and the JSON
+   * export. Defaults to off, which keeps the review times to the
+   * requests that named you and reports the team reviews as excluded.
+   */
+  teamReviewStats?: boolean;
+  /**
    * Picks the channel the notifications go through. With auto the
    * TUI asks the terminal to post them and falls back to the platform
    * command, terminal forces the terminal path, command forces the
@@ -273,6 +294,18 @@ export function loadSettings(): Settings {
     throw new CliError(`"notifyMentions" in ${settingsFile()} must be true or false`);
   }
 
+  if (settings.teamReviews !== undefined && typeof settings.teamReviews !== 'boolean') {
+    throw new CliError(`"teamReviews" in ${settingsFile()} must be true or false`);
+  }
+
+  if (settings.notifyTeamReviews !== undefined && typeof settings.notifyTeamReviews !== 'boolean') {
+    throw new CliError(`"notifyTeamReviews" in ${settingsFile()} must be true or false`);
+  }
+
+  if (settings.teamReviewStats !== undefined && typeof settings.teamReviewStats !== 'boolean') {
+    throw new CliError(`"teamReviewStats" in ${settingsFile()} must be true or false`);
+  }
+
   if (settings.notifyChannel !== undefined && !NOTIFY_CHANNELS.includes(settings.notifyChannel)) {
     throw new CliError(`"notifyChannel" in ${settingsFile()} must be "auto", "terminal", "command", or "bell"`);
   }
@@ -377,6 +410,40 @@ export function saveTrackMentions(on: boolean): boolean {
  */
 export function saveNotifyMentions(on: boolean): boolean {
   current = { ...current, notifyMentions: on };
+
+  return writeCurrent();
+}
+
+/**
+ * Persists the team review requests toggle to settings.json, keeping
+ * every other key the file holds. Returns false without writing while
+ * the cache is disabled, which keeps debug runs from writing settings.
+ */
+export function saveTeamReviews(on: boolean): boolean {
+  current = { ...current, teamReviews: on };
+
+  return writeCurrent();
+}
+
+/**
+ * Persists the team request notifications toggle to settings.json,
+ * keeping every other key the file holds. Returns false without writing
+ * while the cache is disabled, which keeps debug runs from writing
+ * settings.
+ */
+export function saveNotifyTeamReviews(on: boolean): boolean {
+  current = { ...current, notifyTeamReviews: on };
+
+  return writeCurrent();
+}
+
+/**
+ * Persists the team review stats toggle to settings.json, keeping every
+ * other key the file holds. Returns false without writing while the
+ * cache is disabled, which keeps debug runs from writing settings.
+ */
+export function saveTeamReviewStats(on: boolean): boolean {
+  current = { ...current, teamReviewStats: on };
 
   return writeCurrent();
 }

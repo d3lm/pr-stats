@@ -2,7 +2,17 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { cacheSize, clearCache, configureCache, PrCache, prKey, readCachedLogin, writeCachedLogin } from './cache';
+import {
+  cacheSize,
+  clearCache,
+  configureCache,
+  PrCache,
+  prKey,
+  readCachedLogin,
+  readCachedTeams,
+  writeCachedLogin,
+  writeCachedTeams,
+} from './cache';
 import {
   collectAuthoredPrs,
   collectMentionedPrs,
@@ -10,6 +20,7 @@ import {
   fetchMentionsRaw,
   fetchReviewRaw,
   fetchSizeRaw,
+  resolveTeams,
   resolveUser,
 } from './data';
 import { parseCliArgs } from './flags';
@@ -259,11 +270,25 @@ test('starts empty on a corrupt or outdated file', () => {
 
 /**
  * The remaining tests drive the fetch pipeline against the fake gh binary
- * in tui/testdata. Its canned data has five closed and one open review PR
- * and four closed and one open authored PR.
+ * in tui/testdata. Its canned data has five closed and three open review
+ * PRs and four closed and one open authored PR.
  */
 function useFakeGh(): void {
   configureAuth(undefined, `${import.meta.dir}/tui/testdata`);
+}
+
+/**
+ * Builds an empty details entry in the current shape, which the cache
+ * tests poison the store with to prove where a read comes from.
+ */
+function emptyDetails(): PrDetails {
+  return {
+    additions: 0,
+    deletions: 0,
+    timelineItems: { nodes: [] },
+    reviews: { nodes: [] },
+    reviewRequests: { nodes: [] },
+  };
 }
 
 const searchArgs = { user: 'testuser', sinceIso: '2026-06-01', repos: [] as string[], includeDrafts: false };
@@ -297,7 +322,7 @@ test('serves closed review PRs from the cache and repairs entries on bypass', as
    */
   const store = new PrCache<PrDetails>('details');
 
-  store.set(prKey('acme/api', 1), { additions: 0, deletions: 0, timelineItems: { nodes: [] }, reviews: { nodes: [] } });
+  store.set(prKey('acme/api', 1), emptyDetails());
 
   store.save();
 
@@ -323,7 +348,7 @@ test('drops a stale cache entry when a PR shows up open again', async () => {
   const store = new PrCache<PrDetails>('details');
 
   // acme/web#3 is open in the canned searches, so this entry is stale
-  store.set(prKey('acme/web', 3), { additions: 0, deletions: 0, timelineItems: { nodes: [] }, reviews: { nodes: [] } });
+  store.set(prKey('acme/web', 3), emptyDetails());
 
   store.save();
 
@@ -332,6 +357,188 @@ test('drops a stale cache entry when a PR shows up open again', async () => {
   expect(cacheHits).toBe(0);
   expect(results.find((result) => result.pr.number === 3)?.kind).toBe('pending');
   expect(new PrCache('details').has(prKey('acme/web', 3))).toBe(false);
+});
+
+test('refetches a cached details entry written before the outstanding review requests existed', async () => {
+  useFakeGh();
+
+  const prs = await loadReviewPrs();
+  const store = new PrCache<PrDetails>('details');
+
+  /**
+   * An entry from before the field existed lacks the review requests. It
+   * reads as a miss although the PR is closed, so the load refetches it
+   * once and writes it back in the current shape, after which it serves
+   * from the cache again.
+   */
+  const legacy: Partial<PrDetails> = emptyDetails();
+
+  delete legacy.reviewRequests;
+
+  store.set(prKey('acme/api', 1), legacy as PrDetails);
+  store.save();
+
+  const refetched = await fetchReviewRaw(prs, 'testuser');
+
+  expect(refetched.cacheHits).toBe(0);
+  expect(refetched.results.find((result) => result.pr.number === 1)?.kind).toBe('reviewed');
+  expect(new PrCache<PrDetails>('details').get(prKey('acme/api', 1))?.reviewRequests).toEqual({ nodes: [] });
+
+  const served = await fetchReviewRaw(prs, 'testuser');
+
+  expect(served.cacheHits).toBe(5);
+});
+
+test('classifies the canned team requests against the resolved teams', async () => {
+  useFakeGh();
+
+  const prs = await loadReviewPrs();
+  const teams = await resolveTeams('testuser');
+
+  expect(teams).toEqual(new Set(['acme/backend', 'acme/oncall', 'globex/platform']));
+
+  /**
+   * The backend team is still requested on api#9, so it waits for the
+   * team, and a teammate already answered on web#16, so nothing waits
+   * there. Without the teams both read as requests of someone else.
+   */
+  const { results } = await fetchReviewRaw(prs, 'testuser', undefined, { teams });
+
+  expect(results.find((result) => result.pr.number === 9)).toMatchObject({
+    kind: 'team-pending',
+    pr: { repo: 'acme/api', number: 9, state: 'open' },
+    requestedAt: new Date('2026-08-25T09:00:00Z'),
+    team: 'acme/backend',
+  });
+
+  expect(results.find((result) => result.pr.number === 16)?.kind).toBe('inaccessible');
+
+  const withoutTeams = await fetchReviewRaw(prs, 'testuser');
+
+  expect(withoutTeams.results.find((result) => result.pr.number === 9)?.kind).toBe('inaccessible');
+});
+
+test('resolveTeams caches the lookup per login and credentials, and a hard reload refreshes it', async () => {
+  useFakeGh();
+
+  const auth = await authFingerprint();
+
+  /**
+   * The fake pages the memberships. The oncall team only sits on acme's
+   * second team page and the platform team only on the second
+   * organization page, so the full set proves the lookup follows both
+   * connections to their last page before it caches anything.
+   */
+  expect(readCachedTeams(auth, 'testuser')).toBeNull();
+  expect(await resolveTeams('testuser')).toEqual(new Set(['acme/backend', 'acme/oncall', 'globex/platform']));
+  expect(readCachedTeams(auth, 'testuser')).toEqual({ teams: ['acme/backend', 'acme/oncall', 'globex/platform'], fresh: true });
+
+  /**
+   * A poisoned cached entry proves the next resolve reads the cache
+   * instead of asking gh, and a bypass refetches and repairs it.
+   */
+  writeCachedTeams(['acme/cached'], 'testuser', auth);
+
+  expect(await resolveTeams('testuser')).toEqual(new Set(['acme/cached']));
+  expect(await resolveTeams('testuser', true)).toEqual(new Set(['acme/backend', 'acme/oncall', 'globex/platform']));
+  expect(readCachedTeams(auth, 'testuser')).toEqual({ teams: ['acme/backend', 'acme/oncall', 'globex/platform'], fresh: true });
+
+  // an entry of another login or other credentials never serves
+  expect(readCachedTeams(auth, 'someone')).toBeNull();
+  expect(readCachedTeams('other-fingerprint', 'testuser')).toBeNull();
+});
+
+test('resolveTeams refreshes an expired entry and falls back to it when the lookup fails', async () => {
+  useFakeGh();
+
+  const auth = await authFingerprint();
+
+  const expire = (login: string, teams: string[]) => {
+    writeFileSync(
+      join(dir, 'teams.json'),
+      JSON.stringify({ version: 5, value: { login, auth, teams, cachedAt: '2020-01-01T00:00:00Z' } }),
+    );
+  };
+
+  expire('testuser', ['acme/stale']);
+
+  expect(readCachedTeams(auth, 'testuser')).toEqual({ teams: ['acme/stale'], fresh: false });
+  expect(await resolveTeams('testuser')).toEqual(new Set(['acme/backend', 'acme/oncall', 'globex/platform']));
+  expect(readCachedTeams(auth, 'testuser')?.fresh).toBe(true);
+
+  /**
+   * The fake cannot resolve the teams of any other login, the way a token
+   * without the read:org scope fails the query. The expired entry still
+   * serves then, and without any entry the user has no teams, so the
+   * load goes on either way.
+   */
+  expire('someone', ['acme/stale']);
+
+  expect(await resolveTeams('someone')).toEqual(new Set(['acme/stale']));
+  expect(readCachedTeams(auth, 'someone')?.fresh).toBe(false);
+
+  rmSync(join(dir, 'teams.json'));
+
+  expect(await resolveTeams('someone')).toEqual(new Set());
+  expect(readCachedTeams(auth, 'someone')).toBeNull();
+});
+
+test('resolveTeams keeps the expired teams when the token path answers with an incomplete list', async () => {
+  /**
+   * The token path passes a GraphQL answer through when it carries data
+   * next to its errors, and an error nulls the branch it hit, so a
+   * membership answer can arrive with an organization or its teams
+   * missing. Such an answer must not replace the cached teams, because a
+   * missing team would hide its review requests until the entry expires
+   * again. The stubbed fetch stands in for the API here, and the token
+   * fingerprint keys the entries like the real token path would.
+   */
+  const originalFetch = globalThis.fetch;
+  const answers: unknown[] = [];
+
+  globalThis.fetch = (async () => Response.json(answers.shift())) as unknown as typeof fetch;
+  configureAuth('test-token');
+
+  try {
+    const auth = await authFingerprint();
+
+    writeFileSync(
+      join(dir, 'teams.json'),
+      JSON.stringify({
+        version: 5,
+        value: { login: 'testuser', auth, teams: ['acme/stale'], cachedAt: '2020-01-01T00:00:00Z' },
+      }),
+    );
+
+    const page = <T>(nodes: (T | null)[]) => {
+      return { pageInfo: { hasNextPage: false, endCursor: null }, nodes };
+    };
+
+    const acme = { login: 'acme', teams: page([{ combinedSlug: 'acme/backend' }]) };
+    const errors = [{ message: 'Resource not accessible by integration' }];
+
+    // a missing organization, a missing team list, and a missing team each read as incomplete
+    answers.push(
+      { data: { user: { organizations: page([acme, null]) } }, errors },
+      { data: { user: { organizations: page([acme, { login: 'globex', teams: null }]) } }, errors },
+      { data: { user: { organizations: page([{ login: 'acme', teams: page([null]) }]) } }, errors },
+      { data: { user: null }, errors },
+    );
+
+    while (answers.length > 0) {
+      expect(await resolveTeams('testuser')).toEqual(new Set(['acme/stale']));
+      expect(readCachedTeams(auth, 'testuser')).toEqual({ teams: ['acme/stale'], fresh: false });
+    }
+
+    // a complete answer refreshes the entry as before
+    answers.push({ data: { user: { organizations: page([acme, { login: 'globex', teams: page([]) }]) } } });
+
+    expect(await resolveTeams('testuser')).toEqual(new Set(['acme/backend']));
+    expect(readCachedTeams(auth, 'testuser')).toEqual({ teams: ['acme/backend'], fresh: true });
+  } finally {
+    globalThis.fetch = originalFetch;
+    useFakeGh();
+  }
 });
 
 test('resolveUser prefers the configured user, then the cached login', async () => {
@@ -424,6 +631,35 @@ const SNAPSHOT_DATA: RawData = {
         createdAt: new Date('2026-07-03T10:00:00Z'),
       },
       reviewedAt: new Date('2026-07-05T12:00:00Z'),
+    },
+    {
+      kind: 'team-pending',
+      pr: {
+        repo: 'acme/api',
+        number: 9,
+        title: 'h',
+        url: 'https://example.com/9',
+        state: 'open',
+        createdAt: new Date('2026-06-25T08:00:00Z'),
+      },
+      requestedAt: new Date('2026-06-25T09:00:00Z'),
+      team: 'acme/backend',
+    },
+    {
+      kind: 'team-reviewed',
+      pr: {
+        repo: 'acme/web',
+        number: 16,
+        title: 'i',
+        url: 'https://example.com/16',
+        state: 'closed',
+        createdAt: new Date('2026-06-09T10:00:00Z'),
+      },
+      requestedAt: new Date('2026-06-10T09:00:00Z'),
+      reviewedAt: new Date('2026-06-11T09:00:00Z'),
+      verdict: 'APPROVED',
+      lines: 72,
+      team: 'acme/backend',
     },
   ],
   sizes: [

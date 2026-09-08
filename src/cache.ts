@@ -95,14 +95,15 @@ export function prKey(repo: string, number: number): string {
 
 /**
  * Names of the data cache files, the three PR stores, the cached login,
- * the TUI startup snapshot, and the mention notification baseline. This
- * doubles as the list of files clearCache deletes. The saved options live
- * in options.json next to them, the settings in settings.json, the
- * snoozes in snoozes.json, and the read state of the mention inbox in
- * mention-reads.json. All of them stay out of this list, because clearing
- * the cached data should not drop the saved preferences.
+ * the cached team memberships, the TUI startup snapshot, and the mention
+ * notification baseline. This doubles as the list of files clearCache
+ * deletes. The saved options live in options.json next to them, the
+ * settings in settings.json, the snoozes in snoozes.json, and the read
+ * state of the mention inbox in mention-reads.json. All of them stay out
+ * of this list, because clearing the cached data should not drop the
+ * saved preferences.
  */
-const CACHE_FILES = ['details', 'sizes', 'mentions', 'user', 'snapshot', 'mention-baseline'] as const;
+const CACHE_FILES = ['details', 'sizes', 'mentions', 'user', 'teams', 'snapshot', 'mention-baseline'] as const;
 
 /**
  * Deletes the cache files from disk, so the next load refetches every PR.
@@ -224,6 +225,58 @@ export function readCachedLogin(auth: string): string | null {
  */
 export function writeCachedLogin(login: string, auth: string): void {
   writeCacheFile('user', { login, auth, cachedAt: new Date().toISOString() } satisfies CachedLogin);
+}
+
+/**
+ * How long the cached team memberships stay fresh. Memberships change
+ * more often than a login does, so the expiry is shorter than the login's,
+ * and a hard reload refreshes them immediately. An expired entry still
+ * serves as the fallback when the lookup fails.
+ */
+const TEAMS_TTL_MS = 6 * 60 * 60 * 1000;
+
+interface CachedTeams {
+  /**
+   * Holds the login the teams were looked up for, which is the resolved
+   * user rather than the authenticated one, because a configured user
+   * belongs to other teams than the viewer.
+   */
+  login: string;
+  /**
+   * Holds the fingerprint of the credentials the lookup ran with, because
+   * the teams the viewer can see depend on the account.
+   */
+  auth: string;
+  teams: string[];
+  cachedAt: string;
+}
+
+/**
+ * Returns the cached team memberships of the given login under the given
+ * credentials, together with whether the entry is still within its
+ * expiry, or null when the cache is disabled, the entry is missing, or it
+ * was written for another login or under other credentials. The caller
+ * decides whether an expired entry still serves, which it does as the
+ * fallback when a fresh lookup fails.
+ */
+export function readCachedTeams(auth: string, login: string): { teams: string[]; fresh: boolean } | null {
+  const cached = readCacheFile('teams') as CachedTeams | null;
+
+  if (cached?.auth !== auth || cached.login !== login || !Array.isArray(cached.teams)) {
+    return null;
+  }
+
+  const age = Date.now() - new Date(cached.cachedAt).getTime();
+
+  return { teams: cached.teams, fresh: age >= 0 && age < TEAMS_TTL_MS };
+}
+
+/**
+ * Stores the team memberships of the given login with a fresh timestamp,
+ * keyed by the fingerprint of the credentials that looked them up.
+ */
+export function writeCachedTeams(teams: string[], login: string, auth: string): void {
+  writeCacheFile('teams', { login, auth, teams, cachedAt: new Date().toISOString() } satisfies CachedTeams);
 }
 
 interface CacheFile<T> {

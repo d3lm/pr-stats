@@ -29,7 +29,8 @@ for (const setting of SETTINGS) {
  * Centered modal with the app-level settings, separate from the data and
  * analysis options. The settings are grouped into sections, and the bottom
  * line describes the selected row, shows the validation error of a
- * rejected interval edit, or reports a pending or finished action.
+ * rejected interval edit or the failure of a notification sent while the
+ * dialog is open, or reports a pending or finished action.
  */
 export function SettingsModal({
   selected,
@@ -42,6 +43,9 @@ export function SettingsModal({
   notifications,
   trackMentions,
   notifyMentions,
+  teamReviews,
+  notifyTeamReviews,
+  teamReviewStats,
   notifyChannel,
   openIn,
   copyLinks,
@@ -60,6 +64,9 @@ export function SettingsModal({
   notifications: boolean;
   trackMentions: boolean;
   notifyMentions: boolean;
+  teamReviews: boolean;
+  notifyTeamReviews: boolean;
+  teamReviewStats: boolean;
   notifyChannel: NotifyChannel;
   openIn: LinkTarget;
   copyLinks: boolean;
@@ -121,6 +128,9 @@ export function SettingsModal({
                   notifications={notifications}
                   trackMentions={trackMentions}
                   notifyMentions={notifyMentions}
+                  teamReviews={teamReviews}
+                  notifyTeamReviews={notifyTeamReviews}
+                  teamReviewStats={teamReviewStats}
                   channelValue={channelValue}
                   deliveryValue={deliveryValue}
                   openIn={openIn}
@@ -149,7 +159,10 @@ export function SettingsModal({
  * row cycles github and linear the same way. The mention-
  * notifications row is such a toggle too, dimmed while the notifications
  * above it or the mention tracking below are off, because it only applies
- * with both. The track-mentions row is a plain toggle. The reload-interval
+ * with both, and the team-request-notifications row dims the same way
+ * while the notifications or the team requests are off. The
+ * track-mentions, team-requests, and count-team-reviews rows are plain
+ * toggles. The reload-interval
  * row shows the interval, dimmed while auto reload is off, and turns into
  * an input while editing. The notification-channel row cycles auto, terminal,
  * the platform command, and bell, and the test-notification row names the
@@ -176,6 +189,9 @@ function SettingValue({
   notifications,
   trackMentions,
   notifyMentions,
+  teamReviews,
+  notifyTeamReviews,
+  teamReviewStats,
   channelValue,
   deliveryValue,
   openIn,
@@ -195,6 +211,9 @@ function SettingValue({
   notifications: boolean;
   trackMentions: boolean;
   notifyMentions: boolean;
+  teamReviews: boolean;
+  notifyTeamReviews: boolean;
+  teamReviewStats: boolean;
   channelValue: string;
   deliveryValue: string;
   openIn: LinkTarget;
@@ -240,6 +259,15 @@ function SettingValue({
         />
       );
     }
+    case 'notifyTeamReviews': {
+      return (
+        <ToggleValue
+          value={notifyTeamReviews ? 'yes' : 'no'}
+          isSelected={isSelected}
+          active={notifications && teamReviews}
+        />
+      );
+    }
     case 'notifyChannel': {
       return <ToggleValue value={channelValue} isSelected={isSelected} />;
     }
@@ -258,6 +286,12 @@ function SettingValue({
     }
     case 'trackMentions': {
       return <ToggleValue value={trackMentions ? 'yes' : 'no'} isSelected={isSelected} />;
+    }
+    case 'teamReviews': {
+      return <ToggleValue value={teamReviews ? 'yes' : 'no'} isSelected={isSelected} />;
+    }
+    case 'teamReviewStats': {
+      return <ToggleValue value={teamReviewStats ? 'yes' : 'no'} isSelected={isSelected} />;
     }
     case 'snoozeDuration': {
       if (isEditing) {

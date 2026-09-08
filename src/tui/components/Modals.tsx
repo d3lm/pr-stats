@@ -23,6 +23,9 @@ export function Modals({
   notifications,
   trackMentions,
   notifyMentions,
+  teamReviews,
+  notifyTeamReviews,
+  teamReviewStats,
   notifyChannel,
   openIn,
   copyLinks,
@@ -45,6 +48,9 @@ export function Modals({
   notifications: boolean;
   trackMentions: boolean;
   notifyMentions: boolean;
+  teamReviews: boolean;
+  notifyTeamReviews: boolean;
+  teamReviewStats: boolean;
   notifyChannel: NotifyChannel;
   openIn: LinkTarget;
   copyLinks: boolean;
@@ -79,11 +85,18 @@ export function Modals({
   }
 
   if (ui.modal === 'settings') {
+    /**
+     * A notification that fails while the dialog is open, the test send
+     * or one of a background load, reports in the footer notice slot,
+     * which the dialog covers on a terminal shorter than its rows. The
+     * dialog's error line mirrors the failure, so it stays visible, and
+     * the next keypress dismisses it like the footer notice.
+     */
     return (
       <SettingsModal
         selected={ui.selectedSetting}
         editing={ui.editing}
-        error={ui.settingError}
+        error={ui.settingError ?? ui.openError}
         cacheAction={ui.cacheAction}
         noCache={noCache}
         autoReload={autoReload}
@@ -91,6 +104,9 @@ export function Modals({
         notifications={notifications}
         trackMentions={trackMentions}
         notifyMentions={notifyMentions}
+        teamReviews={teamReviews}
+        notifyTeamReviews={notifyTeamReviews}
+        teamReviewStats={teamReviewStats}
         notifyChannel={notifyChannel}
         openIn={openIn}
         copyLinks={copyLinks}

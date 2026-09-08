@@ -123,6 +123,28 @@ interface AppProps {
    */
   initialNotifyMentions?: boolean;
   /**
+   * Seeds the team review requests state from the saved setting, on
+   * unless the setting turns it off. While it is on, the awaiting queue
+   * lists the open PRs where only a team you belong to was asked in a
+   * section of its own. The settings dialog toggles it at runtime.
+   */
+  initialTeamReviews?: boolean;
+  /**
+   * Seeds the team request notifications state from the saved setting.
+   * While it is on together with the notifications and the team
+   * requests, every load sends a desktop notification for the PRs newly
+   * requested of a team you belong to. The settings dialog toggles it at
+   * runtime.
+   */
+  initialNotifyTeamReviews?: boolean;
+  /**
+   * Seeds the team review stats state from the saved setting. While it
+   * is on, the review tab and the JSON export count the cycles a team
+   * you belong to was asked for. The settings dialog toggles it at
+   * runtime.
+   */
+  initialTeamReviewStats?: boolean;
+  /**
    * Seeds the notification channel from the saved setting. The settings
    * dialog cycles it at runtime, and the default notifier follows it.
    */
@@ -207,6 +229,9 @@ export function App({
   initialNotifications = false,
   initialTrackMentions = true,
   initialNotifyMentions = false,
+  initialTeamReviews = true,
+  initialNotifyTeamReviews = false,
+  initialTeamReviewStats = false,
   initialNotifyChannel = 'auto',
   initialOpenIn = 'github',
   initialCopyLinks = false,
@@ -240,6 +265,9 @@ export function App({
   const [notifications, setNotifications] = useState(initialNotifications);
   const [trackMentions, setTrackMentions] = useState(initialTrackMentions);
   const [notifyMentions, setNotifyMentions] = useState(initialNotifyMentions);
+  const [teamReviews, setTeamReviews] = useState(initialTeamReviews);
+  const [notifyTeamReviews, setNotifyTeamReviews] = useState(initialNotifyTeamReviews);
+  const [teamReviewStats, setTeamReviewStats] = useState(initialTeamReviewStats);
   const [notifyChannel, setNotifyChannel] = useState(initialNotifyChannel);
   const [openIn, setOpenIn] = useState(initialOpenIn);
   const [copyLinks, setCopyLinks] = useState(initialCopyLinks);
@@ -367,10 +395,19 @@ export function App({
    * A failed notification reports in the footer notice slot, the same
    * slot a failed browser open or copy uses, so a missing notify-send
    * shows up once instead of the notifications silently doing nothing.
+   * The settings dialog mirrors the slot in its bottom line while it is
+   * open, because it covers the footer on a short terminal. The team
+   * requests only notify while the queue lists them and their own toggle
+   * is on, so a notification never points at a hidden row.
    */
-  const notifyReviewChanges = useReviewNotifications(notifications, notifier, (message) => {
-    dispatchUi({ type: 'openErrorReported', message });
-  });
+  const notifyReviewChanges = useReviewNotifications(
+    notifications,
+    notifier,
+    (message) => {
+      dispatchUi({ type: 'openErrorReported', message });
+    },
+    teamReviews && notifyTeamReviews,
+  );
 
   /**
    * The loads look for mentions while the tracking is on, which feeds
@@ -495,6 +532,7 @@ export function App({
     browse.expanded,
     snoozeStore.snoozes,
     readStore.reads,
+    { teamReviews, teamReviewStats },
     themeState,
   );
 
@@ -687,6 +725,9 @@ export function App({
       notifications,
       trackMentions,
       notifyMentions,
+      teamReviews,
+      notifyTeamReviews,
+      teamReviewStats,
       notifyChannel,
       openIn,
       copyLinks,
@@ -704,6 +745,9 @@ export function App({
       setNotifications,
       setTrackMentions,
       setNotifyMentions,
+      setTeamReviews,
+      setNotifyTeamReviews,
+      setTeamReviewStats,
       setNotifyChannel,
       setOpenIn,
       setCopyLinks,
@@ -793,6 +837,9 @@ export function App({
         notifications={notifications}
         trackMentions={trackMentions}
         notifyMentions={notifyMentions}
+        teamReviews={teamReviews}
+        notifyTeamReviews={notifyTeamReviews}
+        teamReviewStats={teamReviewStats}
         notifyChannel={notifyChannel}
         openIn={openIn}
         copyLinks={copyLinks}

@@ -67,6 +67,36 @@ function unrequestedResult(repo: string, number: number, reviewedAt: string, sta
 }
 
 /**
+ * Builds a team-pending result, a PR where only the given team of yours
+ * awaits a review since the given time, open unless a state overrides it.
+ */
+function teamPendingResult(
+  repo: string,
+  number: number,
+  requestedAt: string,
+  team = 'acme/backend',
+  state = 'open',
+): ReviewResult {
+  return { kind: 'team-pending', pr: pr(repo, number, state), requestedAt: new Date(requestedAt), team };
+}
+
+/**
+ * Builds a team-reviewed result, a completed cycle a team of yours was
+ * asked for and you answered at the given time, on an open PR.
+ */
+function teamReviewedResult(repo: string, number: number, reviewedAt: string): ReviewResult {
+  return {
+    kind: 'team-reviewed',
+    pr: pr(repo, number, 'open'),
+    requestedAt: new Date('2026-06-15T00:00:00Z'),
+    reviewedAt: new Date(reviewedAt),
+    verdict: 'APPROVED',
+    lines: 15,
+    team: 'acme/backend',
+  };
+}
+
+/**
  * Builds a size entry with a fixed size, so the tests only vary the repo,
  * the state, and the creation date.
  */
@@ -385,6 +415,133 @@ test('the pending view parks snoozed PRs in their own section until they wake up
   ]);
 
   expect(buildPendingRepoOptions(raw)[0].detail).toBe('4 PRs awaiting your review');
+});
+
+test('the pending view lists the requests of your teams in their own section while the setting is on', () => {
+  const raw = rawData({
+    reviewResults: [
+      pendingResult('acme/api', 1, '2026-07-03T00:00:00Z'),
+      teamPendingResult('acme/web', 2, '2026-07-02T00:00:00Z'),
+      teamPendingResult('acme/api', 3, '2026-07-01T00:00:00Z', 'acme/oncall'),
+      // a team request on a closed PR and a cycle you answered stay off the queue
+      teamPendingResult('acme/web', 4, '2026-07-04T00:00:00Z', 'acme/backend', 'closed'),
+      teamReviewedResult('acme/api', 5, '2026-07-05T00:00:00Z'),
+      // a PR you reviewed that your team was asked about again waits for the team
+      reviewedResult('acme/web', 6, '2026-07-01T00:00:00Z'),
+      teamPendingResult('acme/web', 6, '2026-07-06T00:00:00Z'),
+    ],
+    mentions: [mentionEntry('acme/web', 2, ['2026-07-21T00:00:00Z'])],
+  });
+
+  const now = Date.parse('2026-08-01T12:00:00Z');
+  const state = reads('2026-07-20T00:00:00Z');
+
+  /**
+   * The team section follows the awaiting queue, oldest request first,
+   * each row carrying its team and the request time for the snooze key,
+   * and the badge where the PR also mentions you. The direct request
+   * keeps its section to itself.
+   */
+  const flat = buildPendingReviewView(raw, null, false, [], state, now);
+
+  expect(flat.sections.map((section) => section.title)).toEqual([
+    'Awaiting your review (n=1)',
+    'Requested of your team (n=3)',
+  ]);
+
+  const rows = queueRows(flat);
+
+  expect(rows.map((row) => [row.ref, row.team])).toEqual([
+    ['acme/api#1', undefined],
+    ['acme/api#3', 'acme/oncall'],
+    ['acme/web#2', 'acme/backend'],
+    ['acme/web#6', 'acme/backend'],
+  ]);
+
+  expect(rows[1].pending).toEqual({ requestedAt: Date.parse('2026-07-01T00:00:00Z'), snoozed: false });
+  expect(rows[2].mentioned).toBe(true);
+  expect(snoozeActionOf(rows[1])).toBe('snooze');
+
+  // the reviewed queue leaves a PR alone while your team is asked about it, and lists the team cycle you answered
+  expect(queueRows(buildReviewedView(raw, null, false, [], state, now)).map((row) => row.ref)).toEqual(['acme/api#5']);
+
+  // narrowing to a repo and grouping work on the team section like on the others
+  const narrowed = buildPendingReviewView(raw, 'acme/web', false, [], state, now);
+
+  expect(narrowed.sections.map((section) => section.title)).toEqual(['Requested of your team (n=2)']);
+  expect(queueRows(narrowed).map((row) => row.ref)).toEqual(['acme/web#2', 'acme/web#6']);
+
+  const grouped = buildPendingReviewView(raw, null, true, [], state, now);
+
+  expect(grouped.sections[1].lists.map((list) => list.title)).toEqual(['acme/web (n=2)', 'acme/api (n=1)']);
+
+  /**
+   * A snoozed team request folds into the shared snoozed section, keeps
+   * its team, and marks itself for the snooze key, and a re-request of
+   * the team after the snooze voids it like a direct one would.
+   */
+  const snoozes = [
+    snooze('acme/web#2', '2026-08-02T09:00:00Z', '2026-07-02T00:00:00Z'),
+    snooze('acme/api#3', '2026-08-03T09:00:00Z', '2026-06-20T00:00:00Z'),
+  ];
+
+  const parked = buildPendingReviewView(raw, null, false, snoozes, state, now);
+
+  expect(parked.sections.map((section) => section.title)).toEqual([
+    'Awaiting your review (n=1)',
+    'Requested of your team (n=2)',
+    'Snoozed (n=1)',
+  ]);
+
+  const parkedRows = queueRows(parked);
+
+  expect(parkedRows.at(-1)).toMatchObject({
+    ref: 'acme/web#2',
+    team: 'acme/backend',
+    pending: { requestedAt: Date.parse('2026-07-02T00:00:00Z'), snoozed: true },
+  });
+
+  expect(snoozeActionOf(parkedRows.at(-1))).toBe('unsnooze');
+
+  // with only a snoozed team request the section still renders instead of the empty message
+  const onlyTeam = rawData({ reviewResults: [teamPendingResult('acme/web', 2, '2026-07-02T00:00:00Z')] });
+
+  expect(buildPendingReviewView(onlyTeam, null, false, snoozes, state, now).sections.map((s) => s.title)).toEqual([
+    'Snoozed (n=1)',
+  ]);
+
+  /**
+   * With the setting off the team requests vanish from the queue, the
+   * snoozed section, the alerts, and the picker, and a queue with nothing
+   * else shows the empty message.
+   */
+  const hidden = buildPendingReviewView(raw, null, false, snoozes, state, now, false);
+
+  expect(hidden.sections.map((section) => section.title)).toEqual(['Awaiting your review (n=1)']);
+
+  expect(buildPendingReviewView(onlyTeam, null, false, [], state, now, false).empty).toBe(
+    'No PRs are awaiting your review.',
+  );
+
+  expect(queueAlerts(onlyTeam, [], state, now)).toEqual({ pending: true, mentions: false });
+  expect(queueAlerts(onlyTeam, snoozes, state, now)).toEqual({ pending: false, mentions: false });
+  expect(queueAlerts(onlyTeam, [], state, now, false)).toEqual({ pending: false, mentions: false });
+
+  /**
+   * The picker counts the team requests apart from the direct ones and
+   * folds a snoozed team request into the snoozed count.
+   */
+  expect(buildPendingRepoOptions(raw, snoozes, now)).toEqual([
+    { repo: null, label: 'All repos', detail: '1 PR awaiting your review, 2 requested of your team, 1 snoozed' },
+    { repo: 'acme/api', label: 'acme/api', detail: '1 PR awaiting your review, 1 requested of your team' },
+    { repo: 'acme/web', label: 'acme/web', detail: '0 PRs awaiting your review, 1 requested of your team, 1 snoozed' },
+  ]);
+
+  expect(buildPendingRepoOptions(raw, snoozes, now, false)).toEqual([
+    { repo: null, label: 'All repos', detail: '1 PR awaiting your review' },
+    { repo: 'acme/api', label: 'acme/api', detail: '1 PR awaiting your review' },
+    { repo: 'acme/web', label: 'acme/web', detail: '0 PRs awaiting your review' },
+  ]);
 });
 
 test('the mentions view lists the inbox in unread, snoozed, and read sections', () => {

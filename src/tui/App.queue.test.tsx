@@ -4,6 +4,7 @@ import { App } from './App';
 import {
   destroyApp,
   initial,
+  lineWith,
   pressEnterToOpen,
   renderApp,
   scrollToText,
@@ -246,6 +247,130 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
   }
 }, 30_000);
 
+test('lists the requests of your teams below the awaiting queue and hides them when the setting goes off', async () => {
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+
+  try {
+    /**
+     * The fake resolves testuser onto the backend team, whose request on
+     * api#9 is still open, so the picker counts it apart from the two
+     * direct requests. A teammate already answered the team's request on
+     * web#16, which shows up nowhere.
+     */
+    await waitForText(setup, '2 PRs awaiting your review, 1 requested of your team');
+
+    expect(setup.captureCharFrame()).toContain('1 PR awaiting your review, 1 requested of your team');
+    expect(setup.captureCharFrame()).not.toContain('acme/web#16');
+
+    /**
+     * The aggregate queue lists the team request in its own section
+     * under the awaiting one, naming the team after the title.
+     */
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Requested of your team (n=1)');
+
+    const queueFrame = setup.captureCharFrame();
+
+    expect(queueFrame).toContain('Awaiting your review (n=2)');
+    expect(lineWith(queueFrame, 'acme/api#9')).toContain('Migrate the queue consumers · acme/backend');
+    expect(queueFrame).not.toContain('acme/web#16');
+
+    /**
+     * The cursor moves onto the team row behind the two direct ones, and
+     * the s key snoozes it like a direct request. The dialog names the
+     * PR without the team, and the parked row keeps its team in the
+     * shared snoozed section, where s ends the snooze again.
+     */
+    setup.mockInput.pressArrow('down');
+    setup.mockInput.pressArrow('down');
+
+    const moved = Date.now();
+
+    while (Date.now() - moved < 15_000 && !lineWith(setup.captureCharFrame(), 'acme/api#9').includes('▸')) {
+      await setup.renderOnce();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'Snooze for');
+
+    // the dialog joins the reference and the title with one space, unlike the queue row behind it
+    expect(lineWith(setup.captureCharFrame(), 'acme/api#9 Migrate the queue consumers')).not.toContain('acme/backend');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Snoozed (n=1)');
+
+    const snoozedFrame = setup.captureCharFrame();
+
+    expect(snoozedFrame).not.toContain('Requested of your team (n=');
+    expect(lineWith(snoozedFrame, 'acme/api#9')).toContain('until ');
+    expect(lineWith(snoozedFrame, 'acme/api#9')).toContain('· acme/backend');
+
+    setup.mockInput.pressKey('s');
+
+    await waitForText(setup, 'Requested of your team (n=1)');
+
+    expect(setup.captureCharFrame()).not.toContain('Snoozed (n=');
+
+    /**
+     * The team requests row in the settings dialog starts on, and the
+     * debug run cannot persist the toggle, which the message slot says.
+     * Turning it off hides the section and the picker count right away,
+     * because the queue reads the setting at render time.
+     */
+    setup.mockInput.pressKey('S');
+
+    await waitForText(setup, 'Disable cache');
+
+    for (const hint of [
+      'deletes the cached PR data',
+      'reloads the data in the background',
+      'time between the background reloads',
+      'notifies you when a load finds',
+      'also notifies you when someone @-mentions you',
+      'also notifies you when a PR gets requested',
+      'auto tries the terminal',
+      'sends a sample notification',
+      'github opens the PR page',
+      'clipboard',
+      'searches the PRs that @-mention you',
+      'only a team of yours is asked',
+    ]) {
+      setup.mockInput.pressArrow('down');
+
+      await waitForText(setup, hint);
+    }
+
+    expect(lineWith(setup.captureCharFrame(), 'Team requests')).toContain('‹ yes ›');
+
+    setup.mockInput.pressKey(' ');
+
+    await waitForText(setup, 'setting not saved');
+
+    expect(lineWith(setup.captureCharFrame(), 'Team requests')).toContain('‹ no ›');
+
+    setup.mockInput.pressEscape();
+
+    await waitForTextGone(setup, 'Disable cache');
+
+    expect(setup.captureCharFrame()).toContain('Awaiting your review (n=2)');
+    expect(setup.captureCharFrame()).not.toContain('Requested of your team (n=');
+    expect(setup.captureCharFrame()).not.toContain('acme/api#9');
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'Select a repository');
+
+    expect(setup.captureCharFrame()).toContain('2 PRs awaiting your review');
+    expect(setup.captureCharFrame()).not.toContain('requested of your team');
+  } finally {
+    destroyApp(setup);
+  }
+}, 30_000);
+
 test('toggles the Your PRs tab between the open queue and the merged stats', async () => {
   const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
 
@@ -467,6 +592,7 @@ test('opens the PR on Linear while the open-in setting names it, and copies the 
       'time between the background reloads',
       'notifies you when a load finds',
       'also notifies you when someone @-mentions you',
+      'also notifies you when a PR gets requested',
       'auto tries the terminal',
       'sends a sample notification',
       'github opens the PR page',
@@ -600,6 +726,10 @@ test('copies the PR link instead of opening it while the copy-links setting is o
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'also notifies you when someone @-mentions you');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'also notifies you when a PR gets requested');
 
     setup.mockInput.pressArrow('down');
 

@@ -77,6 +77,18 @@ export interface StatsReport {
       reviewing: number;
       closedUnreviewed: number;
       reviewedUnrequested: number;
+      /**
+       * Counts the completed cycles a team you belong to was asked for,
+       * whether or not the team stats setting folded them into the
+       * reviewed count and the summaries.
+       */
+      reviewedTeam: number;
+      /**
+       * Counts the open PRs where only a team you belong to was asked and
+       * the request still waits, whether or not the team stats setting
+       * folded them into the pending count.
+       */
+      pendingTeam: number;
     };
     reviewTimeHours: Summary | null;
     cyclesPerPr: Summary | null;
@@ -195,9 +207,12 @@ function hoursToClose(entry: SizeEntry): number | null {
  * Builds the serializable stats report from one load and the analysis
  * options. Configures the shared time-mode singleton from the options
  * before anything computes, like the view model does, so the durations
- * come out the same as on screen.
+ * come out the same as on screen. The team flag mirrors the team stats
+ * setting, which lives outside the options, and folds the cycles a team
+ * of yours was asked for into the review counts and summaries the way
+ * the review tab does.
  */
-export function buildStatsReport(raw: RawData, options: OptionsState): StatsReport {
+export function buildStatsReport(raw: RawData, options: OptionsState, teamReviewStats = false): StatsReport {
   const timezone = resolveTimezone(options.tz === '' ? undefined : options.tz);
 
   configureTimeMode({
@@ -213,7 +228,12 @@ export function buildStatsReport(raw: RawData, options: OptionsState): StatsRepo
   const sizeTarget: SizeTarget | undefined =
     options.sizeTarget === '' ? undefined : parseSizeTarget(options.sizeTarget);
 
-  const review = computeReviewStats(raw.reviewResults, { targetHours, now: raw.fetchedAt });
+  const review = computeReviewStats(raw.reviewResults, {
+    targetHours,
+    now: raw.fetchedAt,
+    includeTeam: teamReviewStats,
+  });
+
   const merge = computeMergeStats(raw.sizes);
   const reviewers = computeReviewerStats(raw.sizes, raw.user);
   const firstReview = computeFirstReviewStats(raw.sizes, raw.user, { now: raw.fetchedAt });
@@ -268,6 +288,8 @@ export function buildStatsReport(raw: RawData, options: OptionsState): StatsRepo
         reviewing: review.reviewing.length,
         closedUnreviewed: review.expired.length,
         reviewedUnrequested: review.unrequested.length,
+        reviewedTeam: review.teamReviewed.length,
+        pendingTeam: review.teamPending.length,
       },
       reviewTimeHours: summarize(review.allHours),
       cyclesPerPr: summarize(review.cycles),
@@ -366,10 +388,11 @@ export function exportFile(): string {
 
 /**
  * Writes the stats report for the loaded data to the export file,
- * overwriting a previous export.
+ * overwriting a previous export. The team flag passes through to the
+ * report builder.
  */
-export function exportStatsFile(raw: RawData, options: OptionsState): void {
-  writeFileAtomic(exportFile(), `${JSON.stringify(buildStatsReport(raw, options), null, 2)}\n`);
+export function exportStatsFile(raw: RawData, options: OptionsState, teamReviewStats = false): void {
+  writeFileAtomic(exportFile(), `${JSON.stringify(buildStatsReport(raw, options, teamReviewStats), null, 2)}\n`);
 }
 
 /**
@@ -394,10 +417,16 @@ function clearPhase(): void {
 
 /**
  * Runs the full fetch pipeline and prints the stats report to stdout as
- * JSON, the --json code path that replaces the TUI. Never returns, the
- * process exits once the report is printed or the load failed.
+ * JSON, the --json code path that replaces the TUI. The team flag comes
+ * from the saved team stats setting, so the report matches what the TUI
+ * would show. Never returns, the process exits once the report is printed
+ * or the load failed.
  */
-export async function runJsonStats(options: OptionsState, bypassCache: boolean): Promise<never> {
+export async function runJsonStats(
+  options: OptionsState,
+  bypassCache: boolean,
+  teamReviewStats = false,
+): Promise<never> {
   try {
     const raw = await loadData(options, reportPhase, { bypassCache });
 
@@ -409,7 +438,7 @@ export async function runJsonStats(options: OptionsState, bypassCache: boolean):
      * reached the OS.
      */
     await new Promise<void>((resolve) => {
-      process.stdout.write(`${JSON.stringify(buildStatsReport(raw, options), null, 2)}\n`, () => {
+      process.stdout.write(`${JSON.stringify(buildStatsReport(raw, options, teamReviewStats), null, 2)}\n`, () => {
         resolve();
       });
     });

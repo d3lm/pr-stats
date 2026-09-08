@@ -167,22 +167,104 @@ test('closed PRs, unrequested reviews, and reviews you gave drop out silently', 
   expect(second.baseline.size).toBe(0);
 });
 
+test('a request of your team enters the baseline always and reports only with the team flag', () => {
+  const teamPending = (repo: string, number: number, requestedAt: string): ReviewResult => {
+    return {
+      kind: 'team-pending',
+      pr: pr(repo, number),
+      requestedAt: new Date(requestedAt),
+      team: 'acme/backend',
+    };
+  };
+
+  const first = diffReviewRequests(null, [pendingResult('acme/api', 1, '2026-07-02T00:00:00Z')]);
+
+  /**
+   * Without the flag the new team request joins the baseline in silence,
+   * so turning the flag on afterwards never reports it, while a direct
+   * request in the same load still reports.
+   */
+  const silent = diffReviewRequests(first.baseline, [
+    pendingResult('acme/api', 1, '2026-07-02T00:00:00Z'),
+    teamPending('acme/web', 2, '2026-07-03T00:00:00Z'),
+    pendingResult('acme/api', 3, '2026-07-03T00:00:00Z'),
+  ]);
+
+  expect(refs(silent.newRequests)).toEqual(['acme/api#3']);
+  expect(silent.teamRequests).toEqual([]);
+  expect([...silent.baseline.keys()]).toEqual(['acme/api#1', 'acme/web#2', 'acme/api#3']);
+
+  const afterToggle = diffReviewRequests(
+    silent.baseline,
+    [
+      pendingResult('acme/api', 1, '2026-07-02T00:00:00Z'),
+      teamPending('acme/web', 2, '2026-07-03T00:00:00Z'),
+      pendingResult('acme/api', 3, '2026-07-03T00:00:00Z'),
+    ],
+    true,
+  );
+
+  expect(afterToggle.teamRequests).toEqual([]);
+
+  /**
+   * With the flag a team request the baseline lacks reports as a team
+   * request, apart from the direct ones, and so does a newer request of
+   * the team on a PR that was already waiting for it. A PR you reviewed
+   * that your team is asked about again is a team request too, not a
+   * re-request of you.
+   */
+  const reported = diffReviewRequests(
+    afterToggle.baseline,
+    [
+      teamPending('acme/web', 2, '2026-07-05T00:00:00Z'),
+      teamPending('acme/web', 4, '2026-07-04T00:00:00Z'),
+      reviewedResult('acme/api', 1, '2026-07-03T00:00:00Z'),
+      teamPending('acme/api', 1, '2026-07-04T00:00:00Z'),
+      pendingResult('acme/api', 5, '2026-07-04T00:00:00Z'),
+    ],
+    true,
+  );
+
+  expect(refs(reported.teamRequests)).toEqual(['acme/web#2', 'acme/web#4', 'acme/api#1']);
+  expect(refs(reported.newRequests)).toEqual(['acme/api#5']);
+  expect(reported.reRequests).toEqual([]);
+
+  // a direct request that follows a team request on the same PR reports as a new request
+  const escalated = diffReviewRequests(reported.baseline, [pendingResult('acme/web', 4, '2026-07-06T00:00:00Z')], true);
+
+  expect(refs(escalated.newRequests)).toEqual(['acme/web#4']);
+  expect(escalated.teamRequests).toEqual([]);
+
+  // a team request on a closed PR never reports
+  const closed = diffReviewRequests(
+    escalated.baseline,
+    [{ ...teamPending('acme/web', 7, '2026-07-07T00:00:00Z'), pr: pr('acme/web', 7, 'closed') }],
+    true,
+  );
+
+  expect(closed.teamRequests).toEqual([]);
+  expect(closed.baseline.size).toBe(0);
+});
+
 test('describes a single PR by reference and several PRs by count with a capped list', () => {
   const single: ReviewRequestChanges = {
     baseline: new Map(),
     newRequests: [pr('acme/api', 1)],
     reRequests: [pr('acme/web', 2)],
+    teamRequests: [pr('acme/web', 3)],
   };
 
   expect(describeReviewRequests(single)).toEqual([
     { title: 'Review requested on acme/api#1', body: 'pr 1' },
     { title: 'Review re-requested on acme/web#2', body: 'pr 2' },
+    { title: 'Review requested of your team on acme/web#3', body: 'pr 3' },
   ]);
 
   const several: ReviewRequestChanges = {
     baseline: new Map(),
     newRequests: [pr('acme/api', 1), pr('acme/api', 2), pr('acme/web', 3), pr('acme/web', 4), pr('acme/web', 5)],
     reRequests: [],
+    teamRequests: [pr('acme/web', 6), pr('acme/web', 7)],
   };
 
   // the body lists three references and folds the rest into a count
@@ -191,9 +273,12 @@ test('describes a single PR by reference and several PRs by count with a capped 
       title: '5 new PRs awaiting your review',
       body: 'acme/api#1 pr 1\nacme/api#2 pr 2\nacme/web#3 pr 3\nand 2 more',
     },
+    { title: '2 new PRs requested of your team', body: 'acme/web#6 pr 6\nacme/web#7 pr 7' },
   ]);
 
-  expect(describeReviewRequests({ baseline: new Map(), newRequests: [], reRequests: [] })).toEqual([]);
+  expect(describeReviewRequests({ baseline: new Map(), newRequests: [], reRequests: [], teamRequests: [] })).toEqual(
+    [],
+  );
 });
 
 test('the first mention list only establishes the baseline, and later ones report the texts that arrived since', () => {

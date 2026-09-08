@@ -17,9 +17,12 @@ import {
   saveNotifications,
   saveNotifyChannel,
   saveNotifyMentions,
+  saveNotifyTeamReviews,
   saveOpenIn,
   saveReloadInterval,
   saveSnoozeDuration,
+  saveTeamReviews,
+  saveTeamReviewStats,
   saveTheme,
   saveTrackMentions,
 } from './settings';
@@ -253,6 +256,38 @@ test('saveTrackMentions persists the toggle and keeps hand-written keys', () => 
   ).toBe(false);
 });
 
+test('the team review toggles persist next to each other and keep hand-written keys', () => {
+  writeSettingsFile({ theme: { accent: '#89b4f0' }, notifications: true });
+  loadSettings();
+
+  expect(saveTeamReviews(false)).toBe(true);
+  expect(saveNotifyTeamReviews(true)).toBe(true);
+  expect(saveTeamReviewStats(true)).toBe(true);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
+    theme: { accent: '#89b4f0' },
+    notifications: true,
+    teamReviews: false,
+    notifyTeamReviews: true,
+    teamReviewStats: true,
+  });
+
+  expect(loadSettings()).toMatchObject({ teamReviews: false, notifyTeamReviews: true, teamReviewStats: true });
+
+  // a disabled cache stores nothing, the way debug runs stay isolated
+  configureCache(false);
+
+  expect(saveTeamReviews(true)).toBe(false);
+  expect(saveNotifyTeamReviews(false)).toBe(false);
+  expect(saveTeamReviewStats(false)).toBe(false);
+
+  expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toMatchObject({
+    teamReviews: false,
+    notifyTeamReviews: true,
+    teamReviewStats: true,
+  });
+});
+
 test('saveNotifyChannel persists the channel and keeps hand-written keys', () => {
   writeSettingsFile({ theme: { accent: '#89b4f0' }, notifications: true });
   loadSettings();
@@ -412,6 +447,18 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
   writeSettingsFile({ trackMentions: 'no' });
 
   expect(() => loadSettings()).toThrow('"trackMentions"');
+
+  writeSettingsFile({ teamReviews: 'no' });
+
+  expect(() => loadSettings()).toThrow('"teamReviews"');
+
+  writeSettingsFile({ notifyTeamReviews: 1 });
+
+  expect(() => loadSettings()).toThrow('"notifyTeamReviews"');
+
+  writeSettingsFile({ teamReviewStats: 'yes' });
+
+  expect(() => loadSettings()).toThrow('"teamReviewStats"');
 
   // only the four known channel names pass, anything else is a typo
   writeSettingsFile({ notifyChannel: 'osascript' });

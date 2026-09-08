@@ -1,4 +1,4 @@
-import { latestReviews, pendingRequests } from '../../compute';
+import { latestReviews, pendingRequests, teamPendingRequests } from '../../compute';
 import { emptyMentionReads, mentionItems, splitMentions, type MentionReads } from '../../mentions';
 import { splitSnoozed, type Snooze } from '../../snooze';
 import type { RawData } from '../data/load';
@@ -28,19 +28,25 @@ function sizeDetail(count: number): string {
 }
 
 /**
- * Builds the entries for the repo picker on the review tab. Returns an
+ * Builds the entries for the repo picker on the review tab. The team flag
+ * mirrors the team stats setting and counts the cycles a team of yours
+ * was asked for into the details, so a repo that only reaches you through
+ * a team does not read as zero while the charts count it. Returns an
  * empty array when the data spans at most one repo, in which case the tab
  * skips the picker and renders the charts directly.
  */
-export function buildReviewRepoOptions(raw: RawData): RepoOption[] {
+export function buildReviewRepoOptions(raw: RawData, teamReviewStats = false): RepoOption[] {
   const countsByRepo = new Map<string, { reviewed: number; pending: number }>();
 
   for (const result of raw.reviewResults) {
     const counts = countsByRepo.get(result.pr.repo) ?? { reviewed: 0, pending: 0 };
 
-    if (result.kind === 'reviewed') {
+    if (result.kind === 'reviewed' || (teamReviewStats && result.kind === 'team-reviewed')) {
       counts.reviewed += 1;
-    } else if (result.kind === 'pending' && result.pr.state === 'open') {
+    } else if (
+      (result.kind === 'pending' || (teamReviewStats && result.kind === 'team-pending')) &&
+      result.pr.state === 'open'
+    ) {
       counts.pending += 1;
     }
 
@@ -161,11 +167,12 @@ function reviewRepos<T>(raw: RawData, zero: () => T): Map<string, T> {
 
 interface PendingCounts extends Record<string, number> {
   awaiting: number;
+  team: number;
   snoozed: number;
 }
 
 function zeroPending(): PendingCounts {
-  return { awaiting: 0, snoozed: 0 };
+  return { awaiting: 0, team: 0, snoozed: 0 };
 }
 
 /**
@@ -174,7 +181,11 @@ function zeroPending(): PendingCounts {
 function pendingDetail(counts: PendingCounts): string {
   const awaiting = `${counts.awaiting} ${counts.awaiting === 1 ? 'PR' : 'PRs'} awaiting your review`;
 
-  return awaiting + (counts.snoozed > 0 ? `, ${counts.snoozed} snoozed` : '');
+  return (
+    awaiting +
+    (counts.team > 0 ? `, ${counts.team} requested of your team` : '') +
+    (counts.snoozed > 0 ? `, ${counts.snoozed} snoozed` : '')
+  );
 }
 
 /**
@@ -182,13 +193,20 @@ function pendingDetail(counts: PendingCounts): string {
  * Awaiting you tab. The repos mirror the review tab's picker, every repo
  * with review activity, so this tab shows its picker whenever that tab
  * does. The details count the open PRs still awaiting a review, which
- * can be zero, next to the snoozed ones. The snoozes decide which pending
- * PRs count as snoozed at the given time, which defaults to the current
- * time like the queue view. Returns an empty array when the data spans
- * at most one repo, in which case the tab skips the picker and renders
- * the queue directly.
+ * can be zero, next to the ones requested of a team of yours and the
+ * snoozed ones of either kind. The snoozes decide which pending PRs
+ * count as snoozed at the given time, which defaults to the current time
+ * like the queue view, and the team flag mirrors the team setting, so
+ * the team requests stay out of the counts while the queue hides them.
+ * Returns an empty array when the data spans at most one repo, in which
+ * case the tab skips the picker and renders the queue directly.
  */
-export function buildPendingRepoOptions(raw: RawData, snoozes: readonly Snooze[] = [], now = Date.now()): RepoOption[] {
+export function buildPendingRepoOptions(
+  raw: RawData,
+  snoozes: readonly Snooze[] = [],
+  now = Date.now(),
+  teamReviews = true,
+): RepoOption[] {
   const countsByRepo = reviewRepos(raw, zeroPending);
 
   if (countsByRepo.size < 2) {
@@ -197,15 +215,30 @@ export function buildPendingRepoOptions(raw: RawData, snoozes: readonly Snooze[]
 
   const { awaiting, snoozed } = splitSnoozed(pendingRequests(raw.reviewResults), snoozes, now);
 
+  const { awaiting: team, snoozed: snoozedTeam } = splitSnoozed(
+    teamReviews ? teamPendingRequests(raw.reviewResults) : [],
+    snoozes,
+    now,
+  );
+
   for (const entry of awaiting) {
     bump(countsByRepo, entry.pr.repo, 'awaiting');
   }
 
-  for (const entry of snoozed) {
+  for (const entry of team) {
+    bump(countsByRepo, entry.pr.repo, 'team');
+  }
+
+  for (const entry of [...snoozed, ...snoozedTeam]) {
     bump(countsByRepo, entry.pr.repo, 'snoozed');
   }
 
-  return pickerOf(countsByRepo, zeroPending, (a, b) => b.awaiting - a.awaiting || b.snoozed - a.snoozed, pendingDetail);
+  return pickerOf(
+    countsByRepo,
+    zeroPending,
+    (a, b) => b.awaiting - a.awaiting || b.team - a.team || b.snoozed - a.snoozed,
+    pendingDetail,
+  );
 }
 
 interface ReviewedCounts extends Record<string, number> {

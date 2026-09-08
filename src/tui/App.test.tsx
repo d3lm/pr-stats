@@ -441,6 +441,13 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     setup.mockInput.pressArrow('down');
 
+    await waitForText(setup, 'also notifies you when a PR gets requested');
+
+    expect(setup.captureCharFrame()).toContain('Team request notifications');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    setup.mockInput.pressArrow('down');
+
     await waitForText(setup, 'auto tries the terminal');
 
     expect(setup.captureCharFrame()).toContain('Notification channel');
@@ -478,8 +485,9 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     /**
      * The awaiting-you rows sit between the copy-links toggle and the
-     * theme rows. The mention tracking starts on, and the default-snooze
-     * row shows the duration the snooze dialog starts with.
+     * theme rows. The mention tracking and the team requests start on,
+     * the team review count starts off, and the default-snooze row shows
+     * the duration the snooze dialog starts with.
      */
     setup.mockInput.pressArrow('down');
 
@@ -487,6 +495,20 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(setup.captureCharFrame()).toContain('Track mentions');
     expect(setup.captureCharFrame()).toContain('‹ yes ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'only a team of yours is asked');
+
+    expect(setup.captureCharFrame()).toContain('Team requests');
+    expect(setup.captureCharFrame()).toContain('‹ yes ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'counts the team requests you reviewed');
+
+    expect(setup.captureCharFrame()).toContain('Count team reviews');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
 
     setup.mockInput.pressArrow('down');
 

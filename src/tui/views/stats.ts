@@ -256,7 +256,9 @@ function targetStatus(sorted: number[], target: ReviewTarget): Span {
  * target status. Passing a repo narrows every chart and list to that
  * repo. The width argument sizes the full-width distribution strip to the
  * visible pane, and the expanded flag lifts the row cap of the by-repo
- * comparison.
+ * comparison. The team flag mirrors the team stats setting and folds the
+ * cycles a team of yours was asked for into every chart and count, and
+ * without it the strip reports how many such reviews stay out.
  */
 export function buildReviewView(
   raw: RawData,
@@ -264,16 +266,24 @@ export function buildReviewView(
   repo: string | null = null,
   width = 100,
   expanded = false,
+  teamReviewStats = false,
 ): StatsView {
   const results = repo === null ? raw.reviewResults : raw.reviewResults.filter((result) => result.pr.repo === repo);
-  const stats = computeReviewStats(results, { targetHours: target?.hours, now: raw.fetchedAt });
+
+  const stats = computeReviewStats(results, {
+    targetHours: target?.hours,
+    now: raw.fetchedAt,
+    includeTeam: teamReviewStats,
+  });
 
   /**
    * The reviewed entries hold one per completed request-review cycle,
    * so a PR that came back to you counts twice there. The strip leads
    * with the distinct PRs, which the cycles list carries one count for,
    * and puts the rounds next to it so the two never get mistaken for each
-   * other.
+   * other. The team cell only shows while the team stats setting leaves
+   * team reviews out and there are some to leave out, so the strip stays
+   * as wide as before for everyone without team requests.
    */
   const strip = [
     countCell(stats.cycles.length, 'PRs reviewed'),
@@ -281,6 +291,16 @@ export function buildReviewView(
     countCell(stats.pending.length, 'awaiting you', true),
     countCell(stats.expired.length, 'closed unreviewed', true),
     [{ text: `${stats.unrequested.length} reviewed unasked (excluded)`, fg: theme.dim }],
+    ...(teamReviewStats || stats.teamReviewed.length === 0
+      ? []
+      : [
+          [
+            {
+              text: `${stats.teamReviewed.length} team ${stats.teamReviewed.length === 1 ? 'review' : 'reviews'} (excluded)`,
+              fg: theme.dim,
+            },
+          ],
+        ]),
   ];
 
   const base = {
@@ -328,7 +348,15 @@ export function buildReviewView(
   }
 
   const sorted = [...stats.allHours].toSorted((a, b) => a - b);
-  const total = raw.reviewResults.filter((result) => result.kind === 'reviewed').length;
+
+  /**
+   * The headline denominator counts the same kinds the reviewed entries
+   * hold, so a team-heavy dataset with the team stats on never reads as
+   * more reviews in the scope than in the whole.
+   */
+  const total = raw.reviewResults.filter((result) => {
+    return result.kind === 'reviewed' || (teamReviewStats && result.kind === 'team-reviewed');
+  }).length;
 
   /**
    * The headline pairs the median with the target percentile, which stays

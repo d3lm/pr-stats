@@ -12,19 +12,39 @@ const pr: ReviewPr = {
 };
 
 /**
+ * One canned review request, a plain timestamp for a request that names
+ * the user under test and an object for a request of a team by its
+ * combined slug.
+ */
+type Request = string | { at: string; team: string };
+
+/**
  * Builds a PrDetails timeline from request and review timestamps, all
  * attributed to the given user unless a login is passed explicitly,
- * and all approvals unless a state overrides it. The size stays fixed
- * at 120 added and 30 removed lines, so every reviewed cycle carries
- * 150 lines.
+ * and all approvals unless a state overrides it. The outstanding list
+ * names the teams whose request is still open on the PR, and stays
+ * empty by default, the way a PR without a team request looks. The size
+ * stays fixed at 120 added and 30 removed lines, so every reviewed cycle
+ * carries 150 lines.
  */
-function details(requests: string[], reviews: (string | { at: string; login?: string; state?: string })[]): PrDetails {
+function details(
+  requests: Request[],
+  reviews: (string | { at: string; login?: string; state?: string })[],
+  outstanding: string[] = [],
+): PrDetails {
   return {
     additions: 120,
     deletions: 30,
     timelineItems: {
-      nodes: requests.map((at) => {
-        return { createdAt: at, requestedReviewer: { login: 'me' } };
+      nodes: requests.map((request) => {
+        if (typeof request === 'string') {
+          return { createdAt: request, requestedReviewer: { login: 'me' } };
+        }
+
+        return {
+          createdAt: request.at,
+          requestedReviewer: { slug: request.team.split('/')[1], combinedSlug: request.team },
+        };
       }),
     },
     reviews: {
@@ -34,8 +54,15 @@ function details(requests: string[], reviews: (string | { at: string; login?: st
         return { author: { login }, submittedAt: at, state };
       }),
     },
+    reviewRequests: {
+      nodes: outstanding.map((team) => {
+        return { requestedReviewer: { combinedSlug: team } };
+      }),
+    },
   };
 }
+
+const teams = new Set(['acme/backend', 'acme/oncall']);
 
 test('classifies a single answered request as one reviewed cycle', () => {
   expect(classifyPr(pr, details(['2026-07-01T09:00:00Z'], ['2026-07-01T15:00:00Z']), 'me')).toEqual([
@@ -192,6 +219,173 @@ test('without a configured set every submitted review state counts', () => {
       verdict: 'COMMENTED',
       lines: 150,
     },
+  ]);
+});
+
+test('an open request of one of your teams classifies as team-pending while the team is still requested', () => {
+  const request = { at: '2026-07-01T09:00:00Z', team: 'acme/backend' };
+
+  expect(classifyPr(pr, details([request], [], ['acme/backend']), 'me', undefined, teams)).toEqual([
+    { kind: 'team-pending', pr, requestedAt: new Date('2026-07-01T09:00:00Z'), team: 'acme/backend' },
+  ]);
+
+  // the team set compares case-insensitively, the way GitHub treats slugs
+  expect(classifyPr(pr, details([request], [], ['acme/backend']), 'me', undefined, new Set(['ACME/Backend']))).toEqual([
+    { kind: 'team-pending', pr, requestedAt: new Date('2026-07-01T09:00:00Z'), team: 'acme/backend' },
+  ]);
+
+  // a team you are not on never counts, so the PR classifies as before the lookup existed
+  expect(classifyPr(pr, details([request], [], ['acme/backend']), 'me', undefined, new Set(['acme/other']))).toEqual([
+    { kind: 'inaccessible', pr },
+  ]);
+
+  expect(classifyPr(pr, details([request], [], ['acme/backend']), 'me')).toEqual([{ kind: 'inaccessible', pr }]);
+
+  /**
+   * A team request that no longer sits among the outstanding review
+   * requests was answered by a teammate, so nothing waits for you and the
+   * PR drops out, or keeps your unasked review for the reviewing queue.
+   */
+  expect(classifyPr(pr, details([request], []), 'me', undefined, teams)).toEqual([{ kind: 'inaccessible', pr }]);
+
+  expect(classifyPr(pr, details([request], ['2026-06-30T09:00:00Z']), 'me', undefined, teams)).toEqual([
+    { kind: 'unrequested', pr, reviewedAt: new Date('2026-06-30T09:00:00Z') },
+  ]);
+});
+
+test('your review after a request of your team closes the cycle as team-reviewed', () => {
+  const timeline = details([{ at: '2026-07-01T09:00:00Z', team: 'acme/backend' }], ['2026-07-01T15:00:00Z']);
+
+  expect(classifyPr(pr, timeline, 'me', undefined, teams)).toEqual([
+    {
+      kind: 'team-reviewed',
+      pr,
+      requestedAt: new Date('2026-07-01T09:00:00Z'),
+      reviewedAt: new Date('2026-07-01T15:00:00Z'),
+      verdict: 'APPROVED',
+      lines: 150,
+      team: 'acme/backend',
+    },
+  ]);
+
+  /**
+   * Two teams of yours asked before the review date the cycle from the
+   * earliest request, and a team request after the review opens a new
+   * cycle that stays pending while its team is requested.
+   */
+  const twoTeams = details(
+    [
+      { at: '2026-07-01T09:00:00Z', team: 'acme/oncall' },
+      { at: '2026-07-01T10:00:00Z', team: 'acme/backend' },
+      { at: '2026-07-02T09:00:00Z', team: 'acme/backend' },
+    ],
+    ['2026-07-01T15:00:00Z'],
+    ['acme/backend'],
+  );
+
+  expect(classifyPr(pr, twoTeams, 'me', undefined, teams)).toEqual([
+    {
+      kind: 'team-reviewed',
+      pr,
+      requestedAt: new Date('2026-07-01T09:00:00Z'),
+      reviewedAt: new Date('2026-07-01T15:00:00Z'),
+      verdict: 'APPROVED',
+      lines: 150,
+      team: 'acme/oncall',
+    },
+    { kind: 'team-pending', pr, requestedAt: new Date('2026-07-02T09:00:00Z'), team: 'acme/backend' },
+  ]);
+});
+
+test('a direct request dominates a team request within one cycle', () => {
+  /**
+   * A team request while a direct request is open changes nothing, and
+   * one review closes both, so the PR classifies exactly as without the
+   * team request.
+   */
+  const teamDuringDirect = details(
+    ['2026-07-01T09:00:00Z', { at: '2026-07-01T10:00:00Z', team: 'acme/backend' }],
+    ['2026-07-01T15:00:00Z'],
+  );
+
+  expect(classifyPr(pr, teamDuringDirect, 'me', undefined, teams)).toEqual([
+    {
+      kind: 'reviewed',
+      pr,
+      requestedAt: new Date('2026-07-01T09:00:00Z'),
+      reviewedAt: new Date('2026-07-01T15:00:00Z'),
+      verdict: 'APPROVED',
+      lines: 150,
+    },
+  ]);
+
+  // a direct request during an open team cycle takes the cycle over and is what stays pending
+  const directDuringTeam = details(
+    [{ at: '2026-07-01T09:00:00Z', team: 'acme/backend' }, '2026-07-01T10:00:00Z'],
+    [],
+    ['acme/backend'],
+  );
+
+  expect(classifyPr(pr, directDuringTeam, 'me', undefined, teams)).toEqual([
+    { kind: 'pending', pr, requestedAt: new Date('2026-07-01T10:00:00Z') },
+  ]);
+
+  // a team request after a completed direct cycle opens a team cycle of its own
+  const teamAfterDirect = details(
+    ['2026-07-01T09:00:00Z', { at: '2026-07-02T09:00:00Z', team: 'acme/backend' }],
+    ['2026-07-01T15:00:00Z'],
+    ['acme/backend'],
+  );
+
+  expect(classifyPr(pr, teamAfterDirect, 'me', undefined, teams)).toEqual([
+    {
+      kind: 'reviewed',
+      pr,
+      requestedAt: new Date('2026-07-01T09:00:00Z'),
+      reviewedAt: new Date('2026-07-01T15:00:00Z'),
+      verdict: 'APPROVED',
+      lines: 150,
+    },
+    { kind: 'team-pending', pr, requestedAt: new Date('2026-07-02T09:00:00Z'), team: 'acme/backend' },
+  ]);
+});
+
+test('a pending team cycle dates from the latest request of each team still requested', () => {
+  /**
+   * The oncall team asked first and a teammate answered, which cleared
+   * its request, so the cycle waits on the backend team alone and dates
+   * from that request.
+   */
+  const twoTeams: Request[] = [
+    { at: '2026-07-01T09:00:00Z', team: 'acme/oncall' },
+    { at: '2026-07-02T09:00:00Z', team: 'acme/backend' },
+  ];
+
+  expect(classifyPr(pr, details(twoTeams, [], ['acme/backend']), 'me', undefined, teams)).toEqual([
+    { kind: 'team-pending', pr, requestedAt: new Date('2026-07-02T09:00:00Z'), team: 'acme/backend' },
+  ]);
+
+  // with both teams still requested the cycle dates from the earlier of their latest requests
+  expect(classifyPr(pr, details(twoTeams, [], ['acme/backend', 'acme/oncall']), 'me', undefined, teams)).toEqual([
+    { kind: 'team-pending', pr, requestedAt: new Date('2026-07-01T09:00:00Z'), team: 'acme/oncall' },
+  ]);
+
+  /**
+   * The same team asked twice with a teammate's review in between, which
+   * the timeline never shows, so only the later request can be the one
+   * still outstanding and the cycle dates from it.
+   */
+  const reRequestedTeam = details(
+    [
+      { at: '2026-07-01T09:00:00Z', team: 'acme/backend' },
+      { at: '2026-07-03T09:00:00Z', team: 'acme/backend' },
+    ],
+    [],
+    ['acme/backend'],
+  );
+
+  expect(classifyPr(pr, reRequestedTeam, 'me', undefined, teams)).toEqual([
+    { kind: 'team-pending', pr, requestedAt: new Date('2026-07-03T09:00:00Z'), team: 'acme/backend' },
   ]);
 });
 

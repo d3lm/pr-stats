@@ -351,17 +351,17 @@ export function dueSnoozes(snoozes: readonly Snooze[], now: number): Snooze[] {
 
 /**
  * Lists the PRs behind the given review snoozes that still await a
- * review, in the order of the snoozes. A PR that got reviewed, closed,
- * or re-requested while snoozed is no longer the request the snooze
- * parked, so it stays out and the snooze ends quietly. Mention snoozes
- * among the given ones are skipped, because the mention module answers
- * for them.
+ * review, from you or from a team of yours, in the order of the snoozes.
+ * A PR that got reviewed, closed, or re-requested while snoozed is no
+ * longer the request the snooze parked, so it stays out and the snooze
+ * ends quietly. Mention snoozes among the given ones are skipped,
+ * because the mention module answers for them.
  */
 export function wokenPrs(due: readonly Snooze[], results: readonly ReviewResult[]): ReviewPr[] {
   const pending = new Map<string, { pr: ReviewPr; requestedAt: number }>();
 
   for (const result of results) {
-    if (result.kind === 'pending' && result.pr.state === 'open') {
+    if ((result.kind === 'pending' || result.kind === 'team-pending') && result.pr.state === 'open') {
       pending.set(prKey(result.pr.repo, result.pr.number), {
         pr: result.pr,
         requestedAt: result.requestedAt.getTime(),

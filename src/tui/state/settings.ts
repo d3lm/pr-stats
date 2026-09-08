@@ -54,6 +54,12 @@ export const SETTINGS: SettingSpec[] = [
     hint: 'also notifies you when someone @-mentions you on a PR, your own PRs included · needs desktop notifications and mention tracking on',
   },
   {
+    key: 'notifyTeamReviews',
+    section: 'Notifications',
+    label: 'Team request notifications',
+    hint: 'also notifies you when a PR gets requested of one of your teams · needs desktop notifications and team requests on',
+  },
+  {
     key: 'notifyChannel',
     section: 'Notifications',
     label: 'Notification channel',
@@ -82,6 +88,18 @@ export const SETTINGS: SettingSpec[] = [
     section: 'Awaiting you',
     label: 'Track mentions',
     hint: 'searches the PRs that @-mention you on every load and lists the unread ones in the Mentions inbox · off skips the search',
+  },
+  {
+    key: 'teamReviews',
+    section: 'Awaiting you',
+    label: 'Team requests',
+    hint: 'lists the open PRs where only a team of yours is asked to review, below the awaiting queue · off hides them',
+  },
+  {
+    key: 'teamReviewStats',
+    section: 'Awaiting you',
+    label: 'Count team reviews',
+    hint: 'counts the team requests you reviewed, and the open ones, in the Reviews tab and the export · off excludes them',
   },
   {
     key: 'snoozeDuration',
@@ -183,5 +201,5 @@ export const CACHE_MESSAGES: Record<CacheAction, { text: string; warn?: boolean 
   exported: { text: 'stats exported · the same report prints to stdout with the --json flag' },
   exportFailed: { text: 'the export failed · the file could not be written', warn: true },
   exportNoData: { text: 'no loaded stats to export yet · export again once the load finishes', warn: true },
-  notified: { text: 'test notification sent · a failure to deliver it reports in the footer' },
+  notified: { text: 'test notification sent · a failure to deliver it reports here' },
 };

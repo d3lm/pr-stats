@@ -2,17 +2,17 @@ import { readCacheFile, writeCacheFile } from '../../cache';
 import type { MentionedPr, MentionEntry, ReviewPr, ReviewResult } from '../../data';
 
 /**
- * Holds the open PRs awaiting your review after one load, keyed by
- * repo#number with the time of the request that opened the pending
- * cycle in milliseconds. The next load diffs its own pending requests
- * against it to find what changed in between.
+ * Holds the open PRs awaiting a review from you or from a team of yours
+ * after one load, keyed by repo#number with the time of the request that
+ * opened the pending cycle in milliseconds. The next load diffs its own
+ * pending requests against it to find what changed in between.
  */
 export type RequestBaseline = Map<string, number>;
 
 export interface ReviewRequestChanges {
   /**
-   * Holds the pending requests of this load, which becomes the baseline
-   * the next load diffs against.
+   * Holds the pending requests of this load, direct and of your teams,
+   * which becomes the baseline the next load diffs against.
    */
   baseline: RequestBaseline;
   /**
@@ -25,6 +25,11 @@ export interface ReviewRequestChanges {
    * in the order the results hold them.
    */
   reRequests: ReviewPr[];
+  /**
+   * Lists the PRs newly requested of a team you belong to, in the order
+   * the results hold them. Stays empty while the team flag is off.
+   */
+  teamRequests: ReviewPr[];
 }
 
 /**
@@ -39,44 +44,64 @@ export interface ReviewRequestChanges {
  * load without one, which only establishes the baseline, so a fresh
  * start never floods the desktop with everything already waiting.
  * Pending results on closed PRs and unrequested reviews never notify,
- * because a closed PR needs nothing and a team request never names you.
+ * because a closed PR needs nothing and a review without a request of
+ * yours was not asked of you.
+ *
+ * The open requests of a team you belong to enter the baseline whatever
+ * the team flag says, so turning the flag on reports the requests after
+ * that point and not everything already waiting. Only with the flag do
+ * they also report as team requests, under their own heading, because a
+ * request of the team is not a request of you.
  */
-export function diffReviewRequests(previous: RequestBaseline | null, results: ReviewResult[]): ReviewRequestChanges {
+export function diffReviewRequests(
+  previous: RequestBaseline | null,
+  results: ReviewResult[],
+  includeTeam = false,
+): ReviewRequestChanges {
   const baseline: RequestBaseline = new Map();
   const reviewedKeys = new Set<string>();
-  const pending: { key: string; pr: ReviewPr; requestedAt: number }[] = [];
+  const pending: { key: string; pr: ReviewPr; requestedAt: number; team: boolean }[] = [];
 
   for (const result of results) {
     const key = `${result.pr.repo}#${result.pr.number}`;
 
     if (result.kind === 'reviewed') {
       reviewedKeys.add(key);
-    } else if (result.kind === 'pending' && result.pr.state === 'open') {
+    } else if ((result.kind === 'pending' || result.kind === 'team-pending') && result.pr.state === 'open') {
       const requestedAt = result.requestedAt.getTime();
 
       baseline.set(key, requestedAt);
-      pending.push({ key, pr: result.pr, requestedAt });
+      pending.push({ key, pr: result.pr, requestedAt, team: result.kind === 'team-pending' });
     }
   }
 
   if (previous === null) {
-    return { baseline, newRequests: [], reRequests: [] };
+    return { baseline, newRequests: [], reRequests: [], teamRequests: [] };
   }
 
   const newRequests: ReviewPr[] = [];
   const reRequests: ReviewPr[] = [];
+  const teamRequests: ReviewPr[] = [];
 
-  for (const { key, pr, requestedAt } of pending) {
+  for (const { key, pr, requestedAt, team } of pending) {
     const before = previous.get(key);
 
     if (before !== undefined && before >= requestedAt) {
       continue;
     }
 
+    if (team) {
+      if (includeTeam) {
+        teamRequests.push(pr);
+      }
+
+      continue;
+    }
+
     (reviewedKeys.has(key) ? reRequests : newRequests).push(pr);
   }
 
-  return { baseline, newRequests, reRequests };
+  return { baseline, newRequests, reRequests, teamRequests };
 }
 
 /**
@@ -277,12 +302,13 @@ export const TEST_NOTIFICATION: Notification = {
 };
 
 /**
- * Turns the changes of one load into at most two notifications, one for
- * the new requests and one for the re-requests. A single PR gets its
- * reference in the title and its PR title as the body, and several PRs
- * get a count in the title with their references listed in the body.
- * The body always leads with a repo#number reference, so it never starts
- * with a dash that a command line could mistake for an option.
+ * Turns the changes of one load into at most three notifications, one
+ * for the new requests, one for the re-requests, and one for the
+ * requests of your teams. A single PR gets its reference in the title
+ * and its PR title as the body, and several PRs get a count in the title
+ * with their references listed in the body. The body always leads with
+ * a repo#number reference, so it never starts with a dash that a command
+ * line could mistake for an option.
  */
 export function describeReviewRequests(changes: ReviewRequestChanges): Notification[] {
   const notifications: Notification[] = [];
@@ -293,6 +319,12 @@ export function describeReviewRequests(changes: ReviewRequestChanges): Notificat
 
   if (changes.reRequests.length > 0) {
     notifications.push(describe(changes.reRequests, 'Review re-requested on', 'PRs came back for review'));
+  }
+
+  if (changes.teamRequests.length > 0) {
+    notifications.push(
+      describe(changes.teamRequests, 'Review requested of your team on', 'new PRs requested of your team'),
+    );
   }
 
   return notifications;

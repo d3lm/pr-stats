@@ -24,6 +24,13 @@ export interface PrRow {
    */
   mention?: { mark: MentionMark; state: 'unread' | 'snoozed' | 'read' };
   /**
+   * Names the team, by its combined org/slug, whose review request the
+   * row stands for, on the rows of the team section of the awaiting
+   * queue and the snoozed rows that came from it. The panel shows it
+   * after the title, so a parked team request stays recognizable.
+   */
+  team?: string;
+  /**
    * Marks a review row whose PR also carries an unread mention of you,
    * which the panel shows as a badge, so the awaiting and the reviewed
    * queues show where a review also answers a question. The inbox rows

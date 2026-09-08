@@ -128,6 +128,10 @@ test('labels the save state in the options modal and saves with s', async () => 
 
     setup.mockInput.pressArrow('down');
 
+    await waitForText(setup, 'also notifies you when a PR gets requested');
+
+    setup.mockInput.pressArrow('down');
+
     await waitForText(setup, 'auto tries the terminal');
 
     setup.mockInput.pressArrow('down');
@@ -145,6 +149,14 @@ test('labels the save state in the options modal and saves with s', async () => 
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'searches the PRs that @-mention you');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'only a team of yours is asked');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'counts the team requests you reviewed');
 
     setup.mockInput.pressArrow('down');
 

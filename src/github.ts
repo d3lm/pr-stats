@@ -31,13 +31,23 @@ export interface PrRef {
 }
 
 /**
- * One node of the review-request timeline. The requestedReviewer is a
- * User or Team union in the API, so both the login and the slug are
- * optional.
+ * A requested reviewer as the API returns it, a User or Team union, so
+ * the login and the team slugs are all optional. A team carries its
+ * bare slug and the combined org/slug form, which is what identifies a
+ * team across organizations and what the team membership lookup returns.
+ */
+export interface RequestedReviewer {
+  login?: string;
+  slug?: string;
+  combinedSlug?: string;
+}
+
+/**
+ * One node of the review-request timeline.
  */
 export interface TimelineNode {
   createdAt: string;
-  requestedReviewer?: { login?: string; slug?: string } | null;
+  requestedReviewer?: RequestedReviewer | null;
 }
 
 export interface ReviewNode {
@@ -49,13 +59,18 @@ export interface ReviewNode {
 /**
  * Review timeline and size of one PR on your reviewing plate. The
  * additions and deletions ride along for the review-time-vs-size
- * scatter and hold the PR's size at fetch time, not at review time.
+ * scatter and hold the PR's size at fetch time, not at review time. The
+ * review requests list the reviewers whose request is still outstanding,
+ * which tells a team request a teammate already answered from one that
+ * still waits, because the timeline only records when a request was
+ * made and never when it was satisfied.
  */
 export interface PrDetails {
   additions: number;
   deletions: number;
   timelineItems: { nodes: (TimelineNode | null)[] };
   reviews: { nodes: (ReviewNode | null)[] };
+  reviewRequests: { nodes: ({ requestedReviewer?: RequestedReviewer | null } | null)[] };
 }
 
 /**
@@ -602,7 +617,7 @@ export async function fetchPrDetails(prs: PrRef[]): Promise<(PrDetails | null)[]
                 createdAt
                 requestedReviewer {
                   ... on User { login }
-                  ... on Team { slug }
+                  ... on Team { slug combinedSlug }
                 }
               }
             }
@@ -614,6 +629,14 @@ export async function fetchPrDetails(prs: PrRef[]): Promise<(PrDetails | null)[]
               state
             }
           }
+          reviewRequests(first: 20) {
+            nodes {
+              requestedReviewer {
+                ... on User { login }
+                ... on Team { combinedSlug }
+              }
+            }
+          }
         }
       }`;
   });
@@ -621,7 +644,121 @@ export async function fetchPrDetails(prs: PrRef[]): Promise<(PrDetails | null)[]
   const query = `query {${parts.join('\n')}}`;
   const data = await runGraphql<Record<string, { pullRequest: PrDetails | null } | null>>(query);
 
-  return prs.map((pr, i) => data[`pr${i}`]?.pullRequest ?? null);
+  return prs.map((_pr, i) => data[`pr${i}`]?.pullRequest ?? null);
+}
+
+type TeamPage = Page<{ combinedSlug: string }>;
+
+/**
+ * Returns the cursor the page after the given one starts from, or null
+ * when the given page is the last one.
+ */
+function nextCursor(page: Page<unknown>): string | null {
+  return page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+}
+
+/**
+ * Renders the after argument of a connection for the given cursor, and
+ * nothing for the first page.
+ */
+function afterArgument(cursor: string | null): string {
+  return cursor === null ? '' : `, after: ${JSON.stringify(cursor)}`;
+}
+
+/**
+ * Fetches the combined org/slug names of every team the user belongs to
+ * across the organizations the viewer can see, so the classification can
+ * tell a review request of one of your teams from one of another team.
+ * The lookup goes by the user's login rather than by the repos of the
+ * search, because the search often spans every repo the login can see.
+ * The organizations and the teams within each are paginated connections,
+ * so the lookup follows both to their last page. The first query nests
+ * the first team page of every organization, which is all most users
+ * need, and a follow-up query per organization fetches the team pages
+ * after it, because a nested connection cannot page from inside the list
+ * of organizations. The query needs the read:org scope, and a token
+ * without it fails here with a CliError, which the caller treats as a
+ * soft failure. An answer with a null branch fails the same way instead
+ * of reading as fewer teams, because a per-field error nulls the branch
+ * it hit and the token path passes such an answer through with its data,
+ * and a team missing from the list would hide its review requests for
+ * the whole cache period.
+ */
+export async function fetchUserTeams(user: string): Promise<string[]> {
+  const login = JSON.stringify(user);
+  const incomplete = () => new CliError(`GitHub GraphQL query for the teams of ${user} returned an incomplete answer`);
+  const teams: string[] = [];
+
+  const teamsField = (cursor: string | null) => `teams(first: 100, userLogins: [${login}]${afterArgument(cursor)}) {
+    pageInfo { hasNextPage endCursor }
+    nodes { combinedSlug }
+  }`;
+
+  /**
+   * Adds the teams of one page to the list and returns the cursor of the
+   * page after it, or null on the last page.
+   */
+  const readTeams = (page: TeamPage | null | undefined): string | null => {
+    if (page === null || page === undefined) {
+      throw incomplete();
+    }
+
+    for (const team of page.nodes) {
+      if (team === null) {
+        throw incomplete();
+      }
+
+      teams.push(team.combinedSlug);
+    }
+
+    return nextCursor(page);
+  };
+
+  let organizationCursor: string | null = null;
+
+  do {
+    const data = await runGraphql<{
+      user: { organizations: Page<{ login: string; teams: TeamPage | null }> | null } | null;
+    }>(`query {
+      user(login: ${login}) {
+        organizations(first: 100${afterArgument(organizationCursor)}) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            login
+            ${teamsField(null)}
+          }
+        }
+      }
+    }`);
+
+    const organizations = data.user?.organizations;
+
+    if (organizations === null || organizations === undefined) {
+      throw incomplete();
+    }
+
+    for (const organization of organizations.nodes) {
+      if (organization === null) {
+        throw incomplete();
+      }
+
+      let teamCursor = readTeams(organization.teams);
+
+      while (teamCursor !== null) {
+        const more = await runGraphql<{ organization: { teams: TeamPage | null } | null }>(`query {
+          organization(login: ${JSON.stringify(organization.login)}) {
+            ${teamsField(teamCursor)}
+          }
+        }`);
+
+        teamCursor = readTeams(more.organization?.teams);
+      }
+    }
+
+    organizationCursor = nextCursor(organizations);
+  } while (organizationCursor !== null);
+
+  return teams;
 }
 
 /**
@@ -709,7 +846,8 @@ export interface PrMentionDetails extends MentionSource {
 }
 
 /**
- * One page of a GraphQL connection as the mention queries select it.
+ * One page of a paginated GraphQL connection, reduced to the cursor
+ * fields and the nodes the team and mention queries read.
  */
 interface Page<T> {
   pageInfo: { hasNextPage: boolean; endCursor: string | null };

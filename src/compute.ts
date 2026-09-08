@@ -33,6 +33,18 @@ export interface PendingEntry extends PendingRequest {
 }
 
 /**
+ * One open PR where only a team you belong to was asked for a review, as
+ * teamPendingRequests lists them, named by the team's combined org/slug.
+ */
+export interface TeamPendingRequest extends PendingRequest {
+  team: string;
+}
+
+export interface TeamPendingEntry extends TeamPendingRequest {
+  hours: number;
+}
+
+/**
  * One open PR you reviewed without an unanswered request, as
  * latestReviews lists them, before any duration is measured.
  */
@@ -66,19 +78,39 @@ export function pendingRequests(results: ReviewResult[]): PendingRequest[] {
 }
 
 /**
+ * Lists the open PRs where only a team you belong to was asked for a
+ * review and the request still waits, oldest request first, the team
+ * counterpart of pendingRequests. The queue view lists them in their own
+ * section while the team setting is on, and the stats fold them into the
+ * pending requests while the team stats setting is on.
+ */
+export function teamPendingRequests(results: ReviewResult[]): TeamPendingRequest[] {
+  const pending: TeamPendingRequest[] = [];
+
+  for (const result of results) {
+    if (result.kind === 'team-pending' && result.pr.state === 'open') {
+      pending.push({ pr: result.pr, requestedAt: result.requestedAt, team: result.team });
+    }
+  }
+
+  return pending.toSorted((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
+}
+
+/**
  * Lists the open PRs you already reviewed that carry no unanswered
  * request, one entry per PR with your latest review time, longest since
  * that review first, without measuring the durations. The per-cycle
  * results collapse into one entry per PR, and unrequested results count
  * too, because a review without a personal request still puts the PR on
- * your plate until it closes. A PR with an unanswered request sits in
- * the pending list instead, so the two lists never share a PR.
+ * your plate until it closes, and so do the reviews you gave on a team
+ * request. A PR with an unanswered request, direct or of your team, sits
+ * in a pending list instead, so the lists never share a PR.
  */
 export function latestReviews(results: ReviewResult[]): LatestReview[] {
   const pendingKeys = new Set<string>();
 
   for (const result of results) {
-    if (result.kind === 'pending' && result.pr.state === 'open') {
+    if ((result.kind === 'pending' || result.kind === 'team-pending') && result.pr.state === 'open') {
       pendingKeys.add(`${result.pr.repo}#${result.pr.number}`);
     }
   }
@@ -86,7 +118,10 @@ export function latestReviews(results: ReviewResult[]): LatestReview[] {
   const latest = new Map<string, LatestReview>();
 
   for (const result of results) {
-    if ((result.kind !== 'reviewed' && result.kind !== 'unrequested') || result.pr.state !== 'open') {
+    if (
+      (result.kind !== 'reviewed' && result.kind !== 'team-reviewed' && result.kind !== 'unrequested') ||
+      result.pr.state !== 'open'
+    ) {
       continue;
     }
 
@@ -118,6 +153,20 @@ export interface ReviewStats {
   reviewing: ReviewingEntry[];
   expired: ReviewResult[];
   unrequested: ReviewResult[];
+  /**
+   * Holds the completed cycles that a team of yours was asked for, with
+   * the same durations as the reviewed entries. They also sit among the
+   * reviewed entries while the team flag is on, and stand apart here
+   * either way, so the strip can report what the flag leaves out and the
+   * export can count them whatever the flag says.
+   */
+  teamReviewed: ReviewedEntry[];
+  /**
+   * Holds the open PRs where only a team of yours was asked and the
+   * request still waits, with the wait so far. They also sit among the
+   * pending entries while the team flag is on.
+   */
+  teamPending: TeamPendingEntry[];
   allHours: number[];
   byRepo: [string, number[]][];
   misses: ReviewedEntry[];
@@ -134,37 +183,66 @@ export interface ReviewStats {
  * pure computation over data already in memory, so the caller can rerun it
  * with a different time mode or target without refetching. Configure the
  * time mode before calling, because durations depend on it. The options
- * carry the target hours for the miss list and the clock for the pending
- * and reviewing durations.
+ * carry the target hours for the miss list, the clock for the pending
+ * and reviewing durations, and the includeTeam flag, which folds the
+ * cycles a team of yours was asked for into the reviewed and the pending
+ * entries, and the team requests on closed PRs into the expired ones.
+ * Without the flag those cycles only show up in the team fields.
  */
 export function computeReviewStats(
   results: ReviewResult[],
-  { targetHours, now = new Date() }: { targetHours?: number; now?: Date } = {},
+  {
+    targetHours,
+    now = new Date(),
+    includeTeam = false,
+  }: { targetHours?: number; now?: Date; includeTeam?: boolean } = {},
 ): ReviewStats {
   const reviewed: ReviewedEntry[] = [];
+  const teamReviewed: ReviewedEntry[] = [];
 
   for (const result of results) {
-    if (result.kind === 'reviewed') {
-      reviewed.push({
+    if (result.kind === 'reviewed' || result.kind === 'team-reviewed') {
+      const entry = {
         pr: result.pr,
         requestedAt: result.requestedAt,
         reviewedAt: result.reviewedAt,
         hours: durationHours(result.requestedAt, result.reviewedAt),
         verdict: result.verdict,
         lines: result.lines,
-      });
+      };
+
+      if (result.kind === 'team-reviewed') {
+        teamReviewed.push(entry);
+      }
+
+      if (includeTeam || result.kind === 'reviewed') {
+        reviewed.push(entry);
+      }
     }
   }
 
-  const pending = pendingRequests(results).map((entry) => {
+  const teamPending = teamPendingRequests(results).map((entry) => {
     return { ...entry, hours: durationHours(entry.requestedAt, now) };
   });
+
+  const pending: PendingEntry[] = pendingRequests(results).map((entry) => {
+    return { ...entry, hours: durationHours(entry.requestedAt, now) };
+  });
+
+  if (includeTeam) {
+    pending.push(...teamPending);
+    pending.sort((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
+  }
 
   const reviewing = latestReviews(results).map((entry) => {
     return { ...entry, hours: durationHours(entry.reviewedAt, now) };
   });
 
-  const expired = results.filter((result) => result.kind === 'pending' && result.pr.state !== 'open');
+  const expired = results.filter(
+    (result) =>
+      (result.kind === 'pending' || (includeTeam && result.kind === 'team-pending')) && result.pr.state !== 'open',
+  );
+
   const unrequested = results.filter((result) => result.kind === 'unrequested');
   const allHours = reviewed.map((result) => result.hours);
 
@@ -198,6 +276,8 @@ export function computeReviewStats(
     reviewing,
     expired,
     unrequested,
+    teamReviewed,
+    teamPending,
     allHours,
     byRepo,
     misses,

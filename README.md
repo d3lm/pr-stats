@@ -25,7 +25,7 @@ pr-stats
 
 Without flags, it covers PRs from the last 90 days across all repositories you can access.
 
-- **Awaiting you** splits into three sub-tabs, which the `t` key cycles forward and `T` (shift+t) cycles backward. Awaiting review lists the open PRs awaiting your review with their wait time, Reviewed lists the open PRs you already reviewed, and Mentions is an inbox of the PRs that @-mention you. A fresh review request moves a PR back into the awaiting list. The `s` key snoozes a PR or a mention you are not ready for yet, which parks it in a snoozed list until a time you pick, and `d` marks a mention read. See [Mentions](#mentions) and [Snoozing](#snoozing).
+- **Awaiting you** splits into three sub-tabs, which the `t` key cycles forward and `T` (shift+t) cycles backward. Awaiting review lists the open PRs awaiting your review with their wait time, followed by the open PRs where only a team you belong to was asked, Reviewed lists the open PRs you already reviewed, and Mentions is an inbox of the PRs that @-mention you. A fresh review request moves a PR back into the awaiting list. The `s` key snoozes a PR or a mention you are not ready for yet, which parks it in a snoozed list until a time you pick, and `d` marks a mention read. See [Team review requests](#team-review-requests), [Mentions](#mentions), and [Snoozing](#snoozing).
 - **Your PRs** splits into your open PRs and a merged-and-closed report with merge-time, first-review, backlog, and outcome charts plus a reviewer leaderboard. The `t` and `T` keys switch the sub-tabs.
 - **Reviews** counts the PRs you reviewed on request next to the review rounds they took, and charts your review times as a histogram, trend, heatmap, and weekly volume, plus review cycles, verdicts, an off-hours gauge, and the requests still waiting on you.
 - **PR size** carries the same charts for PR sizes and adds a weekly net-lines trend.
@@ -139,7 +139,7 @@ The Desktop notifications row in the settings dialog makes the TUI send a deskto
 
 The Mention notifications row below it extends the notifications to @-mentions. While it is on together with the desktop notifications and the mention tracking described under [Mentions](#mentions), every load notifies you about a PR whose body, conversation comment, review, or inline review comment newly names you. The diff works like the one for review requests, so the first load with the setting on only records the mentions already there, and every later load reports the texts that newly mention you since the load before it. A text counts once, when it first shows up, so a comment that already mentioned you stays quiet when its author fixes a typo in it, and a PR that leaves the results and comes back does not report its old mentions again. A text that was edited to add the mention, or a review comment that was drafted earlier and published with its review, counts from the edit or the publication. The setting persists as `notifyMentions`.
 
-Notifications go through the terminal itself when it supports a notification escape sequence, which covers iTerm2, Kitty, Ghostty, WezTerm, and most VTE-based terminals like GNOME Terminal. The terminal posts the notification under its own notification permission and the sequence travels through SSH, so this path needs no setup beyond what the terminal asks for. Some terminals only show the banner while their window is unfocused. Terminals without such support get the platform's own command instead, the bundled `pr-stats.app` helper on macOS and `notify-send` on Linux. A notification that fails to send reports in the footer, for example when `notify-send` is missing on a Linux machine.
+Notifications go through the terminal itself when it supports a notification escape sequence, which covers iTerm2, Kitty, Ghostty, WezTerm, and most VTE-based terminals like GNOME Terminal. The terminal posts the notification under its own notification permission and the sequence travels through SSH, so this path needs no setup beyond what the terminal asks for. Some terminals only show the banner while their window is unfocused. Terminals without such support get the platform's own command instead, the bundled `pr-stats.app` helper on macOS and `notify-send` on Linux. A notification that fails to send reports in the footer, for example when `notify-send` is missing on a Linux machine, and in the bottom line of the settings dialog while that is open.
 
 The "Notification channel" row picks the path, and the choice persists as `notifyChannel` with the values `auto`, `terminal`, `command`, and `bell`. On `auto` the TUI tries the terminal first and falls back to the platform command, `terminal` and `command` force one of those paths, and `bell` rings the terminal bell instead of posting any text. The dialog shows the `command` value as the command's name on this platform. Forcing the command pays off inside editor terminals like the one in VS Code, which render the terminal path as a small in-editor toast instead of a system notification. The bell reaches every terminal, including the ones that swallow notifications, and each terminal turns it into its own signal, a sound, a flashing screen, a bell icon on the tab, or a badge on the dock icon. The "Send test notification" row below the channel names the channel the next send takes and sends a sample notification, so you can check that your desktop displays it before relying on it.
 
@@ -158,6 +158,22 @@ The Track mentions row in the settings dialog turns the inbox on and off. It sta
 ```json
 {
   "trackMentions": true
+}
+```
+
+## Team review requests
+
+GitHub lets an author ask a whole team for a review, and the review-requested search returns those PRs to every member of the team. The Awaiting review sub-tab lists the open PRs where only a team you belong to was asked in a "Requested of your team" section below the awaiting list, each row naming the team after the PR title, and the repo picker counts them apart from the PRs that name you. A request that names you directly always wins, so a PR with both sits in the awaiting list alone. The team request leaves the section once you or a teammate reviews the PR, because GitHub clears the team's request with the first review from a member, and a team asked again after that comes back as a new request. The `s` key snoozes a team request like a direct one, and the snoozed row keeps the team name.
+
+To know which teams are yours, every load asks GitHub for the teams of the login the stats cover across the organizations you can see. The answer is cached in `teams.json` in the cache directory for six hours, and `R` refreshes it right away, so a new membership shows up on the next hard reload. The lookup needs the `read:org` scope on a classic token, or read access to organization members on a fine-grained one. Without it the lookup fails quietly, the cached teams keep serving when there are any, and otherwise the team requests are treated like requests of a team you are not on, which is how earlier versions treated every team request.
+
+Three rows in the settings dialog steer the feature, and each persists in `settings.json` in the cache directory. Team requests, under Awaiting you, turns the section on and off and starts on. Count team reviews, below it, folds the reviews you gave on a team request, and the team requests still open, into the Reviews tab and the JSON export, which lists them under `reviewedTeam` and `pendingTeam` either way. It starts off, so the review times keep measuring the requests that named you, and the Reviews tab then reports how many team reviews it leaves out. Team request notifications, under Notifications, extends the desktop notifications to PRs newly requested of a team you belong to, and only applies while the desktop notifications and the team requests are both on.
+
+```json
+{
+  "teamReviews": true,
+  "teamReviewStats": false,
+  "notifyTeamReviews": false
 }
 ```
 

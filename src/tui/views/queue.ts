@@ -1,5 +1,12 @@
 import { prKey } from '../../cache';
-import { latestReviews, pendingRequests, type LatestReview, type PendingRequest } from '../../compute';
+import {
+  latestReviews,
+  pendingRequests,
+  teamPendingRequests,
+  type LatestReview,
+  type PendingRequest,
+  type TeamPendingRequest,
+} from '../../compute';
 import type { MentionedPr, ReviewPr } from '../../data';
 import {
   emptyMentionReads,
@@ -168,26 +175,32 @@ export interface QueueAlerts {
  * on, across every repo rather than the opened scope, so the flags show
  * work that waits behind another repo scope too. The snoozes and the
  * read state decide what counts as waiting at the given time, which
- * defaults to the current time like the queue views. The flags need no
- * durations, so this never measures one.
+ * defaults to the current time like the queue views, and the team flag
+ * decides whether a request of a team of yours counts as waiting, which
+ * it does while the team setting lists those requests. The flags need
+ * no durations, so this never measures one.
  */
 export function queueAlerts(
   raw: RawData,
   snoozes: readonly Snooze[] = [],
   reads: MentionReads = emptyMentionReads(),
   now = Date.now(),
+  teamReviews = true,
 ): QueueAlerts {
   const { awaiting } = splitSnoozed(pendingRequests(raw.reviewResults), snoozes, now);
+  const { awaiting: team } = splitSnoozed(teamReviews ? teamPendingRequests(raw.reviewResults) : [], snoozes, now);
   const { unread } = splitMentions(mentionItems(raw.mentions ?? []), reads, snoozes, now);
 
-  return { pending: awaiting.length > 0, mentions: unread.length > 0 };
+  return { pending: awaiting.length > 0 || team.length > 0, mentions: unread.length > 0 };
 }
 
 /**
  * Builds the awaiting sub-tab of the Awaiting you tab, the queue of open
  * PRs where a review from you is still pending. The awaiting section
- * lists them longest wait first, and the snoozed section holds the ones
- * a review snooze parks until its wake-up time, soonest wake-up first,
+ * lists them longest wait first, the team section below it lists the
+ * open PRs where only a team you belong to was asked, each row naming
+ * the team, and the snoozed section holds the ones of either kind that a
+ * review snooze parks until its wake-up time, soonest wake-up first,
  * each leading with that time instead of the wait. A row whose PR also
  * has an unread mention carries the mention badge, because the review
  * request and the mention are two separate asks and the badge shows
@@ -199,7 +212,8 @@ export function queueAlerts(
  * repo instead. The snoozes decide which pending PRs sit in the snoozed
  * section at the given time, which defaults to the current time because
  * a snooze ends on the wall clock rather than at the fetch, and the read
- * state decides which rows carry the badge.
+ * state decides which rows carry the badge. The team flag mirrors the
+ * team setting, and without it the team requests stay off the queue.
  */
 export function buildPendingReviewView(
   raw: RawData,
@@ -208,10 +222,17 @@ export function buildPendingReviewView(
   snoozes: readonly Snooze[] = [],
   reads: MentionReads = emptyMentionReads(),
   now = Date.now(),
+  teamReviews = true,
 ): QueueView {
   const { awaiting, snoozed } = splitSnoozed(inScopeOf(pendingRequests(raw.reviewResults), repo), snoozes, now);
 
-  if (awaiting.length === 0 && snoozed.length === 0) {
+  const { awaiting: team, snoozed: snoozedTeam } = splitSnoozed(
+    inScopeOf(teamReviews ? teamPendingRequests(raw.reviewResults) : [], repo),
+    snoozes,
+    now,
+  );
+
+  if (awaiting.length === 0 && team.length === 0 && snoozed.length === 0 && snoozedTeam.length === 0) {
     return { empty: 'No PRs are awaiting your review.', sections: [] };
   }
 
@@ -227,12 +248,26 @@ export function buildPendingReviewView(
       };
     });
 
-  const snoozedRowsOf = (group: (PendingRequest & { until: number })[]) =>
+  const teamRowsOf = (group: TeamPendingRequest[]) =>
+    awaitingRowsOf(group).map((row, i) => {
+      return { ...row, team: group[i].team };
+    });
+
+  /**
+   * The snoozed section unites both kinds, soonest wake-up first, and a
+   * team row keeps its team so it stays recognizable while parked.
+   */
+  const parked = [...snoozed, ...snoozedTeam].toSorted((a, b) => a.until - b.until);
+
+  const snoozedRowsOf = (group: (PendingRequest & { until: number; team?: string })[]) =>
     wakeRows(group, now).map((row, i) => {
+      const { team: parkedTeam } = group[i];
+
       return {
         ...row,
         pending: { requestedAt: group[i].requestedAt.getTime(), snoozed: true },
         ...badgeOf(row, mentioned),
+        ...(parkedTeam === undefined ? {} : { team: parkedTeam }),
       };
     });
 
@@ -242,7 +277,8 @@ export function buildPendingReviewView(
       ...(awaiting.length === 0
         ? []
         : [sectionOf(`Awaiting your review (n=${awaiting.length})`, awaiting, awaitingRowsOf, split)]),
-      ...(snoozed.length === 0 ? [] : [sectionOf(`Snoozed (n=${snoozed.length})`, snoozed, snoozedRowsOf, split)]),
+      ...(team.length === 0 ? [] : [sectionOf(`Requested of your team (n=${team.length})`, team, teamRowsOf, split)]),
+      ...(parked.length === 0 ? [] : [sectionOf(`Snoozed (n=${parked.length})`, parked, snoozedRowsOf, split)]),
     ],
   };
 }

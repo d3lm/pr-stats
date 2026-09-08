@@ -5,6 +5,8 @@ import {
   computeMergeStats,
   computeReviewerStats,
   computeReviewStats,
+  latestReviews,
+  teamPendingRequests,
 } from './compute';
 import type { PrReview, ReviewResult, SizeEntry } from './data';
 
@@ -222,4 +224,96 @@ test('counts the completed cycles per PR and carries the verdicts and sizes thro
   expect(stats.cycles).toEqual([2, 1]);
   expect(stats.reviewed.map((entry) => entry.verdict)).toEqual(['CHANGES_REQUESTED', 'APPROVED', 'COMMENTED']);
   expect(stats.reviewed.map((entry) => entry.lines)).toEqual([100, 100, 200]);
+});
+
+/**
+ * Builds a team cycle on the given PR, a request of the backend team
+ * that you answered, or one that still waits when no review time is
+ * given, on an open PR unless a state overrides it.
+ */
+function teamResult(number: number, requestedAt: string, reviewedAt: string | null, state = 'open'): ReviewResult {
+  const pr = {
+    repo: 'acme/api',
+    number,
+    title: `pr ${number}`,
+    url: `https://example.com/${number}`,
+    state,
+    createdAt: new Date('2026-07-01T00:00:00Z'),
+  };
+
+  if (reviewedAt === null) {
+    return { kind: 'team-pending', pr, requestedAt: new Date(requestedAt), team: 'acme/backend' };
+  }
+
+  return {
+    kind: 'team-reviewed',
+    pr,
+    requestedAt: new Date(requestedAt),
+    reviewedAt: new Date(reviewedAt),
+    verdict: 'APPROVED',
+    lines: 300,
+    team: 'acme/backend',
+  };
+}
+
+test('the team cycles stand apart until the includeTeam flag folds them into the review stats', () => {
+  const now = new Date('2026-07-03T00:00:00Z');
+
+  const results = [
+    reviewedResult(1, 'APPROVED'),
+    teamResult(2, '2026-07-01T09:00:00Z', '2026-07-01T11:00:00Z'),
+    teamResult(3, '2026-07-02T00:00:00Z', null),
+    teamResult(4, '2026-07-01T00:00:00Z', null, 'closed'),
+    {
+      kind: 'pending',
+      pr: { ...reviewedResult(5, 'APPROVED').pr, state: 'open' },
+      requestedAt: new Date('2026-07-02T12:00:00Z'),
+    },
+  ] satisfies ReviewResult[];
+
+  /**
+   * Without the flag the team fields alone hold the team cycles, with
+   * their durations measured like the direct ones, and the direct counts
+   * read as before.
+   */
+  const apart = computeReviewStats(results, { now });
+
+  expect(apart.reviewed.map((entry) => entry.pr.number)).toEqual([1]);
+  expect(apart.pending.map((entry) => entry.pr.number)).toEqual([5]);
+  expect(apart.expired).toEqual([]);
+  expect(apart.cycles).toEqual([1]);
+  expect(apart.teamReviewed.map((entry) => [entry.pr.number, entry.hours])).toEqual([[2, 2]]);
+
+  expect(apart.teamPending.map((entry) => [entry.pr.number, entry.team, entry.hours])).toEqual([
+    [3, 'acme/backend', 24],
+  ]);
+
+  /**
+   * With the flag the team review joins the reviewed entries and the
+   * cycles, the open team request joins the pending ones in request
+   * order, and the closed one counts as expired, while the team fields
+   * keep reporting them.
+   */
+  const folded = computeReviewStats(results, { now, includeTeam: true });
+
+  expect(folded.reviewed.map((entry) => entry.pr.number)).toEqual([1, 2]);
+  expect(folded.allHours).toEqual([6, 2]);
+  expect(folded.pending.map((entry) => entry.pr.number)).toEqual([3, 5]);
+  expect(folded.expired.map((result) => result.pr.number)).toEqual([4]);
+  expect(folded.cycles).toEqual([1, 1]);
+  expect(folded.teamReviewed).toEqual(apart.teamReviewed);
+  expect(folded.teamPending).toEqual(apart.teamPending);
+
+  // the team requests list oldest first, open PRs only
+  expect(teamPendingRequests(results).map((entry) => entry.pr.number)).toEqual([3]);
+
+  /**
+   * The reviewing queue lists the team cycle you answered like a direct
+   * one, and leaves a PR alone while your team is asked about it again.
+   */
+  expect(latestReviews(results).map((entry) => entry.pr.number)).toEqual([2]);
+
+  expect(
+    latestReviews([...results, teamResult(2, '2026-07-02T09:00:00Z', null)]).map((entry) => entry.pr.number),
+  ).toEqual([]);
 });

@@ -231,6 +231,7 @@ test('wokenPrs lists the PRs that still await the snoozed request', () => {
     snooze('acme/api#2', '2026-08-01T09:00:00Z', '2026-07-10T09:00:00Z'),
     snooze('acme/api#3', '2026-08-01T09:00:00Z', '2026-07-10T09:00:00Z'),
     snooze('acme/api#4', '2026-08-01T09:00:00Z', '2026-07-10T09:00:00Z'),
+    snooze('acme/api#5', '2026-08-01T09:00:00Z', '2026-07-10T09:00:00Z'),
   ];
 
   const results: ReviewResult[] = [
@@ -240,10 +241,20 @@ test('wokenPrs lists the PRs that still await the snoozed request', () => {
     pendingResult('acme/api', 2, '2026-07-10T09:00:00Z', 'closed'),
     // re-requested while snoozed, which the queue already shows on its own
     pendingResult('acme/api', 3, '2026-07-20T09:00:00Z'),
-    // api#4 got reviewed and left the pending results altogether
+    /**
+     * The PR api#4 got reviewed and left the pending results altogether,
+     * and a request of your team that still waits comes back like a
+     * direct one.
+     */
+    {
+      kind: 'team-pending',
+      pr: { ...pendingResult('acme/api', 5, '2026-07-10T09:00:00Z').pr },
+      requestedAt: new Date('2026-07-10T09:00:00Z'),
+      team: 'acme/backend',
+    },
   ];
 
-  expect(wokenPrs(due, results).map((woken) => woken.number)).toEqual([1]);
+  expect(wokenPrs(due, results).map((woken) => woken.number)).toEqual([1, 5]);
   expect(wokenPrs([], results)).toEqual([]);
 
   // a mention snooze on a pending PR is not the review snooze module's to wake
