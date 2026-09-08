@@ -15,6 +15,47 @@ export function fail(message: string): never {
   process.exit(1);
 }
 
+/**
+ * Creates a gate that runs async tasks with at most maxConcurrent of them
+ * in flight. A finishing task hands its slot to the oldest waiter, so the
+ * number of running tasks never overshoots the bound.
+ */
+export function createLimiter(maxConcurrent: number): <T>(task: () => Promise<T>) => Promise<T> {
+  let active = 0;
+
+  const waiting: (() => void)[] = [];
+
+  return async <T>(task: () => Promise<T>): Promise<T> => {
+    if (active < maxConcurrent) {
+      active += 1;
+    } else {
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    }
+
+    try {
+      return await task();
+    } finally {
+      const next = waiting.shift();
+
+      if (next === undefined) {
+        active -= 1;
+      } else {
+        next();
+      }
+    }
+  };
+}
+
+/**
+ * Resolves after the given number of milliseconds, and right away for a
+ * zero or negative delay.
+ */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, ms));
+  });
+}
+
 export function formatMinutesOfDay(minutes: number): string {
   return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
 }

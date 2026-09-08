@@ -21,6 +21,7 @@ import {
 import { configureTimeMode, durationHours } from '../../time';
 import { CliError, fail, percentile } from '../../utils';
 import { targetLabelOf, type OptionsState } from '../state/options';
+import { describeWait } from '../utils/wait';
 import { loadData, type LoadPhase, type RawData, type SizeEntry } from './load';
 
 /**
@@ -405,8 +406,9 @@ function reportPhase(phase: LoadPhase): void {
   }
 
   const text = phase.phase === 'search' ? 'searching PRs...' : `fetching PR details ${phase.done}/${phase.total}`;
+  const wait = phase.wait == null ? '' : ` (${describeWait(phase.wait)})`;
 
-  process.stderr.write(`\r\u001B[K${text}`);
+  process.stderr.write(`\r\u001B[K${text}${wait}`);
 }
 
 function clearPhase(): void {

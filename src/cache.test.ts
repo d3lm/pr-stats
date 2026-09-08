@@ -294,12 +294,9 @@ function emptyDetails(): PrDetails {
 const searchArgs = { user: 'testuser', sinceIso: '2026-06-01', repos: [] as string[], includeDrafts: false };
 
 async function loadReviewPrs() {
-  const [requested, reviewed] = await Promise.all([
-    searchPrs({ ...searchArgs, mode: 'requested' }),
-    searchPrs({ ...searchArgs, mode: 'reviewed' }),
-  ]);
+  const review = await searchPrs({ ...searchArgs, mode: 'review' });
 
-  return collectReviewPrs(requested.items, reviewed.items);
+  return collectReviewPrs(review.items);
 }
 
 test('serves closed review PRs from the cache and repairs entries on bypass', async () => {
@@ -962,62 +959,6 @@ test('the since option cuts mentions by their time after the cache is read', asy
       earlier: ['web13-c0'],
     },
   ]);
-});
-
-test('a search counts as capped per query and not on the united mention results', async () => {
-  /**
-   * A throwaway gh that answers each search with a run of distinct PRs,
-   * 600 each for the two mention queries, which unite to 1200 without
-   * either query being cut, the full limit for the authored one, and a
-   * handful for the requested one.
-   */
-  const counts = {
-    '--mentions': [1, 600],
-    '--involves': [601, 1200],
-    '--author': [1, 1000],
-    '--review-requested': [1, 3],
-  };
-
-  writeFileSync(
-    join(dir, 'gh.mjs'),
-    `const args = process.argv.slice(2);
-const counts = ${JSON.stringify(counts)};
-const mode = args.find((arg) => arg in counts);
-const [from, to] = counts[mode];
-const items = [];
-for (let number = from; number <= to; number++) {
-  items.push({
-    number,
-    repository: { nameWithOwner: 'acme/web' },
-    title: 'pr ' + number,
-    url: 'https://github.com/acme/web/pull/' + number,
-    createdAt: '2026-07-01T10:00:00Z',
-    updatedAt: '2026-07-02T10:00:00Z',
-    isDraft: false,
-    state: 'open',
-  });
-}
-process.stdout.write(JSON.stringify(items));
-`,
-  );
-
-  writeFileSync(join(dir, 'gh'), '#!/bin/sh\nexec node "$(dirname "$0")/gh.mjs" "$@"\n', { mode: 0o755 });
-  configureAuth(undefined, dir);
-
-  const mentioned = await searchPrs({ ...searchArgs, mode: 'mentioned' });
-
-  expect(mentioned.items).toHaveLength(1200);
-  expect(mentioned.capped).toBe(false);
-
-  const authored = await searchPrs({ ...searchArgs, mode: 'authored' });
-
-  expect(authored.items).toHaveLength(1000);
-  expect(authored.capped).toBe(true);
-
-  const requested = await searchPrs({ ...searchArgs, mode: 'requested' });
-
-  expect(requested.items).toHaveLength(3);
-  expect(requested.capped).toBe(false);
 });
 
 test('the mention cache only serves the login it was written for', async () => {

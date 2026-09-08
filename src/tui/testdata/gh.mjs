@@ -363,28 +363,32 @@ function searchItem(repo, number, title, createdAt, state, updatedAt = createdAt
   };
 }
 
+/**
+ * Canned results of the three searches, keyed by the qualifier that
+ * identifies each query, see searchMode.
+ */
 const SEARCHES = {
   /**
-   * The review-requested search also returns the PRs where only a team
-   * of the user is asked, and keeps returning web#16 here although a
-   * teammate already answered, so the classification has to tell the
-   * two team requests apart by the outstanding review requests.
+   * The review search unites the PRs the user was asked to review with
+   * the ones the user reviewed. The requested half also returns the PRs
+   * where only a team of the user is asked, and keeps returning web#16
+   * here although a teammate already answered, so the classification has
+   * to tell the two team requests apart by the outstanding review
+   * requests.
    */
-  '--review-requested': [
+  review: [
     searchItem('acme/web', 3, 'Add pagination to the list view', '2026-08-22T10:00:00Z', 'open'),
     searchItem('acme/web', 4, 'Rework session handling', '2026-06-19T10:00:00Z', 'closed'),
     searchItem('acme/api', 7, 'Refactor the billing worker', '2026-08-19T10:00:00Z', 'open'),
     searchItem('acme/api', 9, 'Migrate the queue consumers', '2026-08-25T08:00:00Z', 'open'),
     searchItem('acme/web', 16, 'Tidy the settings layout', '2026-08-09T10:00:00Z', 'open'),
-  ],
-  '--reviewed-by': [
     searchItem('acme/api', 1, 'Fix retry logic in the api client', '2026-06-30T10:00:00Z', 'closed'),
     searchItem('acme/api', 2, 'Introduce request signing', '2026-07-02T10:00:00Z', 'closed'),
     searchItem('acme/api', 5, 'Tighten input validation', '2026-07-03T10:00:00Z', 'closed'),
     searchItem('acme/web', 6, 'Fix typo in settings page', '2026-07-15T13:00:00Z', 'closed'),
     searchItem('acme/api', 8, 'Add caching to the sessions store', '2026-08-21T10:00:00Z', 'open'),
   ],
-  '--author': [
+  authored: [
     searchItem('acme/api', 10, 'Add health check endpoint', '2026-06-05T10:00:00Z', 'closed'),
     searchItem('acme/api', 11, 'Migrate storage layer to v2', '2026-06-20T10:00:00Z', 'closed'),
     searchItem('acme/web', 12, 'Bump dependencies', '2026-07-01T10:00:00Z', 'closed'),
@@ -393,15 +397,12 @@ const SEARCHES = {
   ],
 
   /**
-   * The mentions search runs two queries, one through the mentions index
-   * and one that names the login as a quoted text term bounded by the
-   * involves flag. Both return api#7, so the union has to count it once.
+   * The mentions search unites the mentions index with the login as a
+   * quoted text term bounded by the involves qualifier in one query, so
+   * a PR both halves match, like api#7, comes back once.
    */
-  '--mentions': [
+  mentioned: [
     searchItem('acme/web', 13, 'Redesign the dashboard', '2026-07-20T10:00:00Z', 'open', '2026-08-25T14:00:00Z'),
-    searchItem('acme/api', 7, 'Refactor the billing worker', '2026-08-19T10:00:00Z', 'open', '2026-08-24T16:00:00Z'),
-  ],
-  '--involves': [
     searchItem('acme/api', 7, 'Refactor the billing worker', '2026-08-19T10:00:00Z', 'open', '2026-08-24T16:00:00Z'),
     searchItem(
       'acme/web',
@@ -413,6 +414,97 @@ const SEARCHES = {
     ),
   ],
 };
+
+/**
+ * Tells the three searches apart by the qualifiers of their query. The
+ * review query carries the review-requested qualifier, the mentions query
+ * the mentions qualifier, and the authored query neither.
+ */
+function searchMode(query) {
+  if (query.includes('review-requested:')) {
+    return 'review';
+  }
+
+  if (query.includes('mentions:')) {
+    return 'mentioned';
+  }
+
+  return 'authored';
+}
+
+/**
+ * Reshapes a canned item into the REST search endpoint's item shape,
+ * which the real endpoint returns and the search mapping reads.
+ */
+function restSearchItem(item) {
+  return {
+    number: item.number,
+    repository_url: `https://api.github.com/repos/${item.repository.nameWithOwner}`,
+    title: item.title,
+    html_url: item.url,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+    draft: item.isDraft,
+    state: item.state,
+  };
+}
+
+/**
+ * Answers one page of the search endpoint from the canned results. The
+ * pr-stats searches go through gh api with the query and the paging as
+ * field parameters, the way the REST endpoint takes them.
+ */
+function handleSearch(fields) {
+  const query = fields.q ?? '';
+  const mode = searchMode(query);
+
+  if (fields.advanced_search !== 'true') {
+    process.stderr.write(`fake gh got a search without the advanced syntax: ${query}\n`);
+    process.exit(1);
+  }
+
+  /**
+   * The real review search excludes the user's own PRs with a negated
+   * author term, because GitHub records inline replies as reviews. The
+   * fake insists on that term so a search that drops it fails every test
+   * that loads through it. The authored and mentions searches keep the
+   * user's own PRs on purpose, so the fake refuses the term there.
+   */
+  const excludesOwn = query.includes('-author:testuser');
+
+  if ((mode === 'review') !== excludesOwn) {
+    process.stderr.write(`fake gh got a ${mode} search with the wrong author exclusion: ${query}\n`);
+    process.exit(1);
+  }
+
+  const items = SEARCHES[mode];
+  const perPage = Number(fields.per_page ?? 100);
+  const page = Number(fields.page ?? 1);
+  const start = (page - 1) * perPage;
+
+  return JSON.stringify({
+    total_count: items.length,
+    items: items.slice(start, start + perPage).map((item) => restSearchItem(item)),
+  });
+}
+
+/**
+ * Collects the -f key=value field parameters of a gh api call into an
+ * object.
+ */
+function fieldParams() {
+  const fields = {};
+
+  for (const [i, arg] of args.entries()) {
+    if (arg === '-f' && i + 1 < args.length) {
+      const [key, ...rest] = args[i + 1].split('=');
+
+      fields[key] = rest.join('=');
+    }
+  }
+
+  return fields;
+}
 
 /**
  * Maps a canned reviewer, a login or a team slug, onto the User or Team
@@ -555,26 +647,8 @@ if (args[0] === 'auth' && args[1] === 'token') {
   const queryArg = args.find((arg) => arg.startsWith('query='));
 
   process.stdout.write(handleGraphql(queryArg.slice('query='.length)));
-} else if (args[0] === 'search' && args[1] === 'prs') {
-  const mode = args.find((arg) => arg in SEARCHES);
-  const user = args[args.indexOf(mode) + 1];
-
-  /**
-   * The real review searches exclude the user's own PRs with a negated
-   * author term, because GitHub records inline replies as reviews. The
-   * fake insists on that term so a search that drops it fails every test
-   * that loads through it. The authored and mentions searches keep the
-   * user's own PRs on purpose, so the fake refuses the term there.
-   */
-  const excludesOwn = args.includes(`-author:${user}`);
-  const reviewSearch = mode === '--review-requested' || mode === '--reviewed-by';
-
-  if (reviewSearch !== excludesOwn) {
-    process.stderr.write(`fake gh got a ${mode} search with the wrong author exclusion: ${args.join(' ')}\n`);
-    process.exit(1);
-  }
-
-  process.stdout.write(JSON.stringify(SEARCHES[mode]));
+} else if (args[0] === 'api' && args[1] === 'search/issues') {
+  process.stdout.write(handleSearch(fieldParams()));
 } else {
   process.stderr.write(`fake gh got unexpected args: ${args.join(' ')}\n`);
   process.exit(1);

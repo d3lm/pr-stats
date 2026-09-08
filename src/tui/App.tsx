@@ -447,7 +447,7 @@ export function App({
    * the snapshot decides where a fresh inbox starts and the first load
    * of a session lists the mentions since the previous one as unread.
    */
-  const { raw, isSnapshot, loading, load, error, stale, reload } = useLoader(
+  const { raw, isSnapshot, loading, load, error, rateLimited, stale, reload } = useLoader(
     options,
     { noCache, mentions: trackMentions },
     {
@@ -791,7 +791,9 @@ export function App({
         options={options}
         raw={raw}
         error={error}
+        rateLimited={rateLimited}
         spinning={showLoad}
+        wait={loading ? (load?.wait ?? null) : null}
         reloadEvery={autoReload ? reloadInterval : null}
       />
 

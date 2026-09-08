@@ -12,6 +12,7 @@ import {
   type PrSize,
   type SearchPrItem,
 } from './github';
+import { createLimiter } from './utils';
 
 export interface ReviewPr {
   repo: string;
@@ -146,37 +147,6 @@ const BATCH_SIZE = 25;
 const MAX_CONCURRENT_BATCHES = 4;
 
 /**
- * Creates a gate that runs async tasks with at most maxConcurrent of them
- * in flight. A finishing task hands its slot to the oldest waiter, so the
- * number of running tasks never overshoots the bound.
- */
-function createLimiter(maxConcurrent: number): <T>(task: () => Promise<T>) => Promise<T> {
-  let active = 0;
-
-  const waiting: (() => void)[] = [];
-
-  return async <T>(task: () => Promise<T>): Promise<T> => {
-    if (active < maxConcurrent) {
-      active += 1;
-    } else {
-      await new Promise<void>((resolve) => waiting.push(resolve));
-    }
-
-    try {
-      return await task();
-    } finally {
-      const next = waiting.shift();
-
-      if (next === undefined) {
-        active -= 1;
-      } else {
-        next();
-      }
-    }
-  };
-}
-
-/**
  * The shared gate every fetch runs its batches through. Sharing one gate
  * keeps the process-wide number of in-flight GraphQL calls at the bound
  * when the review and size fetches run concurrently.
@@ -295,14 +265,16 @@ export async function resolveTeams(user: string, bypassCache = false): Promise<R
 }
 
 /**
- * Merges the review-requested and reviewed-by search results into one
- * deduplicated PR list. Both searches can return the same PR, so the key
- * combines repo and number.
+ * Turns the review search results into the PR list the review fetch
+ * works from. The search already unites the PRs you were asked to review
+ * with the ones you reviewed and returns each once, so this only reshapes
+ * the items, keyed by repo and number in case a page boundary ever
+ * repeats one.
  */
-export function collectReviewPrs(requested: SearchPrItem[], reviewed: SearchPrItem[]): ReviewPr[] {
+export function collectReviewPrs(review: SearchPrItem[]): ReviewPr[] {
   const prByKey = new Map<string, ReviewPr>();
 
-  for (const item of [...requested, ...reviewed]) {
+  for (const item of review) {
     const repo = item.repository.nameWithOwner;
 
     prByKey.set(`${repo}#${item.number}`, {

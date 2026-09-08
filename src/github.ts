@@ -3,11 +3,207 @@ import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { CliError } from './utils';
+import { CliError, createLimiter, sleep } from './utils';
 
 const execFileAsync = promisify(execFile);
 
 const API_BASE = 'https://api.github.com';
+
+/**
+ * Marks a request GitHub refused over a rate limit, the primary one or a
+ * secondary one. The retry wrapper catches it and waits before it tries
+ * again, and the one that escapes after the last retry tells the user to
+ * wait instead of blaming the request.
+ */
+export class RateLimitError extends CliError {
+  /**
+   * Holds the time GitHub said the limit lifts, from the retry-after or
+   * the rate-limit reset header, or null when the answer named none,
+   * which is what the gh CLI path and most secondary limits leave.
+   */
+  readonly resetAt: Date | null;
+
+  constructor(message: string, resetAt: Date | null = null) {
+    super(message);
+    this.resetAt = resetAt;
+  }
+}
+
+/**
+ * One pause a load sits in because of GitHub's rate limits. A pace wait
+ * spaces the search requests below GitHub's per-minute search limit
+ * before any request gets refused, and a retry wait follows a refused
+ * request and lasts until the retry.
+ */
+export interface RateLimitWait {
+  reason: 'pace' | 'retry';
+  until: Date;
+}
+
+type WaitListener = (wait: RateLimitWait | null) => void;
+
+let waitListener: WaitListener | null = null;
+
+const activeWaits = new Set<RateLimitWait>();
+
+/**
+ * Registers the listener that hears about every rate-limit wait, so a
+ * load can show the pause instead of a stalled spinner. The listener
+ * receives the wait that ends last while any is active and null once
+ * the requests flow again. Only one listener is registered at a time,
+ * because only one load runs at a time. Returns the function that
+ * removes the listener again.
+ */
+export function onRateLimitWait(listener: WaitListener): () => void {
+  waitListener = listener;
+
+  return () => {
+    if (waitListener === listener) {
+      waitListener = null;
+    }
+  };
+}
+
+function publishWaits(): void {
+  if (waitListener === null) {
+    return;
+  }
+
+  let latest: RateLimitWait | null = null;
+
+  for (const wait of activeWaits) {
+    if (latest === null || wait.until > latest.until) {
+      latest = wait;
+    }
+  }
+
+  waitListener(latest);
+}
+
+/**
+ * Sleeps until the wait ends and reports the wait to the listener for
+ * as long as it lasts.
+ */
+async function waitOut(wait: RateLimitWait): Promise<void> {
+  activeWaits.add(wait);
+  publishWaits();
+
+  try {
+    await sleep(wait.until.getTime() - Date.now());
+  } finally {
+    activeWaits.delete(wait);
+    publishWaits();
+  }
+}
+
+/**
+ * Tunes how the module treats GitHub's rate limits. The retries count
+ * says how often a refused request is tried again, the base wait is the
+ * pause before the first retry, which doubles with every further one when
+ * GitHub names no reset time, and the max wait is the longest pause the
+ * module accepts before it gives up right away, because a limit that
+ * lifts in an hour is not worth sitting through. The search bound caps
+ * the search requests per window, which GitHub sets at thirty per minute
+ * for the search endpoint, and the default keeps a little headroom under
+ * that.
+ */
+export interface RateLimitPolicy {
+  retries: number;
+  baseWaitMs: number;
+  maxWaitMs: number;
+  searchRequestsPerWindow: number;
+  searchWindowMs: number;
+}
+
+export const DEFAULT_RATE_LIMIT_POLICY: RateLimitPolicy = {
+  retries: 3,
+  baseWaitMs: 60_000,
+  maxWaitMs: 5 * 60_000,
+  searchRequestsPerWindow: 25,
+  searchWindowMs: 60_000,
+};
+
+let policy: RateLimitPolicy = DEFAULT_RATE_LIMIT_POLICY;
+
+/**
+ * Overrides parts of the rate-limit policy and keeps the rest as it is.
+ * The tests shorten the waits with it, and the debug path lifts the
+ * search pacing, because no rate limit stands behind a fake gh.
+ */
+export function configureRateLimits(overrides: Partial<RateLimitPolicy>): void {
+  policy = { ...policy, ...overrides };
+}
+
+/**
+ * Runs the request and retries it after a pause whenever GitHub refuses
+ * it over a rate limit, following GitHub's guidance to honor the reset
+ * time it names and to back off exponentially otherwise. The request
+ * that still fails after the last retry, or whose reset lies further
+ * away than the policy accepts, escapes as a RateLimitError that tells
+ * the user what to do.
+ */
+async function withRateLimitRetry<T>(request: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request();
+    } catch (error) {
+      if (!(error instanceof RateLimitError)) {
+        throw error;
+      }
+
+      const waitMs = error.resetAt === null ? policy.baseWaitMs * 2 ** attempt : error.resetAt.getTime() - Date.now();
+
+      /**
+       * The gh CLI reports through a multi-line stderr text, which folds
+       * onto one line so the message reads as one sentence in the UI.
+       */
+      const detail = error.message.replaceAll(/\s+/g, ' ');
+
+      if (waitMs > policy.maxWaitMs) {
+        const resumeAt = new Date(Date.now() + waitMs).toLocaleTimeString();
+
+        throw new RateLimitError(
+          `GitHub rate limit exceeded until about ${resumeAt}. Reload after that, or narrow the search with --since or --repo. (${detail})`,
+          error.resetAt,
+        );
+      }
+
+      if (attempt >= policy.retries) {
+        throw new RateLimitError(
+          `GitHub kept refusing requests over a rate limit through ${attempt} retries. Wait a few minutes and reload, or narrow the search with --since or --repo. (${detail})`,
+          error.resetAt,
+        );
+      }
+
+      await waitOut({ reason: 'retry', until: new Date(Date.now() + Math.max(waitMs, 0)) });
+    }
+  }
+}
+
+/**
+ * Reads the time a rate limit lifts from the headers of a refused
+ * answer. The retry-after header counts seconds from now, and the reset
+ * header names an epoch second once the remaining budget hit zero. An
+ * answer with neither, which the secondary limits usually send, yields
+ * null.
+ */
+function rateLimitReset(headers: Headers): Date | null {
+  const retryAfter = Number(headers.get('retry-after'));
+
+  if (retryAfter > 0) {
+    return new Date(Date.now() + retryAfter * 1000);
+  }
+
+  const reset = Number(headers.get('x-ratelimit-reset'));
+
+  if (headers.get('x-ratelimit-remaining') === '0' && reset > 0) {
+    return new Date(reset * 1000);
+  }
+
+  return null;
+}
+
+const RATE_LIMIT_MESSAGE = /rate limit/i;
 
 export interface SearchPrItem {
   number: number;
@@ -111,46 +307,46 @@ export interface PrSize {
 }
 
 /**
- * Arguments of one PR search. The requested and reviewed modes cover PRs
- * other people authored and exclude the user's own, because GitHub
- * records an author's inline replies as reviews, so a plain reviewed-by
- * search returns your own PRs whenever you answered a comment on them.
- * The mentioned mode finds the PRs whose texts name the user, the user's
- * own PRs included, because a mention asks for attention no matter who
- * opened the PR. It also keeps drafts and filters on the last update
- * instead of the creation date, because a fresh mention on an old PR is
- * exactly what it looks for.
+ * Arguments of one PR search. The review mode covers the PRs other people
+ * authored that the user was asked to review or reviewed, in one query,
+ * and excludes the user's own, because GitHub records an author's inline
+ * replies as reviews, so a plain reviewed-by search returns your own PRs
+ * whenever you answered a comment on them. The authored mode covers the
+ * user's own PRs. The mentioned mode finds the PRs whose texts name the
+ * user, the user's own PRs included, because a mention asks for attention
+ * no matter who opened the PR. It also keeps drafts and filters on the
+ * last update instead of the creation date, because a fresh mention on an
+ * old PR is exactly what it looks for.
  *
- * The mentioned mode runs two queries and unites their results. The
- * first uses the mentions qualifier, whose index only covers the PR body
- * and the conversation comments, so a mention that sits in a review body
- * or an inline review comment never reaches it. The second searches the
- * login as text, which the text index finds in reviews and inline
- * comments too, but which also misses conversation comments the mentions
- * index has, so neither query replaces the other. The text search drops
- * the at sign, so on its own it would match every PR that carries the
- * login anywhere, which for a login that is also a common word means
- * hundreds of thousands of PRs. The involves qualifier bounds it to the
- * PRs the user authored, commented on, reviewed, or is indexed as
- * mentioned on. A mention in a review of a PR the user has only been
- * asked to review, or has nothing to do with, still stays out, because
- * no search qualifier reaches those texts. The mention fetch then
- * confirms every hit against the texts, so a PR that carries the login
- * without an at sign drops out there.
+ * The mentioned mode unites two lookups in one query. The first uses the
+ * mentions qualifier, whose index only covers the PR body and the
+ * conversation comments, so a mention that sits in a review body or an
+ * inline review comment never reaches it. The second searches the login
+ * as text, which the text index finds in reviews and inline comments too,
+ * but which also misses conversation comments the mentions index has, so
+ * neither lookup replaces the other. The text search drops the at sign,
+ * so on its own it would match every PR that carries the login anywhere,
+ * which for a login that is also a common word means hundreds of
+ * thousands of PRs. The involves qualifier bounds it to the PRs the user
+ * authored, commented on, reviewed, or is indexed as mentioned on. A
+ * mention in a review of a PR the user has only been asked to review, or
+ * has nothing to do with, still stays out, because no search qualifier
+ * reaches those texts. The mention fetch then confirms every hit against
+ * the texts, so a PR that carries the login without an at sign drops out
+ * there.
  */
 export interface SearchArgs {
   user: string;
   sinceIso: string;
   repos: string[];
   includeDrafts: boolean;
-  mode: 'requested' | 'reviewed' | 'authored' | 'mentioned';
+  mode: 'review' | 'authored' | 'mentioned';
 }
 
 /**
- * Result of one search, the PRs it found and whether any query behind it
- * reached the result cap. The cap is judged per query and not on the
- * united list, because the mentioned mode unites two queries whose
- * complete results can add up past the cap without either being cut.
+ * Result of one search, the PRs it found and whether the query reached
+ * the result cap, in which case GitHub cut the list and the load warns
+ * about it.
  */
 export interface SearchResult {
   items: SearchPrItem[];
@@ -158,11 +354,16 @@ export interface SearchResult {
 }
 
 /**
- * Most results one query returns. The gh CLI accepts it as its limit and
- * the REST endpoint stops at the same count, so a query that returns
- * this many items may have been cut and the load warns about it.
+ * Most results one query returns, which is where GitHub's search endpoint
+ * stops paging, so a query that returns this many items may have been cut
+ * and the load warns about it.
  */
 export const SEARCH_LIMIT = 1000;
+
+/**
+ * Items per search page, the most the search endpoint hands out at once.
+ */
+const SEARCH_PAGE_SIZE = 100;
 
 let token: string | undefined;
 
@@ -199,20 +400,39 @@ function resolveDebugBinary(input: string): string {
  * or the GITHUB_TOKEN/GH_TOKEN environment variables switches the module to
  * direct API calls. Without one, everything goes through the gh CLI. A
  * debug path replaces the gh CLI with the fake binary it names and ignores
- * every token, so all data comes from canned responses instead of GitHub.
+ * every token, so all data comes from canned responses instead of GitHub,
+ * and it lifts the search pacing, because no rate limit stands behind the
+ * fake.
  */
 export function configureAuth(cliToken?: string, debugPath?: string): void {
   if (debugPath !== undefined) {
     ghBinary = resolveDebugBinary(debugPath);
     token = undefined;
+    configureRateLimits({ searchRequestsPerWindow: Number.POSITIVE_INFINITY });
     return;
   }
 
   ghBinary = 'gh';
   token = cliToken ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  configureRateLimits({ searchRequestsPerWindow: DEFAULT_RATE_LIMIT_POLICY.searchRequestsPerWindow });
 }
 
-async function gh(args: string[]): Promise<string> {
+/**
+ * Runs one gh command and returns its stdout. A command gh reports
+ * a rate limit for is retried after a pause, see withRateLimitRetry.
+ */
+function gh(args: string[]): Promise<string> {
+  return withRateLimitRetry(() => ghOnce(args));
+}
+
+/**
+ * Runs one gh command exactly once and returns its stdout. A command gh
+ * reports a rate limit for, which it only tells through its stderr text,
+ * fails with a RateLimitError, so the retry around it knows to wait. The
+ * search pages call this directly, because they pass the pacing before
+ * every attempt and wrap the retry around both.
+ */
+async function ghOnce(args: string[]): Promise<string> {
   try {
     const { stdout } = await execFileAsync(ghBinary, args, {
       maxBuffer: 64 * 1024 * 1024,
@@ -227,16 +447,39 @@ async function gh(args: string[]): Promise<string> {
     }
 
     const stderr = execError.stderr?.toString().trim();
+    const detail = `gh ${args.slice(0, 2).join(' ')} failed${stderr ? `\n${stderr}` : ''}`;
 
-    throw new CliError(`gh ${args.slice(0, 2).join(' ')} failed${stderr ? `\n${stderr}` : ''}`);
+    if (stderr && RATE_LIMIT_MESSAGE.test(stderr)) {
+      throw new RateLimitError(detail);
+    }
+
+    throw new CliError(detail);
   }
 }
 
 /**
  * Sends one request to the GitHub API with the configured token and returns
- * the parsed JSON body.
+ * the parsed JSON body. A refusal over a rate limit is retried after a
+ * pause, see withRateLimitRetry.
  */
-async function api<T>(path: string, { method = 'GET', body }: { method?: string; body?: unknown } = {}): Promise<T> {
+function api<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+  return withRateLimitRetry(() => apiOnce<T>(path, options));
+}
+
+/**
+ * Sends exactly one request to the GitHub API with the configured token
+ * and returns the parsed JSON body. A refusal over a rate limit, which
+ * GitHub signals with a 403 or 429 and a rate-limit message or header,
+ * fails with a RateLimitError, so the retry around it knows to wait.
+ * GitHub also answers a GraphQL query it rate limits with a 200 whose
+ * errors carry the RATE_LIMITED type, which gets the same treatment. The
+ * search pages call this directly, because they pass the pacing before
+ * every attempt and wrap the retry around both.
+ */
+async function apiOnce<T>(
+  path: string,
+  { method = 'GET', body }: { method?: string; body?: unknown } = {},
+): Promise<T> {
   let response: Response;
 
   try {
@@ -256,6 +499,8 @@ async function api<T>(path: string, { method = 'GET', body }: { method?: string;
     throw new CliError(`cannot reach ${API_BASE} (${failure.cause?.message ?? failure.message})`);
   }
 
+  const endpoint = path.split('?')[0];
+
   if (!response.ok) {
     /**
      * GitHub error responses carry a JSON body whose message names the
@@ -263,14 +508,31 @@ async function api<T>(path: string, { method = 'GET', body }: { method?: string;
      */
     const payload: unknown = await response.json().catch(() => null);
     const message = (payload as { message?: string } | null)?.message ?? '';
-    const endpoint = path.split('?')[0];
+    const detail = `GitHub API ${method} ${endpoint} failed with ${response.status}${message ? ` (${message})` : ''}`;
+    const resetAt = rateLimitReset(response.headers);
 
-    throw new CliError(
-      `GitHub API ${method} ${endpoint} failed with ${response.status}${message ? ` (${message})` : ''}`,
+    if (
+      (response.status === 403 || response.status === 429) &&
+      (resetAt !== null || RATE_LIMIT_MESSAGE.test(message))
+    ) {
+      throw new RateLimitError(detail, resetAt);
+    }
+
+    throw new CliError(detail);
+  }
+
+  const payload = (await response.json().catch(() => null)) as T;
+  const errors = (payload as { errors?: { type?: string; message?: string }[] } | null)?.errors;
+  const rateLimited = errors?.find((error) => error.type === 'RATE_LIMITED');
+
+  if (rateLimited !== undefined) {
+    throw new RateLimitError(
+      `GitHub API ${method} ${endpoint} was rate limited${rateLimited.message ? ` (${rateLimited.message})` : ''}`,
+      rateLimitReset(response.headers),
     );
   }
 
-  return (await response.json().catch(() => null)) as T;
+  return payload;
 }
 
 /**
@@ -401,201 +663,165 @@ interface SearchApiItem {
 }
 
 /**
- * Reports whether a search mode excludes the user's own PRs. Only the two
- * review searches do, see SearchArgs.
+ * Joins terms with OR and wraps the group in parentheses, or returns a
+ * lone term as it is. The advanced search syntax reads a bare space
+ * between qualifiers as AND, so every alternative has to be grouped this
+ * way, the repos included.
  */
-function excludesOwnPrs(mode: SearchArgs['mode']): boolean {
-  return mode === 'requested' || mode === 'reviewed';
+function orGroup(terms: string[]): string {
+  return terms.length === 1 ? terms[0] : `(${terms.join(' OR ')})`;
 }
 
 /**
- * One query of a search. The three review and authored modes run one
- * query each, and the mentioned mode runs the indexed one, which asks the
- * mentions index, and the text one, which searches the login as text
- * among the PRs the user is involved in, see SearchArgs.
+ * Builds the query string of one search in GitHub's advanced issue
+ * search syntax, see SearchArgs for what each mode asks for. The review
+ * mode ORs the two review qualifiers into one query, and the mentioned
+ * mode ORs the mentions index with the quoted login as text bounded by
+ * the involves qualifier, so each mode costs one query.
  */
-type SearchQuery = 'requested' | 'reviewed' | 'authored' | 'mentioned' | 'mentionedText';
-
-interface QueryArgs extends Omit<SearchArgs, 'mode'> {
-  query: SearchQuery;
-}
-
-/**
- * Reports whether a query looks for mentions, which filters on the
- * update time, keeps drafts, and sorts by the update time for stable
- * pages.
- */
-function isMentionQuery(query: SearchQuery): query is 'mentioned' | 'mentionedText' {
-  return query === 'mentioned' || query === 'mentionedText';
-}
-
-/**
- * Builds the quoted text term of the text mention query, the login
- * behind an at sign, see SearchArgs.
- */
-function mentionTerm(user: string): string {
-  return `"@${user}"`;
-}
-
-/**
- * Mirrors the gh search through the REST search endpoint. The endpoint
- * returns at most 100 items per page and caps out at 1000 results, which
- * matches the limit the gh path uses. Items map onto the field names the
- * gh --json output produces, so both paths return the same shape. The
- * mention queries sort by the update time, because a text search ranks
- * by relevance otherwise and that ranking shifts between pages, which
- * drops and repeats items across them.
- */
-async function searchPrsViaApi({ user, sinceIso, repos, includeDrafts, query }: QueryArgs): Promise<SearchPrItem[]> {
+function buildSearchQuery({ user, sinceIso, repos, includeDrafts, mode }: SearchArgs): string {
   const terms = ['type:pr'];
 
-  if (query === 'mentioned') {
-    terms.push(`mentions:${user}`, `updated:>=${sinceIso}`);
-  } else if (query === 'mentionedText') {
-    terms.push(mentionTerm(user), `involves:${user}`, `updated:>=${sinceIso}`);
+  if (mode === 'review') {
+    terms.push(
+      orGroup([`review-requested:${user}`, `reviewed-by:${user}`]),
+      `-author:${user}`,
+      `created:>=${sinceIso}`,
+    );
+  } else if (mode === 'authored') {
+    terms.push(`author:${user}`, `created:>=${sinceIso}`);
   } else {
-    const qualifier = { requested: 'review-requested', reviewed: 'reviewed-by', authored: 'author' }[query];
-
-    terms.push(`${qualifier}:${user}`, `created:>=${sinceIso}`);
-  }
-
-  const mode = isMentionQuery(query) ? 'mentioned' : query;
-
-  if (excludesOwnPrs(mode)) {
-    terms.push(`-author:${user}`);
+    terms.push(`(mentions:${user} OR ("@${user}" involves:${user}))`, `updated:>=${sinceIso}`);
   }
 
   if (!includeDrafts && mode !== 'mentioned') {
     terms.push('draft:false');
   }
 
-  for (const repo of repos) {
-    terms.push(`repo:${repo}`);
+  if (repos.length > 0) {
+    terms.push(orGroup(repos.map((repo) => `repo:${repo}`)));
   }
 
-  const encoded = encodeURIComponent(terms.join(' '));
-  const sort = mode === 'mentioned' ? '&sort=updated&order=desc' : '';
-  const items: SearchApiItem[] = [];
+  return terms.join(' ');
+}
 
-  for (let page = 1; page <= SEARCH_LIMIT / 100; page++) {
-    const result = await api<{ items: SearchApiItem[]; total_count: number }>(
-      `/search/issues?q=${encoded}${sort}&per_page=100&page=${page}`,
-    );
+interface SearchPage {
+  total_count: number;
+  items: SearchApiItem[];
+}
 
-    items.push(...result.items);
+/**
+ * Times of the search requests sent within the last window, which the
+ * pacing below reads to stay under GitHub's per-minute search limit.
+ */
+const searchRequestTimes: number[] = [];
 
-    if (result.items.length === 0 || items.length >= result.total_count) {
-      break;
+/**
+ * Holds a search request back until it fits under the search bound of
+ * the policy. GitHub caps the search endpoint at thirty requests per
+ * minute on top of the general limits, and a user with hundreds of PRs
+ * in the window pages through more than that across the three searches,
+ * so without the pause the pages past the bound come back refused. The
+ * wait reports through the rate-limit listener like a retry wait does.
+ */
+async function paceSearchRequest(): Promise<void> {
+  for (;;) {
+    const now = Date.now();
+
+    while (searchRequestTimes.length > 0 && now - searchRequestTimes[0] >= policy.searchWindowMs) {
+      searchRequestTimes.shift();
     }
-  }
 
-  return items.map((item) => {
-    return {
-      number: item.number,
-      repository: { nameWithOwner: item.repository_url.replace(`${API_BASE}/repos/`, '') },
-      title: item.title,
-      url: item.html_url,
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
-      isDraft: item.draft,
-      state: item.state,
-    };
+    if (searchRequestTimes.length < policy.searchRequestsPerWindow) {
+      searchRequestTimes.push(now);
+      return;
+    }
+
+    await waitOut({ reason: 'pace', until: new Date(searchRequestTimes[0] + policy.searchWindowMs) });
+  }
+}
+
+/**
+ * Fetches one page of the search endpoint with the given query
+ * parameters, through the API with a token and through gh api otherwise.
+ * Both paths speak to the same REST endpoint with the same parameters,
+ * so the query syntax, the paging, and the pacing are shared, where the
+ * gh search command would page on its own without any pause between the
+ * pages. Every attempt passes the pacing first, the retries after a
+ * refusal included, because GitHub counts each of them against the same
+ * search limit, so the retry wraps around the pacing here instead of
+ * inside the request functions.
+ */
+function fetchSearchPage(params: Record<string, string>): Promise<SearchPage> {
+  return withRateLimitRetry(async () => {
+    await paceSearchRequest();
+
+    if (token) {
+      return apiOnce<SearchPage>(`/search/issues?${new URLSearchParams(params).toString()}`);
+    }
+
+    const fields = Object.entries(params).flatMap(([key, value]) => ['-f', `${key}=${value}`]);
+    const stdout = await ghOnce(['api', 'search/issues', '-X', 'GET', ...fields]);
+
+    return JSON.parse(stdout) as SearchPage;
   });
 }
 
 /**
- * Runs the queries of a search, the two mention queries for the mentioned
- * mode and one query otherwise, and unites their results. A PR both
- * mention queries return counts once, with the later update time, so the
- * mention cache keys it on the newest activity either query saw. The
- * search counts as capped when any of its queries returned the limit,
- * which is judged before the union, see SearchResult.
+ * Gate that runs the searches one at a time across the process. The
+ * three searches of a load used to page concurrently, which with a wide
+ * window sent a burst of heavy search requests that tripped GitHub's
+ * secondary rate limits. One search at a time keeps the burst to a
+ * trickle, and the per-minute pacing bounds the trickle.
  */
-export async function searchPrs({ user, sinceIso, repos, includeDrafts, mode }: SearchArgs): Promise<SearchResult> {
-  const queries: SearchQuery[] = mode === 'mentioned' ? ['mentioned', 'mentionedText'] : [mode];
-
-  const results = await Promise.all(
-    queries.map((query) => {
-      return searchOnce({ user, sinceIso, repos, includeDrafts, query });
-    }),
-  );
-
-  const capped = results.some((items) => items.length >= SEARCH_LIMIT);
-
-  if (results.length === 1) {
-    return { items: results[0], capped };
-  }
-
-  const byRef = new Map<string, SearchPrItem>();
-
-  for (const item of results.flat()) {
-    const ref = `${item.repository.nameWithOwner}#${item.number}`;
-    const known = byRef.get(ref);
-
-    if (known === undefined || item.updatedAt > known.updatedAt) {
-      byRef.set(ref, item);
-    }
-  }
-
-  return { items: [...byRef.values()], capped };
-}
+const searchGate = createLimiter(1);
 
 /**
- * Runs one query through the REST endpoint with a token and through the
- * gh CLI otherwise.
+ * Runs one search and pages through its results up to the cap. Items map
+ * onto the field names the gh search command used to produce, so the
+ * rest of the code reads one shape. The mentioned mode sorts by the
+ * update time, because a text search ranks by relevance otherwise and
+ * that ranking shifts between pages, which drops and repeats items across
+ * them. The search counts as capped when it returned the limit, see
+ * SearchResult.
  */
-async function searchOnce({ user, sinceIso, repos, includeDrafts, query }: QueryArgs): Promise<SearchPrItem[]> {
-  if (token) {
-    return searchPrsViaApi({ user, sinceIso, repos, includeDrafts, query });
-  }
+export function searchPrs(args: SearchArgs): Promise<SearchResult> {
+  return searchGate(async () => {
+    const params: Record<string, string> = {
+      q: buildSearchQuery(args),
+      advanced_search: 'true',
+      per_page: String(SEARCH_PAGE_SIZE),
+      ...(args.mode === 'mentioned' ? { sort: 'updated', order: 'desc' } : {}),
+    };
 
-  const mode = isMentionQuery(query) ? 'mentioned' : query;
+    const items: SearchApiItem[] = [];
 
-  /**
-   * The mention queries sort by the update time for stable pages, see
-   * searchPrsViaApi, and the text one passes its term as the positional
-   * query.
-   */
-  const selection =
-    query === 'mentioned'
-      ? ['--mentions', user, '--updated', `>=${sinceIso}`, '--sort', 'updated', '--order', 'desc']
-      : query === 'mentionedText'
-        ? [mentionTerm(user), '--involves', user, '--updated', `>=${sinceIso}`, '--sort', 'updated', '--order', 'desc']
-        : [
-            { requested: '--review-requested', reviewed: '--reviewed-by', authored: '--author' }[query],
-            user,
-            '--created',
-            `>=${sinceIso}`,
-          ];
+    for (let page = 1; page <= SEARCH_LIMIT / SEARCH_PAGE_SIZE; page++) {
+      const result = await fetchSearchPage({ ...params, page: String(page) });
 
-  const args = [
-    'search',
-    'prs',
-    ...selection,
-    '--limit',
-    String(SEARCH_LIMIT),
-    '--json',
-    'number,repository,title,url,createdAt,updatedAt,isDraft,state',
-  ];
+      items.push(...result.items);
 
-  if (!includeDrafts && mode !== 'mentioned') {
-    args.push('--draft=false');
-  }
+      if (result.items.length === 0 || items.length >= result.total_count) {
+        break;
+      }
+    }
 
-  for (const repo of repos) {
-    args.push('--repo', repo);
-  }
-
-  /**
-   * The gh CLI has no flag that negates the author, so the exclusion goes
-   * in as a raw query term behind the flag terminator, which keeps gh from
-   * reading the leading dash as a flag.
-   */
-  if (excludesOwnPrs(mode)) {
-    args.push('--', `-author:${user}`);
-  }
-
-  return JSON.parse(await gh(args)) as SearchPrItem[];
+    return {
+      items: items.map((item) => {
+        return {
+          number: item.number,
+          repository: { nameWithOwner: item.repository_url.replace(`${API_BASE}/repos/`, '') },
+          title: item.title,
+          url: item.html_url,
+          createdAt: item.created_at,
+          updatedAt: item.updated_at,
+          isDraft: item.draft,
+          state: item.state,
+        };
+      }),
+      capped: items.length >= SEARCH_LIMIT,
+    };
+  });
 }
 
 /**

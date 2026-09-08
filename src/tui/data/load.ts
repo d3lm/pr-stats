@@ -13,10 +13,11 @@ import {
   type SizeEntry,
 } from '../../data';
 import { parseReviewTypes, parseSince } from '../../flags';
-import { resolveRepos, searchPrs } from '../../github';
+import { onRateLimitWait, resolveRepos, searchPrs, type RateLimitWait } from '../../github';
 import type { FetchParams } from '../state/options';
 
 export type { MentionEntry, ReviewResult, SizeEntry } from '../../data';
+export type { RateLimitWait } from '../../github';
 
 export interface RawData {
   user: string;
@@ -64,6 +65,12 @@ export interface LoadPhase {
   phase: 'search' | 'details';
   done?: number;
   total?: number;
+  /**
+   * Holds the pause the load sits in while GitHub's rate limits hold its
+   * requests back, so the UI can show a countdown instead of a stalled
+   * spinner, and is absent or null while the requests flow.
+   */
+  wait?: RateLimitWait | null;
 }
 
 /**
@@ -281,12 +288,45 @@ export function saveSnapshot(options: FetchParams, data: RawData): void {
  * the pipeline also searches the PRs that mention the user and fetches
  * their newest mention. A successful load also becomes the next startup
  * snapshot. Reports progress through onPhase so the UI can show what is
- * happening. Throws CliError on expected failures like a broken gh login.
+ * happening, and folds every rate-limit pause the GitHub module reports
+ * into the current phase, so a load that waits out a limit shows the
+ * wait where a stalled spinner would be. Throws CliError on expected
+ * failures like a broken gh login, and a RateLimitError when GitHub kept
+ * refusing requests through the retries.
  */
 export async function loadData(
   options: FetchParams,
   onPhase: (phase: LoadPhase) => void,
-  { bypassCache = false, mentions = false }: LoadOptions = {},
+  loadOptions: LoadOptions = {},
+): Promise<RawData> {
+  let phase: LoadPhase = { phase: 'search' };
+  let wait: RateLimitWait | null = null;
+
+  const publish = (next: LoadPhase) => {
+    phase = next;
+    onPhase({ ...phase, wait });
+  };
+
+  const unsubscribe = onRateLimitWait((next) => {
+    wait = next;
+    onPhase({ ...phase, wait });
+  });
+
+  try {
+    return await runLoad(options, publish, loadOptions);
+  } finally {
+    unsubscribe();
+  }
+}
+
+/**
+ * Runs the pipeline of loadData once the wait listener is in place, with
+ * an onPhase that already folds the current wait into every report.
+ */
+async function runLoad(
+  options: FetchParams,
+  onPhase: (phase: LoadPhase) => void,
+  { bypassCache = false, mentions = false }: LoadOptions,
 ): Promise<RawData> {
   const sinceIso = parseSince(options.since).toISOString().slice(0, 10);
 
@@ -306,28 +346,37 @@ export async function loadData(
   const includeDrafts = options.includeDrafts;
 
   /**
-   * The mentions search only runs when the load looks for mentions, so
-   * a session without mention notifications pays nothing for them. The
-   * team lookup rides along with the searches, because the classification
-   * that needs it only runs once the details are fetched.
+   * The mentions search only runs when the load looks for mentions,
+   * so a session without mention notifications pays nothing for them.
+   * The searches run one after the other, and each starts only once the
+   * previous one succeeded, because a search GitHub kept refusing fails
+   * the whole load, and searches queued up behind it would otherwise run
+   * on through their own retries and hold the gate in the GitHub module
+   * against the next reload. The team lookup rides along with the
+   * searches, because the classification that needs it only runs once
+   * the details are fetched.
    */
-  const [requested, reviewed, authored, mentioned, teams] = await Promise.all([
-    searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'requested' }),
-    searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'reviewed' }),
-    searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'authored' }),
-    mentions ? searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'mentioned' }) : null,
+  const runSearches = async () => {
+    const reviewSearch = await searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'review' });
+    const authoredSearch = await searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'authored' });
+
+    const mentionedSearch = mentions
+      ? await searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'mentioned' })
+      : null;
+
+    return { reviewSearch, authoredSearch, mentionedSearch };
+  };
+
+  const [{ reviewSearch, authoredSearch, mentionedSearch }, teams] = await Promise.all([
+    runSearches(),
     resolveTeams(user, bypassCache),
   ]);
 
-  const reviewPrs = collectReviewPrs(requested.items, reviewed.items);
-  const authoredPrs = collectAuthoredPrs(authored.items);
-  const mentionedPrs = mentioned === null ? null : collectMentionedPrs(mentioned.items);
+  const reviewPrs = collectReviewPrs(reviewSearch.items);
+  const authoredPrs = collectAuthoredPrs(authoredSearch.items);
+  const mentionedPrs = mentionedSearch === null ? null : collectMentionedPrs(mentionedSearch.items);
 
-  /**
-   * Each search judges its own cap, because the mentioned search unites
-   * two queries and their combined count says nothing about either one.
-   */
-  const searchCapped = [requested, reviewed, authored, mentioned].some((result) => result?.capped === true);
+  const searchCapped = [reviewSearch, authoredSearch, mentionedSearch].some((result) => result?.capped === true);
 
   /**
    * The timeline, size, and mention fetches are independent, so they run

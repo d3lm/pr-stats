@@ -1,5 +1,6 @@
 import type { LoadPhase } from '../data/load';
 import { theme } from '../theme';
+import { RateLimitWaitStatus } from './RateLimitWait';
 import { Spinner } from './Spinner';
 
 const BAR_WIDTH = 40;
@@ -42,7 +43,8 @@ export function Placeholder({
  * without a measurable total, like the PR search, show the label with a
  * spinner on its right instead. The done count is padded to the total's
  * width so the centered line keeps a stable width while the numbers tick
- * up.
+ * up. A rate-limit wait replaces the spinner with a countdown, and sits
+ * under the label above the bar, so the load never looks stalled.
  *
  * The bar is painted with cell backgrounds instead of block glyphs, so it
  * stays continuous no matter how the font renders block characters. Only
@@ -51,11 +53,16 @@ export function Placeholder({
  * exposing the terminal background as a gap.
  */
 function LoadProgress({ load }: { load: LoadPhase }) {
+  const wait = load.wait ?? null;
+
   if (!load.total) {
     return (
-      <box flexDirection="row" columnGap={1}>
-        <text fg={theme.muted}>{loadLabel(load)}</text>
-        <Spinner />
+      <box flexDirection="column" alignItems="center" rowGap={1}>
+        <box flexDirection="row" columnGap={1}>
+          <text fg={theme.muted}>{loadLabel(load)}</text>
+          {wait === null ? <Spinner /> : null}
+        </box>
+        {wait === null ? null : <RateLimitWaitStatus wait={wait} />}
       </box>
     );
   }
@@ -69,6 +76,7 @@ function LoadProgress({ load }: { load: LoadPhase }) {
   return (
     <box flexDirection="column" alignItems="center" rowGap={1}>
       <text fg={theme.muted}>{loadLabel(load)}</text>
+      {wait === null ? null : <RateLimitWaitStatus wait={wait} />}
       <text wrapMode="none">
         <span bg={theme.accent}>{' '.repeat(whole)}</span>
         <span fg={theme.accent} bg={theme.selectedBg}>

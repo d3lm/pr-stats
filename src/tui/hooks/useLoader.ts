@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { RateLimitError } from '../../github';
 import { CliError } from '../../utils';
 import { loadData, loadSnapshot, type LoadPhase, type RawData } from '../data/load';
 import { fetchParamsKey, type OptionsState } from '../state/options';
@@ -21,6 +22,12 @@ export interface Loader {
    */
   load: LoadPhase | null;
   error: string | null;
+  /**
+   * Marks the error as a rate limit GitHub kept enforcing through the
+   * retries of the load, so the UI can ask for patience instead of an
+   * immediate retry. The previous data stays on screen either way.
+   */
+  rateLimited: boolean;
   /**
    * Reports that the live options differ from the ones the shown data was
    * loaded for, so the footer can ask for a reload.
@@ -94,6 +101,7 @@ export function useLoader(
   const [load, setLoad] = useState<LoadPhase | null>({ phase: 'search' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rateLimited, setRateLimited] = useState(false);
 
   /**
    * Guards against overlapping loads through a ref, because a second
@@ -139,6 +147,7 @@ export function useLoader(
     } catch (error) {
       if (!disposedRef.current) {
         setError(error instanceof CliError ? error.message : String(error));
+        setRateLimited(error instanceof RateLimitError);
       }
     } finally {
       loadingRef.current = false;
@@ -155,6 +164,7 @@ export function useLoader(
     }
 
     setError(null);
+    setRateLimited(false);
     setLoading(true);
     setLoad({ phase: 'search' });
 
@@ -203,6 +213,7 @@ export function useLoader(
     loading,
     load,
     error,
+    rateLimited,
     stale: raw !== null && appliedKey !== null && fetchParamsKey(options) !== appliedKey,
     reload,
   };
