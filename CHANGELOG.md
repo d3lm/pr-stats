@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.27](https://github.com/d3lm/pr-stats/releases/tag/v0.2.27) - 2026-09-08
+
+### Bug Fixes
+
+- fix: keep loads under GitHub's rate limits and recover from refusals ([7ee9d71](https://github.com/d3lm/pr-stats/commit/7ee9d71da18c917e62cda7271d93546250032f20))
+
 ## [0.2.26](https://github.com/d3lm/pr-stats/releases/tag/v0.2.26) - 2026-09-08
 
 ### Features
