@@ -172,7 +172,9 @@ function hintsFor(
   }
 
   if (modal === 'settings') {
-    return editing ? 'enter apply · esc cancel' : '↑/↓ select · enter apply · ←/→ toggle · esc close · q quit';
+    return editing
+      ? 'enter apply · esc cancel'
+      : '↑/↓ select · tab/1-5 page · enter apply · ←/→ toggle · esc close · q quit';
   }
 
   if (modal === 'theme') {

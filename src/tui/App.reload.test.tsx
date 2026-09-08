@@ -46,18 +46,11 @@ test('reloads in the background on the configured interval while auto reload is 
     expect(setup.captureCharFrame()).not.toContain('· every');
 
     /**
-     * The auto-reload toggle persists right away, and the interval row
-     * below it keeps showing the default cadence the toggle starts on.
+     * The dialog opens on the auto-reload toggle, which persists right
+     * away, and the interval row below it keeps showing the default
+     * cadence the toggle starts on.
      */
     setup.mockInput.pressKey('S');
-
-    await waitForText(setup, 'Disable cache');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'deletes the cached PR data');
-
-    setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'reloads the data in the background');
 
@@ -103,7 +96,7 @@ test('reloads in the background on the configured interval while auto reload is 
     await waitForText(setup, 'saved to settings.json');
 
     expect(lineWith(setup.captureCharFrame(), 'Reload interval')).toContain('1s');
-    expect(setup.captureCharFrame()).toContain('↑/↓ select · enter apply');
+    expect(setup.captureCharFrame()).toContain('↑/↓ select · tab/1-5 page · enter apply');
 
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({
       autoReload: true,

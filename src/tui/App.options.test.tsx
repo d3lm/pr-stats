@@ -87,7 +87,11 @@ test('labels the save state in the options modal and saves with s', async () => 
 
     setup.mockInput.pressKey('S');
 
-    await waitForText(setup, 'Disable cache');
+    await waitForText(setup, 'reloads the data in the background');
+
+    setup.mockInput.pressKey('5');
+
+    await waitForText(setup, 'refetch everything on every load');
 
     setup.mockInput.pressKey(' ');
 
@@ -102,67 +106,12 @@ test('labels the save state in the options modal and saves with s', async () => 
 
     /**
      * The hand-written accent forms a custom theme, which the Theme row
-     * shows as the active choice. Cycling right wraps from custom to the
-     * built-ins, and the file keeps the custom colors next to the new
-     * preset, so switching themes never wipes them.
+     * on the Appearance page shows as the active choice. Cycling right
+     * wraps from custom to the built-ins, and the file keeps the custom
+     * colors next to the new preset, so switching themes never wipes
+     * them.
      */
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'deletes the cached PR data');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'reloads the data in the background');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'time between the background reloads');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'notifies you when a load finds');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'also notifies you when someone @-mentions you');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'also notifies you when a PR gets requested');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'auto tries the terminal');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'sends a sample notification');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'github opens the PR page');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'clipboard');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'searches the PRs that @-mention you');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'only a team of yours is asked');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'counts the team requests you reviewed');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'the duration the snooze dialog starts with');
-
-    setup.mockInput.pressArrow('down');
+    setup.mockInput.pressKey('4');
 
     await waitForText(setup, 'built-in color theme');
 
@@ -295,15 +244,22 @@ test('labels the save state in the options modal and saves with s', async () => 
 
     setup.mockInput.pressEscape();
 
-    await waitForText(setup, 'Disable cache');
+    await waitForText(setup, 'opens the color list');
 
     /**
-     * Resetting the settings deletes the file after a confirmation, so
-     * the toggle and the theme are gone for future runs.
+     * Resetting the settings, the last row of the Data page, deletes the
+     * file after a confirmation, so the toggle and the theme are gone
+     * for future runs.
      */
-    setup.mockInput.pressArrow('down');
+    setup.mockInput.pressKey('5');
 
-    await waitForText(setup, 'deletes the settings file');
+    await waitForText(setup, 'refetch everything on every load');
+
+    for (const hint of ['deletes the cached PR data', 'writes the loaded stats', 'deletes the settings file']) {
+      setup.mockInput.pressArrow('down');
+
+      await waitForText(setup, hint);
+    }
 
     setup.mockInput.pressEnter();
 

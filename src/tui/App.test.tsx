@@ -348,23 +348,221 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(setup.captureCharFrame()).not.toContain('Work hours');
 
     /**
-     * The settings dialog opens with shift+s, with the disable-cache toggle
-     * selected first. Toggling it flips the value right away, and the
-     * debug run cannot persist it, which the message slot reports.
+     * The settings dialog opens with shift+s on its General page, with
+     * the auto-reload toggle selected first. The tab strip names every
+     * page, only the rows of the shown page render, and the footer names
+     * the keys that switch pages. Auto reload starts off, and the
+     * interval row below it shows the default cadence a toggle would
+     * start with.
      */
     setup.mockInput.pressKey('S');
 
-    await waitForText(setup, 'Disable cache');
+    await waitForText(setup, 'reloads the data in the background');
 
     const settingsFrame = setup.captureCharFrame();
 
     expect(settingsFrame).toContain('Settings');
-    expect(settingsFrame).toContain('Clear cache');
+    expect(settingsFrame).toContain('tab/1-5 page');
+
+    for (const page of ['General', 'Awaiting you', 'Notifications', 'Appearance', 'Data']) {
+      expect(settingsFrame).toContain(page);
+    }
+
+    expect(settingsFrame).toContain('Auto reload');
+    expect(settingsFrame).toContain('‹ no ›');
+    expect(settingsFrame).toContain('Copy instead of open');
+    expect(settingsFrame).not.toContain('Disable cache');
+    expect(settingsFrame).not.toContain('Track mentions');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'time between the background reloads');
+
+    expect(lineWith(setup.captureCharFrame(), 'Reload interval')).toContain('10m');
+
+    /**
+     * The link rows follow on the same page. The open-in row starts on
+     * github and cycles to linear and back, and the copy-links toggle
+     * closes the page.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'github opens the PR page');
+
+    expect(setup.captureCharFrame()).toContain('Open PRs in');
+    expect(setup.captureCharFrame()).toContain('‹ github ›');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ linear ›');
+
+    setup.mockInput.pressArrow('left');
+
+    await waitForText(setup, '‹ github ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'clipboard');
+
+    /**
+     * Down past the last row of a page walks onto the first row of the
+     * next page, and the dialog follows to that page. The awaiting-you
+     * page starts with the mention tracking and the team requests on,
+     * the team review count off, and the default-snooze row shows the
+     * duration the snooze dialog starts with.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'searches the PRs that @-mention you');
+
+    expect(setup.captureCharFrame()).toContain('Track mentions');
+    expect(setup.captureCharFrame()).toContain('‹ yes ›');
+    expect(setup.captureCharFrame()).not.toContain('Auto reload');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'only a team of yours is asked');
+
+    expect(setup.captureCharFrame()).toContain('Team requests');
+    expect(setup.captureCharFrame()).toContain('‹ yes ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'counts the team requests you reviewed');
+
+    expect(setup.captureCharFrame()).toContain('Count team reviews');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'the duration the snooze dialog starts with');
+
+    expect(lineWith(setup.captureCharFrame(), 'Default snooze')).toContain('30m');
+
+    /**
+     * Tab switches to the next page and lands on its first row. The
+     * notifications toggle starts off, the mention and team request
+     * toggles below it too, the channel row starts on auto, and the
+     * test row below them names the channel the notification goes
+     * through.
+     */
+    setup.mockInput.pressTab();
+
+    await waitForText(setup, 'notifies you when a load finds');
+
+    expect(setup.captureCharFrame()).toContain('Desktop notifications');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'also notifies you when someone @-mentions you');
+
+    expect(setup.captureCharFrame()).toContain('Mention notifications');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'also notifies you when a PR gets requested');
+
+    expect(setup.captureCharFrame()).toContain('Team request notifications');
+    expect(setup.captureCharFrame()).toContain('‹ no ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'auto tries the terminal');
+
+    expect(setup.captureCharFrame()).toContain('Notification channel');
+    expect(setup.captureCharFrame()).toContain('‹ auto ›');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'sends a sample notification');
+
+    expect(setup.captureCharFrame()).toContain('Send test notification');
+
+    /**
+     * Shift+tab goes back one page, and a digit jumps straight to the
+     * page at that position. The appearance page holds the theme rows,
+     * where left and right cycle the built-in themes and apply them
+     * right away, and the debug run cannot persist the choice.
+     */
+    setup.mockInput.pressTab({ shift: true });
+
+    await waitForText(setup, 'searches the PRs that @-mention you');
+
+    setup.mockInput.pressKey('4');
+
+    await waitForText(setup, 'built-in color theme');
+
+    expect(setup.captureCharFrame()).toContain('‹ default ›');
+
+    setup.mockInput.pressArrow('right');
+
+    await waitForText(setup, '‹ green ›');
+
+    expect(setup.captureCharFrame()).toContain('setting not saved');
+
+    setup.mockInput.pressArrow('left');
+
+    await waitForText(setup, '‹ default ›');
+
+    /**
+     * The edit-colors row opens the theme dialog, which lists every
+     * theme color with its hex value. A bad value keeps the edit open
+     * and shows the error, and escape backs out to the settings dialog
+     * on the page it left.
+     */
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'opens the color list');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Theme colors');
+
+    const themeFrame = setup.captureCharFrame();
+
+    expect(themeFrame).toContain('accent');
+    expect(themeFrame).toContain('#f0b689');
+    expect(themeFrame).toContain('background of the screen');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'enter apply · esc cancel');
+
+    await setup.mockInput.typeText('zz');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'must be a hex color');
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'background of the screen');
+
+    setup.mockInput.pressEscape();
+
+    await waitForText(setup, 'opens the color list');
+
+    expect(setup.captureCharFrame()).toContain('Edit colors');
+
+    /**
+     * The data page opens on the disable-cache toggle. Toggling it flips
+     * the value right away, and the debug run cannot persist it, which
+     * the message slot reports.
+     */
+    setup.mockInput.pressKey('5');
+
+    await waitForText(setup, 'refetch everything on every load');
+
+    const dataFrame = setup.captureCharFrame();
+
+    expect(dataFrame).toContain('Disable cache');
+    expect(dataFrame).toContain('‹ no ›');
+    expect(dataFrame).toContain('Clear cache');
 
     // the clear-cache row shows the size of the cache directory after its path
-    expect(settingsFrame).toContain(`pr-stats · ${formatBytes(cacheSize())}`);
-    expect(settingsFrame).toContain('refetch everything on every load');
-    expect(settingsFrame).toContain('‹ no ›');
+    expect(dataFrame).toContain(`pr-stats · ${formatBytes(cacheSize())}`);
 
     setup.mockInput.pressKey(' ');
 
@@ -402,181 +600,22 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     await waitForText(setup, 'nothing to clear');
 
     /**
-     * The reload rows sit between the cache rows and the copy-links
-     * toggle. Auto reload starts off, and the interval row below it
-     * shows the default cadence a toggle would start with.
+     * The export row shows the file it would write, next to the
+     * same-report hint. The enter press stays untested here because it
+     * would write pr-stats.json into the repo, and the export itself is
+     * covered by the export tests.
      */
     setup.mockInput.pressArrow('down');
 
-    await waitForText(setup, 'reloads the data in the background');
+    await waitForText(setup, 'writes the loaded stats to this file');
 
-    expect(setup.captureCharFrame()).toContain('Auto reload');
-    expect(setup.captureCharFrame()).toContain('‹ no ›');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'time between the background reloads');
-
-    expect(lineWith(setup.captureCharFrame(), 'Reload interval')).toContain('10m');
+    expect(setup.captureCharFrame()).toContain('Export stats as JSON');
+    expect(setup.captureCharFrame()).toContain('pr-stats.json');
 
     /**
-     * The notification rows sit between the reload rows and the
-     * copy-links toggle. The toggle starts off, the mention toggle
-     * below it too, the channel row starts on auto, and the test row
-     * below them names the channel the notification goes through.
-     */
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'notifies you when a load finds');
-
-    expect(setup.captureCharFrame()).toContain('Desktop notifications');
-    expect(setup.captureCharFrame()).toContain('‹ no ›');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'also notifies you when someone @-mentions you');
-
-    expect(setup.captureCharFrame()).toContain('Mention notifications');
-    expect(setup.captureCharFrame()).toContain('‹ no ›');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'also notifies you when a PR gets requested');
-
-    expect(setup.captureCharFrame()).toContain('Team request notifications');
-    expect(setup.captureCharFrame()).toContain('‹ no ›');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'auto tries the terminal');
-
-    expect(setup.captureCharFrame()).toContain('Notification channel');
-    expect(setup.captureCharFrame()).toContain('‹ auto ›');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'sends a sample notification');
-
-    expect(setup.captureCharFrame()).toContain('Send test notification');
-
-    /**
-     * The link rows sit between the notification rows and the
-     * awaiting-you rows. The open-in row starts on github and cycles
-     * to linear and back, and the copy-links toggle follows it.
-     */
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'github opens the PR page');
-
-    expect(setup.captureCharFrame()).toContain('Open PRs in');
-    expect(setup.captureCharFrame()).toContain('‹ github ›');
-
-    setup.mockInput.pressArrow('right');
-
-    await waitForText(setup, '‹ linear ›');
-
-    setup.mockInput.pressArrow('left');
-
-    await waitForText(setup, '‹ github ›');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'clipboard');
-
-    /**
-     * The awaiting-you rows sit between the copy-links toggle and the
-     * theme rows. The mention tracking and the team requests start on,
-     * the team review count starts off, and the default-snooze row shows
-     * the duration the snooze dialog starts with.
-     */
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'searches the PRs that @-mention you');
-
-    expect(setup.captureCharFrame()).toContain('Track mentions');
-    expect(setup.captureCharFrame()).toContain('‹ yes ›');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'only a team of yours is asked');
-
-    expect(setup.captureCharFrame()).toContain('Team requests');
-    expect(setup.captureCharFrame()).toContain('‹ yes ›');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'counts the team requests you reviewed');
-
-    expect(setup.captureCharFrame()).toContain('Count team reviews');
-    expect(setup.captureCharFrame()).toContain('‹ no ›');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'the duration the snooze dialog starts with');
-
-    expect(lineWith(setup.captureCharFrame(), 'Default snooze')).toContain('30m');
-
-    /**
-     * The theme rows sit between the snooze row and the reset action.
-     * Left and right cycle the built-in themes and apply them right
-     * away, and the debug run cannot persist the choice.
-     */
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'built-in color theme');
-
-    expect(setup.captureCharFrame()).toContain('‹ default ›');
-
-    setup.mockInput.pressArrow('right');
-
-    await waitForText(setup, '‹ green ›');
-
-    expect(setup.captureCharFrame()).toContain('setting not saved');
-
-    setup.mockInput.pressArrow('left');
-
-    await waitForText(setup, '‹ default ›');
-
-    /**
-     * The edit-colors row opens the theme dialog, which lists every
-     * theme color with its hex value. A bad value keeps the edit open
-     * and shows the error, and escape backs out to the settings dialog.
-     */
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'opens the color list');
-
-    setup.mockInput.pressEnter();
-
-    await waitForText(setup, 'Theme colors');
-
-    const themeFrame = setup.captureCharFrame();
-
-    expect(themeFrame).toContain('accent');
-    expect(themeFrame).toContain('#f0b689');
-    expect(themeFrame).toContain('background of the screen');
-
-    setup.mockInput.pressEnter();
-
-    await waitForText(setup, 'enter apply · esc cancel');
-
-    await setup.mockInput.typeText('zz');
-
-    setup.mockInput.pressEnter();
-
-    await waitForText(setup, 'must be a hex color');
-
-    setup.mockInput.pressEscape();
-
-    await waitForText(setup, 'background of the screen');
-
-    setup.mockInput.pressEscape();
-
-    await waitForText(setup, 'Disable cache');
-
-    /**
-     * The reset-settings action mirrors the clear-cache confirm flow,
-     * and the debug run has no settings file to delete.
+     * The reset-settings action closes the page and mirrors the
+     * clear-cache confirm flow, and the debug run has no settings file
+     * to delete.
      */
     setup.mockInput.pressArrow('down');
 
@@ -591,23 +630,20 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     await waitForText(setup, 'nothing to reset');
 
     /**
-     * The export row sits last and shows the file it would write, next
-     * to the same-report hint. The enter press stays untested here
-     * because it would write pr-stats.json into the repo, and the export
-     * itself is covered by the export tests.
+     * Down from the last row of the last page wraps around to the first
+     * row of the first page.
      */
     setup.mockInput.pressArrow('down');
 
-    await waitForText(setup, 'writes the loaded stats to this file');
+    await waitForText(setup, 'reloads the data in the background');
 
-    expect(setup.captureCharFrame()).toContain('Export stats as JSON');
-    expect(setup.captureCharFrame()).toContain('pr-stats.json');
+    expect(setup.captureCharFrame()).toContain('Auto reload');
 
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'esc back');
 
-    expect(setup.captureCharFrame()).not.toContain('Clear cache');
+    expect(setup.captureCharFrame()).not.toContain('Reload interval');
   } finally {
     destroyApp(setup);
     applyThemeState(defaultThemeState());

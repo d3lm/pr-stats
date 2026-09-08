@@ -34,7 +34,7 @@ import {
   type StatsTabKey,
 } from './state/browse';
 import { FIELDS, writeSavedOptions, type OptionsState } from './state/options';
-import { SETTINGS, THEME_COLORS } from './state/settings';
+import { SETTING_PAGES, SETTINGS, THEME_COLORS } from './state/settings';
 import type { UiAction, UiState } from './state/ui';
 import { applyThemeState, cycleTheme, themeColorText, themeSettingsOf, type ThemeState } from './theme';
 import type { Notifier } from './utils/notify';
@@ -229,10 +229,29 @@ function handleOptionsModalKey(key: KeyEvent, context: KeymapContext): void {
   }
 }
 
+/**
+ * Drives the settings dialog, whose rows spread over the pages of a tab
+ * strip. Up and down walk the rows across the page boundaries, tab and
+ * shift+tab cycle the pages, and a digit jumps to the page at that
+ * position, the way the digits pick the main tabs. Left and right stay
+ * with the toggles, which is why the pages take tab instead.
+ */
 function handleSettingsModalKey(key: KeyEvent, context: KeymapContext): void {
+  const page = SETTING_PAGES.findIndex((_, index) => key.name === String(index + 1));
+
+  if (page !== -1) {
+    context.dispatchUi({ type: 'settingPageSelected', page });
+    return;
+  }
+
   switch (key.name) {
     case 'escape': {
       context.dispatchUi({ type: 'settingsModalEscaped' });
+
+      break;
+    }
+    case 'tab': {
+      context.dispatchUi({ type: 'settingPageCycled', delta: key.shift ? -1 : 1 });
 
       break;
     }

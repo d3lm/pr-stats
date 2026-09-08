@@ -295,20 +295,13 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
      */
     setup.mockInput.pressKey('S');
 
-    await waitForText(setup, 'Disable cache');
+    await waitForText(setup, 'reloads the data in the background');
+
+    setup.mockInput.pressKey('2');
+
+    await waitForText(setup, 'searches the PRs that @-mention you');
 
     for (const hint of [
-      'deletes the cached PR data',
-      'reloads the data in the background',
-      'time between the background reloads',
-      'notifies you when a load finds',
-      'also notifies you when someone @-mentions you',
-      'also notifies you when a PR gets requested',
-      'auto tries the terminal',
-      'sends a sample notification',
-      'github opens the PR page',
-      'clipboard',
-      'searches the PRs that @-mention you',
       'only a team of yours is asked',
       'counts the team requests you reviewed',
       'the duration the snooze dialog starts with',

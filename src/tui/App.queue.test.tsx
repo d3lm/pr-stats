@@ -323,26 +323,15 @@ test('lists the requests of your teams below the awaiting queue and hides them w
      */
     setup.mockInput.pressKey('S');
 
-    await waitForText(setup, 'Disable cache');
+    await waitForText(setup, 'reloads the data in the background');
 
-    for (const hint of [
-      'deletes the cached PR data',
-      'reloads the data in the background',
-      'time between the background reloads',
-      'notifies you when a load finds',
-      'also notifies you when someone @-mentions you',
-      'also notifies you when a PR gets requested',
-      'auto tries the terminal',
-      'sends a sample notification',
-      'github opens the PR page',
-      'clipboard',
-      'searches the PRs that @-mention you',
-      'only a team of yours is asked',
-    ]) {
-      setup.mockInput.pressArrow('down');
+    setup.mockInput.pressKey('2');
 
-      await waitForText(setup, hint);
-    }
+    await waitForText(setup, 'searches the PRs that @-mention you');
+
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, 'only a team of yours is asked');
 
     expect(lineWith(setup.captureCharFrame(), 'Team requests')).toContain('‹ yes ›');
 
@@ -354,7 +343,7 @@ test('lists the requests of your teams below the awaiting queue and hides them w
 
     setup.mockInput.pressEscape();
 
-    await waitForTextGone(setup, 'Disable cache');
+    await waitForTextGone(setup, 'Track mentions');
 
     expect(setup.captureCharFrame()).toContain('Awaiting your review (n=2)');
     expect(setup.captureCharFrame()).not.toContain('Requested of your team (n=');
@@ -584,21 +573,9 @@ test('opens the PR on Linear while the open-in setting names it, and copies the 
      */
     setup.mockInput.pressKey('S');
 
-    await waitForText(setup, 'Disable cache');
+    await waitForText(setup, 'reloads the data in the background');
 
-    const hints = [
-      'deletes the cached PR data',
-      'reloads the data in the background',
-      'time between the background reloads',
-      'notifies you when a load finds',
-      'also notifies you when someone @-mentions you',
-      'also notifies you when a PR gets requested',
-      'auto tries the terminal',
-      'sends a sample notification',
-      'github opens the PR page',
-    ];
-
-    for (const hint of hints) {
+    for (const hint of ['time between the background reloads', 'github opens the PR page']) {
       setup.mockInput.pressArrow('down');
       await waitForText(setup, hint);
     }
@@ -698,46 +675,18 @@ test('copies the PR link instead of opening it while the copy-links setting is o
     expect(copied).toEqual([]);
 
     /**
-     * The copy-links toggle sits below the cache, reload, and
-     * notification rows in the settings dialog. Toggling it flips the
-     * value right away, and the debug run cannot persist it, which the
-     * message slot reports.
+     * The copy-links toggle closes the General page of the settings
+     * dialog, below the reload rows and the open-in row. Toggling it
+     * flips the value right away, and the debug run cannot persist it,
+     * which the message slot reports.
      */
     setup.mockInput.pressKey('S');
-
-    await waitForText(setup, 'Disable cache');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'deletes the cached PR data');
-
-    setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'reloads the data in the background');
 
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'time between the background reloads');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'notifies you when a load finds');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'also notifies you when someone @-mentions you');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'also notifies you when a PR gets requested');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'auto tries the terminal');
-
-    setup.mockInput.pressArrow('down');
-
-    await waitForText(setup, 'sends a sample notification');
 
     setup.mockInput.pressArrow('down');
 

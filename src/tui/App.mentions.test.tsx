@@ -127,14 +127,16 @@ test('reports the mentions that arrived since the snapshot while mention notific
 
     expect(sent).toHaveLength(1);
 
-    // the mention row shows the saved state and its own hint
+    // the mention row on the Notifications page shows the saved state and its own hint
     setup.mockInput.pressKey('S');
 
-    await waitForText(setup, 'Disable cache');
+    await waitForText(setup, 'reloads the data in the background');
 
-    for (let press = 0; press < 5; press++) {
-      setup.mockInput.pressArrow('down');
-    }
+    setup.mockInput.pressKey('3');
+
+    await waitForText(setup, 'notifies you when a load finds');
+
+    setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'also notifies you when someone @-mentions you');
 
@@ -581,25 +583,11 @@ test('the mention inbox lists the mentions since the seed, and d, D, and s mark,
      */
     setup.mockInput.pressKey('S');
 
-    await waitForText(setup, 'Disable cache');
+    await waitForText(setup, 'reloads the data in the background');
 
-    for (const hint of [
-      'deletes the cached PR data',
-      'reloads the data in the background',
-      'time between the background reloads',
-      'notifies you when a load finds',
-      'also notifies you when someone @-mentions you',
-      'also notifies you when a PR gets requested',
-      'auto tries the terminal',
-      'sends a sample notification',
-      'github opens the PR page',
-      'clipboard',
-      'searches the PRs that @-mention you',
-    ]) {
-      setup.mockInput.pressArrow('down');
+    setup.mockInput.pressKey('2');
 
-      await waitForText(setup, hint);
-    }
+    await waitForText(setup, 'searches the PRs that @-mention you');
 
     expect(lineWith(setup.captureCharFrame(), 'Track mentions')).toContain('‹ yes ›');
 
@@ -612,7 +600,7 @@ test('the mention inbox lists the mentions since the seed, and d, D, and s mark,
 
     setup.mockInput.pressEscape();
 
-    await waitForTextGone(setup, 'Disable cache');
+    await waitForTextGone(setup, 'Track mentions');
 
     expect(setup.captureCharFrame()).toContain('Read (n=2)');
 

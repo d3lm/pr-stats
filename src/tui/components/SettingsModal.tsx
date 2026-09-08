@@ -4,33 +4,41 @@ import { cacheDir, cacheSize } from '../../cache';
 import { settingsFile, type LinkTarget, type NotifyChannel } from '../../settings';
 import { formatBytes } from '../../utils';
 import { exportFile } from '../data/export';
-import { CACHE_MESSAGES, SETTINGS, type CacheAction, type SettingSpec } from '../state/settings';
+import {
+  CACHE_MESSAGES,
+  SETTING_PAGES,
+  settingPageOf,
+  SETTINGS,
+  type CacheAction,
+  type SettingSpec,
+} from '../state/settings';
 import { theme, type ThemeName } from '../theme';
 import { notificationBoundary, notificationCaveat, notificationChannel, notificationTool } from '../utils/notify';
 import { ModalFrame, ModalInput, ModalRow } from './ModalFrame';
+import { SubTabBar } from './TabBar';
 
 /**
- * Groups consecutive settings that share a section under one heading,
- * preserving the order of SETTINGS.
+ * Holds the settings of each page, in the order of SETTING_PAGES.
  */
-const SECTIONS: { title: string; settings: SettingSpec[] }[] = [];
+const PAGE_SETTINGS: SettingSpec[][] = SETTING_PAGES.map((page) =>
+  SETTINGS.filter((setting) => setting.page === page.key),
+);
 
-for (const setting of SETTINGS) {
-  const last = SECTIONS.at(-1);
-
-  if (last?.title === setting.section) {
-    last.settings.push(setting);
-  } else {
-    SECTIONS.push({ title: setting.section, settings: [setting] });
-  }
-}
+/**
+ * Sizes the row area to the longest page, so the dialog keeps one height
+ * while the pages switch instead of growing and shrinking under the
+ * cursor.
+ */
+const ROW_AREA_HEIGHT = Math.max(...PAGE_SETTINGS.map((settings) => settings.length));
 
 /**
  * Centered modal with the app-level settings, separate from the data and
- * analysis options. The settings are grouped into sections, and the bottom
- * line describes the selected row, shows the validation error of a
- * rejected interval edit or the failure of a notification sent while the
- * dialog is open, or reports a pending or finished action.
+ * analysis options. The settings spread over the pages of a tab strip,
+ * of which the dialog shows the one holding the selected row, so the
+ * dialog stays a dozen rows tall however many settings there are. The
+ * bottom line describes the selected row, shows the validation error of
+ * a rejected interval edit or the failure of a notification sent while
+ * the dialog is open, or reports a pending or finished action.
  */
 export function SettingsModal({
   selected,
@@ -105,47 +113,45 @@ export function SettingsModal({
           ? { text: caveat, fg: theme.warn }
           : { text: SETTINGS[selected].hint, fg: theme.muted };
 
+  const page = settingPageOf(selected);
+
   return (
     <ModalFrame title="Settings">
-      {SECTIONS.map((section) => (
-        <box key={section.title} flexDirection="column" marginBottom={1}>
-          <text wrapMode="none" fg={theme.accent} marginLeft={2}>
-            {section.title}
-          </text>
-          {section.settings.map((setting) => {
-            const isSelected = SETTINGS.indexOf(setting) === selected;
+      <SubTabBar tabs={SETTING_PAGES} active={SETTING_PAGES[page].key} hint={null} />
+      <box flexDirection="column" height={ROW_AREA_HEIGHT} marginBottom={1}>
+        {PAGE_SETTINGS[page].map((setting) => {
+          const isSelected = SETTINGS.indexOf(setting) === selected;
 
-            return (
-              <ModalRow key={setting.key} label={setting.label} isSelected={isSelected}>
-                <SettingValue
-                  setting={setting}
-                  isSelected={isSelected}
-                  isEditing={isSelected && editing}
-                  cacheAction={cacheAction}
-                  noCache={noCache}
-                  autoReload={autoReload}
-                  reloadInterval={reloadInterval}
-                  notifications={notifications}
-                  trackMentions={trackMentions}
-                  notifyMentions={notifyMentions}
-                  teamReviews={teamReviews}
-                  notifyTeamReviews={notifyTeamReviews}
-                  teamReviewStats={teamReviewStats}
-                  channelValue={channelValue}
-                  deliveryValue={deliveryValue}
-                  openIn={openIn}
-                  copyLinks={copyLinks}
-                  snoozeDuration={snoozeDuration}
-                  preset={preset}
-                  onDraft={onDraft}
-                  onSubmit={onSubmit}
-                />
-              </ModalRow>
-            );
-          })}
-        </box>
-      ))}
-      <text wrapMode="word" height={2} fg={bottomLine.fg} marginLeft={2} marginRight={2}>
+          return (
+            <ModalRow key={setting.key} label={setting.label} isSelected={isSelected}>
+              <SettingValue
+                setting={setting}
+                isSelected={isSelected}
+                isEditing={isSelected && editing}
+                cacheAction={cacheAction}
+                noCache={noCache}
+                autoReload={autoReload}
+                reloadInterval={reloadInterval}
+                notifications={notifications}
+                trackMentions={trackMentions}
+                notifyMentions={notifyMentions}
+                teamReviews={teamReviews}
+                notifyTeamReviews={notifyTeamReviews}
+                teamReviewStats={teamReviewStats}
+                channelValue={channelValue}
+                deliveryValue={deliveryValue}
+                openIn={openIn}
+                copyLinks={copyLinks}
+                snoozeDuration={snoozeDuration}
+                preset={preset}
+                onDraft={onDraft}
+                onSubmit={onSubmit}
+              />
+            </ModalRow>
+          );
+        })}
+      </box>
+      <text wrapMode="word" height={3} fg={bottomLine.fg} marginLeft={2} marginRight={2}>
         {bottomLine.text}
       </text>
     </ModalFrame>
@@ -158,8 +164,8 @@ export function SettingsModal({
  * on the selected row, like the toggles in the options modal. The open-in
  * row cycles github and linear the same way. The mention-
  * notifications row is such a toggle too, dimmed while the notifications
- * above it or the mention tracking below are off, because it only applies
- * with both, and the team-request-notifications row dims the same way
+ * above it or the mention tracking on the Awaiting you page are off,
+ * because it only applies with both, and the team-request-notifications row dims the same way
  * while the notifications or the team requests are off. The
  * track-mentions, team-requests, and count-team-reviews rows are plain
  * toggles. The reload-interval

@@ -1,6 +1,6 @@
 import type { SnoozeKind } from '../../snooze';
 import { FIELDS } from './options';
-import { SETTINGS, THEME_COLORS, type CacheAction } from './settings';
+import { firstSettingOn, SETTING_PAGES, settingPageOf, SETTINGS, THEME_COLORS, type CacheAction } from './settings';
 
 /**
  * Names the dialog currently covering the charts, where null means none is
@@ -101,6 +101,8 @@ export type UiAction =
   | { type: 'snoozeErrorReported'; message: string }
   | { type: 'fieldSelectionMoved'; delta: 1 | -1 }
   | { type: 'settingSelectionMoved'; delta: 1 | -1 }
+  | { type: 'settingPageCycled'; delta: 1 | -1 }
+  | { type: 'settingPageSelected'; page: number }
   | { type: 'themeColorSelectionMoved'; delta: 1 | -1 }
   | { type: 'editStarted' }
   | { type: 'editCancelled' }
@@ -196,12 +198,30 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, selectedField: cycled(state.selectedField, action.delta, FIELDS.length), fieldError: null };
     }
     case 'settingSelectionMoved': {
+      /**
+       * The selection walks the flat list, so a move past the last row of
+       * a page lands on the first row of the next one and the dialog
+       * follows to that page.
+       */
       return {
         ...state,
         selectedSetting: cycled(state.selectedSetting, action.delta, SETTINGS.length),
         settingError: null,
         cacheAction: null,
       };
+    }
+    case 'settingPageCycled': {
+      const page = cycled(settingPageOf(state.selectedSetting), action.delta, SETTING_PAGES.length);
+
+      return { ...state, selectedSetting: firstSettingOn(page), settingError: null, cacheAction: null };
+    }
+    case 'settingPageSelected': {
+      // the digit of the page already shown keeps the row, so a repeated press changes nothing
+      if (action.page === settingPageOf(state.selectedSetting)) {
+        return state;
+      }
+
+      return { ...state, selectedSetting: firstSettingOn(action.page), settingError: null, cacheAction: null };
     }
     case 'themeColorSelectionMoved': {
       return {

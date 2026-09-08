@@ -31,7 +31,7 @@ Without flags, it covers PRs from the last 90 days across all repositories you c
 - **PR size** carries the same charts for PR sizes and adds a weekly net-lines trend.
 - **Comments** holds a histogram of comments per PR, a scatter against PR size, and the most commented PRs.
 
-When the data spans multiple repos, every tab opens on a repo picker that drills into one repo or the aggregate. On the queue lists, `g` groups the aggregate by repo, and on stats tabs, `x` lifts the row cap on comparison cards. The `o` key opens the options modal and `S` the settings dialog.
+When the data spans multiple repos, every tab opens on a repo picker that drills into one repo or the aggregate. On the queue lists, `g` groups the aggregate by repo, and on stats tabs, `x` lifts the row cap on comparison cards. The `o` key opens the options modal and `S` the settings dialog. The settings spread over five pages, General, Awaiting you, Notifications, Appearance, and Data, which `tab` and `shift+tab` cycle and the digits `1` to `5` jump to, and `↑`/`↓` walk the rows across the page boundaries.
 
 ## Options
 

@@ -69,23 +69,16 @@ test('sends notifications through the injected notifier and keeps the first load
     expect(sent).toEqual([]);
 
     /**
-     * The notifications toggle sits below the reload rows and persists
-     * right away.
+     * The notifications toggle opens the Notifications page of the
+     * settings dialog and persists right away.
      */
     setup.mockInput.pressKey('S');
 
-    await waitForText(setup, 'Disable cache');
+    await waitForText(setup, 'reloads the data in the background');
 
-    for (const hint of [
-      'deletes the cached PR data',
-      'reloads the data in the background',
-      'time between the background reloads',
-      'notifies you when a load finds',
-    ]) {
-      setup.mockInput.pressArrow('down');
+    setup.mockInput.pressKey('3');
 
-      await waitForText(setup, hint);
-    }
+    await waitForText(setup, 'notifies you when a load finds');
 
     expect(setup.captureCharFrame()).toContain('Desktop notifications');
     expect(setup.captureCharFrame()).toContain('‹ no ›');

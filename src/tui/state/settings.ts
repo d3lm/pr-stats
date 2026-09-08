@@ -1,6 +1,21 @@
 import type { ColorKey } from '../theme';
 
 /**
+ * Names the pages of the settings dialog, in the order the tab strip
+ * lists them. The dialog shows one page at a time, which keeps its
+ * height bounded by the longest page instead of the whole list.
+ */
+export type SettingPageKey = 'general' | 'awaiting' | 'notifications' | 'appearance' | 'data';
+
+export const SETTING_PAGES: { key: SettingPageKey; label: string }[] = [
+  { key: 'general', label: 'General' },
+  { key: 'awaiting', label: 'Awaiting you' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'appearance', label: 'Appearance' },
+  { key: 'data', label: 'Data' },
+];
+
+/**
  * Describes one row of the settings dialog. New settings get an entry in
  * SETTINGS, a value renderer in the SettingsModal, and their activation
  * behavior in the App keyboard handler, all dispatching on the key.
@@ -8,130 +23,147 @@ import type { ColorKey } from '../theme';
 export interface SettingSpec {
   key: string;
   /**
-   * Names the section heading the setting renders under. Consecutive
-   * settings with the same section share one heading.
+   * Names the page the setting renders on. The settings of one page
+   * sit next to each other in SETTINGS, in the order of SETTING_PAGES,
+   * so that the flat selection index walks page by page.
    */
-  section: string;
+  page: SettingPageKey;
   label: string;
   hint: string;
 }
 
 export const SETTINGS: SettingSpec[] = [
   {
-    key: 'noCache',
-    section: 'Cache',
-    label: 'Disable cache',
-    hint: 'refetch everything on every load instead of reading cached PRs · fresh results still update the cache',
-  },
-  {
-    key: 'clearCache',
-    section: 'Cache',
-    label: 'Clear cache',
-    hint: 'deletes the cached PR data at this path, so the next reload refetches everything',
-  },
-  {
     key: 'autoReload',
-    section: 'Reload',
+    page: 'general',
     label: 'Auto reload',
     hint: 'reloads the data in the background on the interval below, so the charts stay fresh while the TUI keeps running',
   },
   {
     key: 'reloadInterval',
-    section: 'Reload',
+    page: 'general',
     label: 'Reload interval',
     hint: 'time between the background reloads while auto reload is on, like 30s, 10m, or 2h · enter edits the value',
   },
   {
-    key: 'notifications',
-    section: 'Notifications',
-    label: 'Desktop notifications',
-    hint: 'notifies you when a load finds a PR newly awaiting your review or a review re-requested from you',
-  },
-  {
-    key: 'notifyMentions',
-    section: 'Notifications',
-    label: 'Mention notifications',
-    hint: 'also notifies you when someone @-mentions you on a PR, your own PRs included · needs desktop notifications and mention tracking on',
-  },
-  {
-    key: 'notifyTeamReviews',
-    section: 'Notifications',
-    label: 'Team request notifications',
-    hint: 'also notifies you when a PR gets requested of one of your teams · needs desktop notifications and team requests on',
-  },
-  {
-    key: 'notifyChannel',
-    section: 'Notifications',
-    label: 'Notification channel',
-    hint: 'auto tries the terminal, then the platform command · the others force one path · bell rings the terminal bell',
-  },
-  {
-    key: 'testNotification',
-    section: 'Notifications',
-    label: 'Send test notification',
-    hint: 'sends a sample notification through the channel shown, so you can check that your desktop displays it',
-  },
-  {
     key: 'openIn',
-    section: 'Links',
+    page: 'general',
     label: 'Open PRs in',
     hint: 'github opens the PR page · linear opens the PR in Linear Diffs, which needs Diffs enabled in your Linear workspace',
   },
   {
     key: 'copyLinks',
-    section: 'Links',
+    page: 'general',
     label: 'Copy instead of open',
     hint: 'enter and a click on a PR reference copy its link to the clipboard instead of opening the browser',
   },
   {
     key: 'trackMentions',
-    section: 'Awaiting you',
+    page: 'awaiting',
     label: 'Track mentions',
     hint: 'searches the PRs that @-mention you on every load and lists the unread ones in the Mentions inbox · off skips the search',
   },
   {
     key: 'teamReviews',
-    section: 'Awaiting you',
+    page: 'awaiting',
     label: 'Team requests',
     hint: 'lists the open PRs where only a team of yours is asked to review, below the awaiting queue · off hides them',
   },
   {
     key: 'teamReviewStats',
-    section: 'Awaiting you',
+    page: 'awaiting',
     label: 'Count team reviews',
     hint: 'counts the team requests you reviewed, and the open ones, in the Reviews tab and the export · off excludes them',
   },
   {
     key: 'snoozeDuration',
-    section: 'Awaiting you',
+    page: 'awaiting',
     label: 'Default snooze',
     hint: 'the duration the snooze dialog starts with when s snoozes a PR, like 30m, 2h, or 1d · enter edits the value',
   },
   {
+    key: 'notifications',
+    page: 'notifications',
+    label: 'Desktop notifications',
+    hint: 'notifies you when a load finds a PR newly awaiting your review or a review re-requested from you',
+  },
+  {
+    key: 'notifyMentions',
+    page: 'notifications',
+    label: 'Mention notifications',
+    hint: 'also notifies you when someone @-mentions you on a PR, your own PRs included · needs desktop notifications and mention tracking on',
+  },
+  {
+    key: 'notifyTeamReviews',
+    page: 'notifications',
+    label: 'Team request notifications',
+    hint: 'also notifies you when a PR gets requested of one of your teams · needs desktop notifications and team requests on',
+  },
+  {
+    key: 'notifyChannel',
+    page: 'notifications',
+    label: 'Notification channel',
+    hint: 'auto tries the terminal, then the platform command · the others force one path · bell rings the terminal bell',
+  },
+  {
+    key: 'testNotification',
+    page: 'notifications',
+    label: 'Send test notification',
+    hint: 'sends a sample notification through the channel shown, so you can check that your desktop displays it',
+  },
+  {
     key: 'themePreset',
-    section: 'Theme',
+    page: 'appearance',
     label: 'Theme',
     hint: 'built-in color theme · editing colors adds a custom theme to the cycle',
   },
   {
     key: 'themeColors',
-    section: 'Theme',
+    page: 'appearance',
     label: 'Edit colors',
     hint: 'opens the color list, where every theme color takes a hex value · edits become the custom theme',
   },
   {
-    key: 'resetSettings',
-    section: 'Settings',
-    label: 'Reset settings',
-    hint: 'deletes the settings file with the saved cache setting and theme, so future runs start from the defaults',
+    key: 'noCache',
+    page: 'data',
+    label: 'Disable cache',
+    hint: 'refetch everything on every load instead of reading cached PRs · fresh results still update the cache',
+  },
+  {
+    key: 'clearCache',
+    page: 'data',
+    label: 'Clear cache',
+    hint: 'deletes the cached PR data at this path, so the next reload refetches everything',
   },
   {
     key: 'exportJson',
-    section: 'Export',
+    page: 'data',
     label: 'Export stats as JSON',
     hint: 'writes the loaded stats to this file, the same report the --json flag prints · overwrites a previous export',
   },
+  {
+    key: 'resetSettings',
+    page: 'data',
+    label: 'Reset settings',
+    hint: 'deletes the settings file with the saved cache setting and theme, so future runs start from the defaults',
+  },
 ];
+
+/**
+ * Returns the index into SETTING_PAGES of the page that holds the
+ * setting at the given SETTINGS index.
+ */
+export function settingPageOf(setting: number): number {
+  return SETTING_PAGES.findIndex((page) => page.key === SETTINGS[setting].page);
+}
+
+/**
+ * Returns the SETTINGS index of the first setting on the page at the
+ * given SETTING_PAGES index, where a page switch lands the selection.
+ */
+export function firstSettingOn(page: number): number {
+  return SETTINGS.findIndex((setting) => setting.page === SETTING_PAGES[page].key);
+}
 
 /**
  * Describes one row of the theme colors dialog, in the order the dialog
