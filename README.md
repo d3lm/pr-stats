@@ -114,6 +114,17 @@ The `r` key reloads the data by hand, and `R` refetches everything past the cach
 }
 ```
 
+## Links
+
+Enter on a queue row opens the highlighted PR in the browser, and the PR references in every list are terminal hyperlinks that open the same way on a click. The "Open PRs in" row in the settings dialog picks the site they open on. On `github` they open the PR page, and on `linear` they open the PR in [Linear Diffs](https://linear.app/docs/diffs) at `linear.review`, Linear's review view of a GitHub PR, which needs no issue linked to the PR. Diffs has to be enabled in your Linear workspace first, because a workspace without it lands on Linear's page for turning it on. The choice persists as `openIn`. The "Copy instead of open" row below it makes enter and a click copy the PR's link to the clipboard instead, and the copied link stays the GitHub link whatever the open-in row says. That setting persists as `copyLinks`.
+
+```json
+{
+  "openIn": "linear",
+  "copyLinks": false
+}
+```
+
 ## Notifications
 
 The Desktop notifications row in the settings dialog makes the TUI send a desktop notification whenever a load finds a PR newly awaiting your review or a review re-requested from you after you already reviewed the PR. Every load diffs its review requests against the data shown before it. For the first load of a session that is the startup snapshot from the previous session, so a restart tells you what came in while the TUI was closed. Only a session without a snapshot, after `--no-cache` or on the first run, starts by recording what is already waiting without notifying about it. Manual reloads count as well, but the feature pairs naturally with auto reload, which lets the TUI watch your review queue from a spare terminal. The setting persists in `settings.json` in the cache directory.

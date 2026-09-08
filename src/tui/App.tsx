@@ -9,6 +9,7 @@ import {
   saveReloadInterval,
   saveSnoozeDuration,
   saveTheme,
+  type LinkTarget,
   type NotifyChannel,
 } from '../settings';
 import {
@@ -127,6 +128,12 @@ interface AppProps {
    */
   initialNotifyChannel?: NotifyChannel;
   /**
+   * Seeds the open-in target from the saved setting, the site enter and
+   * a click on a PR reference open. The settings dialog cycles it at
+   * runtime.
+   */
+  initialOpenIn?: LinkTarget;
+  /**
    * Seeds the copy-links state from the saved setting. While it is on,
    * enter and a click on a PR reference copy the PR's link to the
    * clipboard instead of opening it. The settings dialog toggles it at
@@ -201,6 +208,7 @@ export function App({
   initialTrackMentions = true,
   initialNotifyMentions = false,
   initialNotifyChannel = 'auto',
+  initialOpenIn = 'github',
   initialCopyLinks = false,
   initialSnoozeDuration = DEFAULT_SNOOZE_DURATION,
   initialSnoozes = [],
@@ -233,6 +241,7 @@ export function App({
   const [trackMentions, setTrackMentions] = useState(initialTrackMentions);
   const [notifyMentions, setNotifyMentions] = useState(initialNotifyMentions);
   const [notifyChannel, setNotifyChannel] = useState(initialNotifyChannel);
+  const [openIn, setOpenIn] = useState(initialOpenIn);
   const [copyLinks, setCopyLinks] = useState(initialCopyLinks);
   const [snoozeDuration, setSnoozeDuration] = useState(initialSnoozeDuration);
   const [themeState, setThemeState] = useState(initialTheme);
@@ -679,6 +688,7 @@ export function App({
       trackMentions,
       notifyMentions,
       notifyChannel,
+      openIn,
       copyLinks,
       snoozeDuration,
       themeState,
@@ -695,6 +705,7 @@ export function App({
       setTrackMentions,
       setNotifyMentions,
       setNotifyChannel,
+      setOpenIn,
       setCopyLinks,
       setThemeState,
       quit: onQuit,
@@ -756,6 +767,7 @@ export function App({
         error={error}
         loading={loading}
         load={load}
+        openIn={openIn}
         onRefClick={copyLinks ? copyRow : null}
       />
 
@@ -782,6 +794,7 @@ export function App({
         trackMentions={trackMentions}
         notifyMentions={notifyMentions}
         notifyChannel={notifyChannel}
+        openIn={openIn}
         copyLinks={copyLinks}
         snoozeDuration={snoozeDuration}
         themeState={themeState}

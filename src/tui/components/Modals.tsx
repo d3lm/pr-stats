@@ -1,4 +1,4 @@
-import type { NotifyChannel } from '../../settings';
+import type { LinkTarget, NotifyChannel } from '../../settings';
 import type { OptionsState } from '../state/options';
 import type { UiState } from '../state/ui';
 import type { ThemeState } from '../theme';
@@ -24,6 +24,7 @@ export function Modals({
   trackMentions,
   notifyMentions,
   notifyChannel,
+  openIn,
   copyLinks,
   snoozeDuration,
   themeState,
@@ -45,6 +46,7 @@ export function Modals({
   trackMentions: boolean;
   notifyMentions: boolean;
   notifyChannel: NotifyChannel;
+  openIn: LinkTarget;
   copyLinks: boolean;
   snoozeDuration: string;
   themeState: ThemeState;
@@ -90,6 +92,7 @@ export function Modals({
         trackMentions={trackMentions}
         notifyMentions={notifyMentions}
         notifyChannel={notifyChannel}
+        openIn={openIn}
         copyLinks={copyLinks}
         snoozeDuration={snoozeDuration}
         preset={themeState.preset}

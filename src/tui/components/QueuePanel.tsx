@@ -1,6 +1,7 @@
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useTerminalDimensions } from '@opentui/react';
 import { useEffect, useRef } from 'react';
+import { linkUrl, type LinkTarget } from '../../settings';
 import { overlayScrollbar, useScrollbarSettle } from '../hooks/scrollbar';
 import { theme } from '../theme';
 import type { QueueSection } from '../views/queue';
@@ -27,6 +28,7 @@ export function QueuePanel({
   empty,
   sections,
   cursor,
+  openIn,
   onRefClick,
 }: {
   heading: string | null;
@@ -34,6 +36,11 @@ export function QueuePanel({
   empty: string | null;
   sections: QueueSection[];
   cursor: number;
+  /**
+   * Names the site the reference hyperlinks point at, so a click
+   * through the terminal lands where enter would.
+   */
+  openIn: LinkTarget;
   /**
    * Receives the row whose PR reference was clicked while the copy-links
    * setting is on, and is null while links open through the terminal.
@@ -172,7 +179,7 @@ export function QueuePanel({
           {'  '}
         </span>
         {onRefClick === null ? (
-          <a href={row.url} fg={theme.accent} bg={bg}>
+          <a href={linkUrl(row.url, openIn)} fg={theme.accent} bg={bg}>
             {row.ref}
           </a>
         ) : (

@@ -136,6 +136,10 @@ test('labels the save state in the options modal and saves with s', async () => 
 
     setup.mockInput.pressArrow('down');
 
+    await waitForText(setup, 'github opens the PR page');
+
+    setup.mockInput.pressArrow('down');
+
     await waitForText(setup, 'clipboard');
 
     setup.mockInput.pressArrow('down');

@@ -591,6 +591,7 @@ test('the mention inbox lists the mentions since the seed, and d, D, and s mark,
       'also notifies you when someone @-mentions you',
       'auto tries the terminal',
       'sends a sample notification',
+      'github opens the PR page',
       'clipboard',
       'searches the PRs that @-mention you',
     ]) {

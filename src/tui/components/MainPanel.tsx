@@ -1,5 +1,6 @@
 import type { ScrollBoxRenderable } from '@opentui/core';
 import type { RefObject } from 'react';
+import type { LinkTarget } from '../../settings';
 import type { LoadPhase } from '../data/load';
 import type { AppViews } from '../hooks/useViewModel';
 import { AUTHORED_SUB_TABS, PENDING_SUB_TABS, type BrowseState, type PanelScope } from '../state/browse';
@@ -27,6 +28,7 @@ function QueueTab({
   rowCursor,
   grouped,
   warning,
+  openIn,
   onRefClick,
 }: {
   prompt: string;
@@ -37,6 +39,7 @@ function QueueTab({
   rowCursor: number;
   grouped: boolean;
   warning: string | null;
+  openIn: LinkTarget;
   onRefClick: ((row: PrRow) => void) | null;
 }) {
   if (scope.view === 'list') {
@@ -54,6 +57,7 @@ function QueueTab({
       empty={view.empty}
       sections={view.sections}
       cursor={Math.min(rowCursor, queueRows(view).length - 1)}
+      openIn={openIn}
       onRefClick={onRefClick}
     />
   );
@@ -71,6 +75,7 @@ function StatsTab({
   scrollRef,
   focused,
   warning,
+  openIn,
 }: {
   repos: RepoOption[];
   scope: PanelScope;
@@ -79,6 +84,7 @@ function StatsTab({
   scrollRef: RefObject<ScrollBoxRenderable | null>;
   focused: boolean;
   warning: string | null;
+  openIn: LinkTarget;
 }) {
   if (scope.view === 'list') {
     return <RepoList options={repos} cursor={Math.min(cursor, repos.length - 1)} />;
@@ -95,6 +101,7 @@ function StatsTab({
       heading={repos.length > 0 ? (scope.repo ?? 'All repos') : null}
       warning={warning}
       view={view}
+      openIn={openIn}
     />
   );
 }
@@ -114,6 +121,7 @@ export function MainPanel({
   error,
   loading,
   load,
+  openIn,
   onRefClick,
 }: {
   views: AppViews | null;
@@ -132,6 +140,11 @@ export function MainPanel({
   error: string | null;
   loading: boolean;
   load: LoadPhase | null;
+  /**
+   * Names the site the PR hyperlinks point at, so a click through the
+   * terminal lands on the same site as enter.
+   */
+  openIn: LinkTarget;
   /**
    * Receives the queue row whose PR reference was clicked while the
    * copy-links setting is on, and is null while links open through the
@@ -156,6 +169,7 @@ export function MainPanel({
               rowCursor={browse.rowCursors.pending}
               grouped={browse.grouped.pending}
               warning={warning}
+              openIn={openIn}
               onRefClick={onRefClick}
             />
           ) : browse.pendingTab === 'reviewed' ? (
@@ -168,6 +182,7 @@ export function MainPanel({
               rowCursor={browse.rowCursors.reviewed}
               grouped={browse.grouped.reviewed}
               warning={warning}
+              openIn={openIn}
               onRefClick={onRefClick}
             />
           ) : (
@@ -180,6 +195,7 @@ export function MainPanel({
               rowCursor={browse.rowCursors.mentions}
               grouped={browse.grouped.mentions}
               warning={warning}
+              openIn={openIn}
               onRefClick={onRefClick}
             />
           )}
@@ -197,6 +213,7 @@ export function MainPanel({
               rowCursor={browse.rowCursors.open}
               grouped={browse.grouped.open}
               warning={warning}
+              openIn={openIn}
               onRefClick={onRefClick}
             />
           ) : (
@@ -208,6 +225,7 @@ export function MainPanel({
               scrollRef={scrollRefs.merged}
               focused={focused}
               warning={warning}
+              openIn={openIn}
             />
           )}
         </box>
@@ -220,6 +238,7 @@ export function MainPanel({
           scrollRef={scrollRefs.review}
           focused={focused}
           warning={warning}
+          openIn={openIn}
         />
       ) : browse.tab === 3 ? (
         <StatsTab
@@ -230,6 +249,7 @@ export function MainPanel({
           scrollRef={scrollRefs.size}
           focused={focused}
           warning={warning}
+          openIn={openIn}
         />
       ) : (
         <StatsTab
@@ -240,6 +260,7 @@ export function MainPanel({
           scrollRef={scrollRefs.comment}
           focused={focused}
           warning={warning}
+          openIn={openIn}
         />
       )}
     </box>
