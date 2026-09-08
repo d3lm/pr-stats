@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.26](https://github.com/d3lm/pr-stats/releases/tag/v0.2.26) - 2026-09-08
+
+### Features
+
+- feat: surface review requests of your teams on the Awaiting you tab ([674265f](https://github.com/d3lm/pr-stats/commit/674265f3add5a5a614e5da4ad2cd346622cd3c35))
+- feat: split the settings dialog into tabbed pages ([aa251b7](https://github.com/d3lm/pr-stats/commit/aa251b7b4e98f591f2bb55f6c8eca46a6d9bb64d))
+
 ## [0.2.25](https://github.com/d3lm/pr-stats/releases/tag/v0.2.25) - 2026-09-08
 
 ### Features
