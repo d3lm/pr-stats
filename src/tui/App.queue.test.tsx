@@ -461,12 +461,23 @@ test('opens the PR on Linear while the open-in setting names it, and copies the 
 
     await waitForText(setup, 'Disable cache');
 
-    for (let index = 0; index < 8; index += 1) {
+    const hints = [
+      'deletes the cached PR data',
+      'reloads the data in the background',
+      'time between the background reloads',
+      'notifies you when a load finds',
+      'also notifies you when someone @-mentions you',
+      'auto tries the terminal',
+      'sends a sample notification',
+      'github opens the PR page',
+    ];
+
+    for (const hint of hints) {
       setup.mockInput.pressArrow('down');
+      await waitForText(setup, hint);
     }
 
-    await waitForText(setup, 'github opens the PR page');
-
+    expect(setup.captureCharFrame()).toContain('Open PRs in');
     expect(setup.captureCharFrame()).toContain('‹ linear ›');
 
     setup.mockInput.pressArrow('right');

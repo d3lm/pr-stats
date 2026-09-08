@@ -18,9 +18,11 @@ export type NotifyChannel = (typeof NOTIFY_CHANNELS)[number];
 
 /**
  * Sites a PR link opens on. GitHub opens the PR page itself, and Linear
- * opens the same PR in Linear's review view, which shows any PR your
- * GitHub login can see without a linked issue. The settings dialog
- * cycles through them in this order.
+ * opens the same PR in Linear Diffs, the review view a Linear workspace
+ * gets once an admin enables Diffs on its GitHub integration. A workspace
+ * without Diffs lands on Linear's page for enabling it, so the target only
+ * helps on a workspace that has it. The settings dialog cycles through
+ * them in this order.
  */
 export const LINK_TARGETS = ['github', 'linear'] as const;
 

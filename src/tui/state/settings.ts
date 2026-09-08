@@ -69,7 +69,7 @@ export const SETTINGS: SettingSpec[] = [
     key: 'openIn',
     section: 'Links',
     label: 'Open PRs in',
-    hint: 'github opens the PR page · linear opens the PR in Linear review, which shows any PR your login can see',
+    hint: 'github opens the PR page · linear opens the PR in Linear Diffs, which needs Diffs enabled in your Linear workspace',
   },
   {
     key: 'copyLinks',
