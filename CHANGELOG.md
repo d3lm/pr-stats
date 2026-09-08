@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.25](https://github.com/d3lm/pr-stats/releases/tag/v0.2.25) - 2026-09-08
+
+### Features
+
+- feat: add an open-in setting to open PRs on Linear (#2) ([26e7a73](https://github.com/d3lm/pr-stats/commit/26e7a7351bf887f7e9b14c72701c8433c72caa58))
+
 ## [0.2.24](https://github.com/d3lm/pr-stats/releases/tag/v0.2.24) - 2026-09-07
 
 ### Features
