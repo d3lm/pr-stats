@@ -40,7 +40,7 @@ Awaiting review has a Requested of your team section. It lists requests for team
 
 `teamReviews` enables this section by default. Team membership uses a six-hour cache, and `R` refreshes it immediately. The lookup needs `read:org` on a classic token or read access to organization members on a fine-grained token. Without permission, the lookup fails quietly.
 
-`teamReviewStats` includes team reviews in the Reviews tab. It is off by default, so review times measure requests that name you directly. The JSON export includes `reviewedTeam` and `pendingTeam` regardless of this setting.
+`teamReviewStats` includes team reviews in the Review time sub-tab of Stats. It is off by default, so review times measure requests that name you directly. The JSON export includes `reviewedTeam` and `pendingTeam` regardless of this setting.
 
 ## Snooze requests and mentions
 

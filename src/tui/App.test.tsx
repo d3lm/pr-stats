@@ -13,7 +13,8 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     /**
      * The app opens on the awaiting-review tab, whose queue spans two
      * repos in the canned data, so the load is done once its repo picker
-     * renders. The review tab opens on its own picker the same way.
+     * renders. The Stats tab opens on the review-time sub-tab, whose
+     * picker renders the same way under the sub-tab strip.
      */
     await waitForText(setup, '2 PRs awaiting your review');
 
@@ -23,6 +24,10 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     const listFrame = setup.captureCharFrame();
 
+    expect(listFrame).toContain('Review time');
+    expect(listFrame).toContain('PR size');
+    expect(listFrame).toContain('Comments');
+    expect(listFrame).toContain('t pr size');
     expect(listFrame).toContain('All repos');
     expect(listFrame).toContain('acme/api');
     expect(listFrame).toContain('acme/web');
@@ -35,6 +40,7 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(reviewFrame).toContain('▸ All repos');
     expect(reviewFrame).toContain('@testuser');
+    expect(reviewFrame).toContain('1-3 tabs');
 
     /**
      * The pinned strip above the charts summarizes how the PRs classified,
@@ -137,7 +143,8 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(setup.captureCharFrame()).toContain('2 PRs reviewed');
     expect(setup.captureCharFrame()).toContain('2 review rounds');
 
-    setup.mockInput.pressKey('4');
+    // t moves to the PR size sub-tab, which opens on its own picker
+    setup.mockInput.pressKey('t');
 
     await waitForText(setup, '5 authored PRs');
 
@@ -214,10 +221,10 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(setup.captureCharFrame()).toContain('p50 45 lines');
 
     /**
-     * The comments tab opens on its own picker, whose details count the
-     * comments per repo, most commented first.
+     * The comments sub-tab opens on its own picker, whose details count
+     * the comments per repo, most commented first.
      */
-    setup.mockInput.pressKey('5');
+    setup.mockInput.pressKey('t');
 
     await waitForText(setup, '30 comments on 5 PRs');
 
@@ -270,6 +277,21 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(commentEndFrame).toContain('Comment spread');
     expect(commentEndFrame).toContain('no comments');
+
+    /**
+     * Shift+t cycles the sub-tabs backward, and each sub-tab keeps its
+     * own scope, so the size sub-tab still shows the acme/web charts it
+     * was left on.
+     */
+    setup.mockInput.pressKey('T');
+
+    await waitForText(setup, '2 of 5 PRs');
+
+    expect(setup.captureCharFrame()).toContain('▸ acme/web');
+
+    setup.mockInput.pressKey('t');
+
+    await waitForText(setup, 'Comments per PR distribution');
 
     setup.mockInput.pressKey('o');
 

@@ -1,6 +1,6 @@
 import type { RepoOption } from '../views/repos';
 
-export const TABS = ['1 Awaiting you', '2 Your PRs', '3 Reviews', '4 PR size', '5 Comments'];
+export const TABS = ['1 Awaiting you', '2 Your PRs', '3 Stats'];
 
 /**
  * The queue tabs, which render a selectable PR list with an optional
@@ -11,11 +11,19 @@ export const TABS = ['1 Awaiting you', '2 Your PRs', '3 Reviews', '4 PR size', '
 export type QueueTabKey = 'pending' | 'reviewed' | 'mentions' | 'open';
 
 /**
- * The stats tabs, which render scrollable chart panels. The merged key
- * belongs to the second sub-tab of the Your PRs tab rather than a
- * top-level tab, but it scopes and scrolls like the other three.
+ * The three sub-tabs of the Stats tab, the review times, the PR sizes,
+ * and the comments, in the order the t key cycles them forward and
+ * shift+t cycles them backward.
  */
-export type StatsTabKey = 'review' | 'size' | 'comment' | 'merged';
+export type StatsSubTab = 'review' | 'size' | 'comment';
+
+/**
+ * The stats tabs, which render scrollable chart panels. The first three
+ * are the sub-tabs of the Stats tab, and the merged key belongs to the
+ * second sub-tab of the Your PRs tab, but it scopes and scrolls like the
+ * other three.
+ */
+export type StatsTabKey = StatsSubTab | 'merged';
 
 /**
  * The three sub-tabs of the Awaiting you tab, keyed like the queue tabs
@@ -50,15 +58,29 @@ export const AUTHORED_SUB_TABS: { key: AuthoredSubTab; label: string }[] = [
 ];
 
 /**
- * Resolves the sub-tab of the Awaiting you tab that sits the given
- * number of steps from the given one in the cycle, wrapping around at
- * both ends, so a delta of 1 names the next sub-tab and a delta of -1
- * names the previous one.
+ * The sub-tabs of the Stats tab with their labels, in the order the t
+ * key cycles them and the sub-tab bar lists them.
  */
-export function cycledPendingSubTab(current: PendingSubTab, delta: 1 | -1): { key: PendingSubTab; label: string } {
-  const index = PENDING_SUB_TABS.findIndex((entry) => entry.key === current);
+export const STATS_SUB_TABS: { key: StatsSubTab; label: string }[] = [
+  { key: 'review', label: 'Review time' },
+  { key: 'size', label: 'PR size' },
+  { key: 'comment', label: 'Comments' },
+];
 
-  return PENDING_SUB_TABS[(index + PENDING_SUB_TABS.length + delta) % PENDING_SUB_TABS.length];
+/**
+ * Resolves the sub-tab of the given strip that sits the given number of
+ * steps from the given one in the cycle, wrapping around at both ends,
+ * so a delta of 1 names the next sub-tab and a delta of -1 names the
+ * previous one.
+ */
+export function cycledSubTab<K extends string>(
+  tabs: readonly { key: K; label: string }[],
+  current: K,
+  delta: 1 | -1,
+): { key: K; label: string } {
+  const index = tabs.findIndex((entry) => entry.key === current);
+
+  return tabs[(index + tabs.length + delta) % tabs.length];
 }
 
 export type BrowseTabKey = QueueTabKey | StatsTabKey;
@@ -99,6 +121,11 @@ export interface BrowseState {
    * merged-and-closed stats.
    */
   authoredTab: AuthoredSubTab;
+  /**
+   * Selects which sub-tab the Stats tab shows, the review times, the PR
+   * sizes, or the comments.
+   */
+  statsTab: StatsSubTab;
   scopes: TabScopes;
   /**
    * Holds the repo-picker cursor of every tab that has a picker.
@@ -120,6 +147,7 @@ export const initialBrowseState: BrowseState = {
   tab: 0,
   pendingTab: 'pending',
   authoredTab: 'open',
+  statsTab: 'review',
   scopes: {
     pending: { view: 'list' },
     reviewed: { view: 'list' },
@@ -152,6 +180,20 @@ export function activeQueueTab(state: BrowseState): QueueTabKey | null {
   }
 
   return null;
+}
+
+/**
+ * Names the stats tab the active tab renders, the merged sub-tab of the
+ * Your PRs tab or the active sub-tab of the Stats tab. The caller checks
+ * that no queue tab is active first, so the Awaiting you tab and the
+ * open sub-tab of the Your PRs tab never reach this.
+ */
+export function activeStatsTab(state: BrowseState): StatsTabKey {
+  if (state.tab === 1) {
+    return 'merged';
+  }
+
+  return state.statsTab;
 }
 
 export type BrowseAction =
@@ -200,16 +242,20 @@ export function browseReducer(state: BrowseState, action: BrowseAction): BrowseS
     case 'subTabCycled': {
       /**
        * The cycle acts on the sub-tabs of the active tab, stepping the
-       * three of the Awaiting you tab in the given direction and flipping
-       * the two of the Your PRs tab, where both directions land on the
-       * same sub-tab, and does nothing on a tab without sub-tabs.
+       * three of the Awaiting you tab and the three of the Stats tab in
+       * the given direction and flipping the two of the Your PRs tab,
+       * where both directions land on the same sub-tab.
        */
       if (state.tab === 0) {
-        return { ...state, pendingTab: cycledPendingSubTab(state.pendingTab, action.delta).key };
+        return { ...state, pendingTab: cycledSubTab(PENDING_SUB_TABS, state.pendingTab, action.delta).key };
       }
 
       if (state.tab === 1) {
         return { ...state, authoredTab: state.authoredTab === 'open' ? 'merged' : 'open' };
+      }
+
+      if (state.tab === 2) {
+        return { ...state, statsTab: cycledSubTab(STATS_SUB_TABS, state.statsTab, action.delta).key };
       }
 
       return state;

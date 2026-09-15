@@ -73,7 +73,7 @@ export const SETTINGS: SettingSpec[] = [
     key: 'teamReviewStats',
     page: 'awaiting',
     label: 'Count team reviews',
-    hint: 'counts the team requests you reviewed, and the open ones, in the Reviews tab and the export · off excludes them',
+    hint: 'counts the team requests you reviewed, and the open ones, in the Review time stats and the export · off excludes them',
   },
   {
     key: 'snoozeDuration',
