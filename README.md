@@ -30,16 +30,14 @@ If repositories are missing, make sure that your token has access and any requir
 
 - Awaiting you lists review requests for you and your teams, PRs you already reviewed, and mentions.
 - Your PRs shows your open PRs and statistics for merged and closed PRs.
-- Reviews shows review times, trends, and pending requests.
-- PR size shows changed lines, changed files, and trends.
-- Comments shows discussion activity and the most commented PRs.
+- Stats has three sub-tabs. Review time shows review times, trends, and pending requests. PR size shows changed lines, changed files, and trends. Comments shows discussion activity and the most commented PRs.
 
 When several repositories have data, choose one repository or the combined view.
 
 | Key                             | Action                                                 |
 | ------------------------------- | ------------------------------------------------------ |
-| `1`–`5` or `tab` / `shift+tab`  | Switch tabs.                                           |
-| `t` / `T`                       | Switch sub-tabs in Awaiting you and Your PRs.          |
+| `1`–`3` or `tab` / `shift+tab`  | Switch tabs.                                           |
+| `t` / `T`                       | Switch sub-tabs within a tab.                          |
 | `↑` / `↓` or `k` / `j`          | Move through lists or scroll charts.                   |
 | `pgup` / `pgdn`, `home` / `end` | Scroll charts by half a screen, or to either end.      |
 | `enter`                         | Open the selected repository or PR.                    |

@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react';
 import { wokenMentions, type MentionReadsByUser } from '../mentions';
 import {
   DEFAULT_RELOAD_INTERVAL,
@@ -39,7 +39,7 @@ import { useSnoozes } from './hooks/useSnoozes';
 import { useSnoozeWakeups } from './hooks/useSnoozeWakeups';
 import { useViewModel } from './hooks/useViewModel';
 import { handleAppKey } from './keymap';
-import { browseReducer, initialBrowseState } from './state/browse';
+import { browseReducer, initialBrowseState, type StatsTabKey } from './state/browse';
 import {
   fetchParamsKey,
   FIELDS,
@@ -386,10 +386,16 @@ export function App({
     };
   }, [ui.successNotice]);
 
-  const reviewScrollRef = useRef<ScrollBoxRenderable>(null);
-  const sizeScrollRef = useRef<ScrollBoxRenderable>(null);
-  const commentScrollRef = useRef<ScrollBoxRenderable>(null);
-  const mergedScrollRef = useRef<ScrollBoxRenderable>(null);
+  /**
+   * The charts pane of every stats view keeps its own scroll ref, keyed
+   * like the views, so the scroll keys reach the pane of the active one.
+   */
+  const scrollRefs: Record<StatsTabKey, RefObject<ScrollBoxRenderable | null>> = {
+    review: useRef<ScrollBoxRenderable>(null),
+    size: useRef<ScrollBoxRenderable>(null),
+    comment: useRef<ScrollBoxRenderable>(null),
+    merged: useRef<ScrollBoxRenderable>(null),
+  };
 
   /**
    * A failed notification reports in the footer notice slot, the same
@@ -766,17 +772,7 @@ export function App({
         dispatchUi({ type: 'editStarted' });
       },
       scrollBy: (forTab, delta, unit) => {
-        // tab 1 scrolls the merged sub-tab, the only stats view it hosts
-        const ref =
-          forTab === 1
-            ? mergedScrollRef
-            : forTab === 2
-              ? reviewScrollRef
-              : forTab === 3
-                ? sizeScrollRef
-                : commentScrollRef;
-
-        ref.current?.scrollBy(delta, unit);
+        scrollRefs[forTab].current?.scrollBy(delta, unit);
       },
     });
   });
@@ -803,12 +799,7 @@ export function App({
         views={views}
         browse={browse}
         warning={capWarning}
-        scrollRefs={{
-          review: reviewScrollRef,
-          size: sizeScrollRef,
-          comment: commentScrollRef,
-          merged: mergedScrollRef,
-        }}
+        scrollRefs={scrollRefs}
         error={error}
         loading={loading}
         load={load}

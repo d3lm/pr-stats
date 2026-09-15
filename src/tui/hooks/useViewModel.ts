@@ -64,8 +64,8 @@ function resolveScope(scope: PanelScope, repos: RepoOption[]): PanelScope {
 }
 
 /**
- * Everything the five tabs render, derived from the loaded data and the
- * live options in one synchronous pass.
+ * Everything the tabs render, derived from the loaded data
+ * and the live options in one synchronous pass.
  */
 export interface AppViews {
   pendingRepos: RepoOption[];

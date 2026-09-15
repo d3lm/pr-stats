@@ -35,12 +35,12 @@ test('lays the review charts out in two columns on wide terminals', async () => 
     ).toBe(true);
 
     /**
-     * The size tab gets the same two-column treatment. The left column's
-     * histogram subtitle and the right column's trend title share the
-     * first grid row, and the second row pairs the files histogram with
-     * the net lines trend.
+     * The size sub-tab gets the same two-column treatment. The left
+     * column's histogram subtitle and the right column's trend title
+     * share the first grid row, and the second row pairs the files
+     * histogram with the net lines trend.
      */
-    setup.mockInput.pressKey('4');
+    setup.mockInput.pressKey('t');
 
     await waitForText(setup, '5 authored PRs');
 

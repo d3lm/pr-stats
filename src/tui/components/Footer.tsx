@@ -1,5 +1,15 @@
 import type { AppViews } from '../hooks/useViewModel';
-import { activeQueueTab, cycledPendingSubTab, type BrowseState, type QueueTabKey } from '../state/browse';
+import {
+  activeQueueTab,
+  activeStatsTab,
+  cycledSubTab,
+  PENDING_SUB_TABS,
+  STATS_SUB_TABS,
+  TABS,
+  type BrowseState,
+  type QueueTabKey,
+  type StatsTabKey,
+} from '../state/browse';
 import type { Modal } from '../state/ui';
 import { theme } from '../theme';
 import { mentionActionOf, queueRowAt, snoozeActionOf, unreadMentionRows, type QueueView } from '../views/queue';
@@ -118,19 +128,49 @@ function queueViewsOf(key: QueueTabKey, views: AppViews) {
 }
 
 /**
- * Names the t hint of the tabs with sub-tabs, which leads with the
- * sub-tab the next press switches to, and is empty on the other tabs.
+ * Resolves the derived view, the repo options, and the scope
+ * of the given stats tab, or an empty triple while the data
+ * has not loaded.
+ */
+function statsViewsOf(key: StatsTabKey, views: AppViews | null) {
+  if (views === null) {
+    return { view: null, repos: [], scope: null };
+  }
+
+  if (key === 'merged') {
+    return { view: views.merged, repos: views.mergedRepos, scope: views.mergedScope };
+  }
+
+  if (key === 'review') {
+    return { view: views.review, repos: views.reviewRepos, scope: views.reviewScope };
+  }
+
+  if (key === 'size') {
+    return { view: views.size, repos: views.sizeRepos, scope: views.sizeScope };
+  }
+
+  return { view: views.comments, repos: views.commentRepos, scope: views.commentScope };
+}
+
+/**
+ * Names the digit range that picks a top-level tab, like 1-3.
+ */
+const TAB_DIGITS = `1-${TABS.length}`;
+
+/**
+ * Names the t hint of the active tab, which leads with the sub-tab the
+ * next press switches to.
  */
 function subTabHint(browse: BrowseState): string {
   if (browse.tab === 0) {
-    return `t ${cycledPendingSubTab(browse.pendingTab, 1).label.toLowerCase()} · `;
+    return `t ${cycledSubTab(PENDING_SUB_TABS, browse.pendingTab, 1).label.toLowerCase()} · `;
   }
 
   if (browse.tab === 1) {
     return browse.authoredTab === 'open' ? 't merged stats · ' : 't open PRs · ';
   }
 
-  return '';
+  return `t ${cycledSubTab(STATS_SUB_TABS, browse.statsTab, 1).label.toLowerCase()} · `;
 }
 
 /**
@@ -185,7 +225,6 @@ function hintsFor(
     return 'enter snooze · esc cancel';
   }
 
-  const { tab } = browse;
   const toggle = subTabHint(browse);
   const queue = activeQueueTab(browse);
 
@@ -202,33 +241,13 @@ function hintsFor(
     if (scope !== null && repos.length > 0) {
       return scope.repo === null
         ? `↑/↓ select · ${action} · ${queueKeys}${toggle}g group by repo · esc back · o options · S settings · r reload · q quit`
-        : `↑/↓ select · ${action} · ${queueKeys}${toggle}esc back · 1-5 tabs · o options · S settings · r reload · R refetch · q quit`;
+        : `↑/↓ select · ${action} · ${queueKeys}${toggle}esc back · ${TAB_DIGITS} tabs · o options · S settings · r reload · R refetch · q quit`;
     }
 
     return `↑/↓ select · ${copyLinks ? 'enter copy link' : 'enter open in browser'} · ${queueKeys}${toggle}←/→ tabs · o options · S settings · r reload · R refetch · q quit`;
   }
 
-  const scope =
-    views === null
-      ? null
-      : tab === 1
-        ? views.mergedScope
-        : tab === 2
-          ? views.reviewScope
-          : tab === 3
-            ? views.sizeScope
-            : views.commentScope;
-
-  const repos =
-    views === null
-      ? []
-      : tab === 1
-        ? views.mergedRepos
-        : tab === 2
-          ? views.reviewRepos
-          : tab === 3
-            ? views.sizeRepos
-            : views.commentRepos;
+  const { view, repos, scope } = statsViewsOf(activeStatsTab(browse), views);
 
   if (scope?.view === 'list') {
     return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · S settings · r reload · R refetch · q quit`;
@@ -238,22 +257,11 @@ function hintsFor(
    * The x hint only shows while the open stats view has a capped card to
    * expand, and it flips to collapse while the cap is lifted.
    */
-  const view =
-    views === null
-      ? null
-      : tab === 1
-        ? views.merged
-        : tab === 2
-          ? views.review
-          : tab === 3
-            ? views.size
-            : views.comments;
-
   const expand = view?.expandable ? (view.expanded ? 'x collapse · ' : 'x expand · ') : '';
 
   if (scope !== null && repos.length > 0) {
-    return `${toggle}${expand}esc back · j/k scroll · 1-5 tabs · o options · S settings · r reload · R refetch · q quit`;
+    return `${toggle}${expand}esc back · j/k scroll · ${TAB_DIGITS} tabs · o options · S settings · r reload · R refetch · q quit`;
   }
 
-  return `${toggle}${expand}1-5 tabs · j/k scroll · o options · S settings · r reload · R refetch · q quit`;
+  return `${toggle}${expand}${TAB_DIGITS} tabs · j/k scroll · o options · S settings · r reload · R refetch · q quit`;
 }

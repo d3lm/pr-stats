@@ -3,7 +3,14 @@ import type { RefObject } from 'react';
 import type { LinkTarget } from '../../settings';
 import type { LoadPhase } from '../data/load';
 import type { AppViews } from '../hooks/useViewModel';
-import { AUTHORED_SUB_TABS, PENDING_SUB_TABS, type BrowseState, type PanelScope } from '../state/browse';
+import {
+  AUTHORED_SUB_TABS,
+  PENDING_SUB_TABS,
+  STATS_SUB_TABS,
+  type BrowseState,
+  type PanelScope,
+  type StatsTabKey,
+} from '../state/browse';
 import { queueRows, type QueueView } from '../views/queue';
 import type { RepoOption } from '../views/repos';
 import type { PrRow } from '../views/rows';
@@ -127,7 +134,7 @@ export function MainPanel({
    * their content, or null when no search hit the cap.
    */
   warning: string | null;
-  scrollRefs: Record<'review' | 'size' | 'comment' | 'merged', RefObject<ScrollBoxRenderable | null>>;
+  scrollRefs: Record<StatsTabKey, RefObject<ScrollBoxRenderable | null>>;
   error: string | null;
   loading: boolean;
   load: LoadPhase | null;
@@ -219,36 +226,44 @@ export function MainPanel({
             />
           )}
         </box>
-      ) : browse.tab === 2 ? (
-        <StatsTab
-          repos={views.reviewRepos}
-          scope={views.reviewScope}
-          view={views.review}
-          cursor={browse.repoCursors.review}
-          scrollRef={scrollRefs.review}
-          warning={warning}
-          openIn={openIn}
-        />
-      ) : browse.tab === 3 ? (
-        <StatsTab
-          repos={views.sizeRepos}
-          scope={views.sizeScope}
-          view={views.size}
-          cursor={browse.repoCursors.size}
-          scrollRef={scrollRefs.size}
-          warning={warning}
-          openIn={openIn}
-        />
       ) : (
-        <StatsTab
-          repos={views.commentRepos}
-          scope={views.commentScope}
-          view={views.comments}
-          cursor={browse.repoCursors.comment}
-          scrollRef={scrollRefs.comment}
-          warning={warning}
-          openIn={openIn}
-        />
+        <box flexGrow={1} flexDirection="column">
+          <SubTabBar tabs={STATS_SUB_TABS} active={browse.statsTab} />
+          {browse.statsTab === 'review' ? (
+            <StatsTab
+              key="review"
+              repos={views.reviewRepos}
+              scope={views.reviewScope}
+              view={views.review}
+              cursor={browse.repoCursors.review}
+              scrollRef={scrollRefs.review}
+              warning={warning}
+              openIn={openIn}
+            />
+          ) : browse.statsTab === 'size' ? (
+            <StatsTab
+              key="size"
+              repos={views.sizeRepos}
+              scope={views.sizeScope}
+              view={views.size}
+              cursor={browse.repoCursors.size}
+              scrollRef={scrollRefs.size}
+              warning={warning}
+              openIn={openIn}
+            />
+          ) : (
+            <StatsTab
+              key="comment"
+              repos={views.commentRepos}
+              scope={views.commentScope}
+              view={views.comments}
+              cursor={browse.repoCursors.comment}
+              scrollRef={scrollRefs.comment}
+              warning={warning}
+              openIn={openIn}
+            />
+          )}
+        </box>
       )}
     </box>
   );
