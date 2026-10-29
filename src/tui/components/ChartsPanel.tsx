@@ -2,7 +2,7 @@ import type { ScrollBoxRenderable } from '@opentui/core';
 import { useTerminalDimensions } from '@opentui/react';
 import type { RefObject } from 'react';
 import { linkUrl, type LinkTarget } from '../../settings';
-import { overlayScrollbar, useScrollbarSettle } from '../hooks/scrollbar';
+import { overlayScrollbar, useScrollbarSettle, wheelStep } from '../hooks/scrollbar';
 import { theme } from '../theme';
 import { cardWidth, type Card, type Line, type Span } from '../views/charts/model';
 import type { StatsView } from '../views/stats';
@@ -25,14 +25,12 @@ const COLUMN_GAP = 4;
  */
 export function ChartsPanel({
   scrollRef,
-  focused,
   heading,
   warning,
   view,
   openIn,
 }: {
   scrollRef: RefObject<ScrollBoxRenderable | null>;
-  focused: boolean;
   heading: string | null;
   warning: string | null;
   view: StatsView;
@@ -128,11 +126,11 @@ export function ChartsPanel({
 
       <scrollbox
         ref={scrollRef}
-        focused={focused}
         flexGrow={1}
         paddingLeft={1}
         paddingRight={2}
-        verticalScrollbarOptions={overlayScrollbar}
+        scrollAcceleration={wheelStep}
+        verticalScrollbarOptions={overlayScrollbar()}
       >
         {warning !== null && (
           <text wrapMode="word" fg={theme.warn} marginTop={1}>

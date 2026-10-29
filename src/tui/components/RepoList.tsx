@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable } from '@opentui/core';
 import { useEffect, useRef } from 'react';
-import { overlayScrollbar, useScrollbarSettle } from '../hooks/scrollbar';
+import { overlayScrollbar, useScrollbarSettle, wheelStep } from '../hooks/scrollbar';
 import { theme } from '../theme';
 import type { RepoOption } from '../views/repos';
 
@@ -36,7 +36,8 @@ export function RepoList({
       flexGrow={1}
       paddingLeft={1}
       paddingRight={2}
-      verticalScrollbarOptions={overlayScrollbar}
+      scrollAcceleration={wheelStep}
+      verticalScrollbarOptions={overlayScrollbar()}
     >
       <text wrapMode="none" fg={theme.muted}>
         {prompt}
