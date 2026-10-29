@@ -364,7 +364,7 @@ function searchItem(repo, number, title, createdAt, state, updatedAt = createdAt
 }
 
 /**
- * Canned results of the three searches, keyed by the qualifier that
+ * Canned results of the four searches, keyed by the qualifier that
  * identifies each query, see searchMode.
  */
 const SEARCHES = {
@@ -387,6 +387,20 @@ const SEARCHES = {
     searchItem('acme/api', 5, 'Tighten input validation', '2026-07-03T10:00:00Z', 'closed'),
     searchItem('acme/web', 6, 'Fix typo in settings page', '2026-07-15T13:00:00Z', 'closed'),
     searchItem('acme/api', 8, 'Add caching to the sessions store', '2026-08-21T10:00:00Z', 'open'),
+  ],
+
+  /**
+   * The request search returns the open PRs whose request still stands,
+   * without a creation bound. Every canned request sits inside the
+   * window, so the review search already returns all of them and the
+   * load has to fold the repeats away. It also keeps returning web#16
+   * like the review search does, so the outstanding check still decides.
+   */
+  requested: [
+    searchItem('acme/web', 3, 'Add pagination to the list view', '2026-08-22T10:00:00Z', 'open'),
+    searchItem('acme/api', 7, 'Refactor the billing worker', '2026-08-19T10:00:00Z', 'open'),
+    searchItem('acme/api', 9, 'Migrate the queue consumers', '2026-08-25T08:00:00Z', 'open'),
+    searchItem('acme/web', 16, 'Tidy the settings layout', '2026-08-09T10:00:00Z', 'open'),
   ],
   authored: [
     searchItem('acme/api', 10, 'Add health check endpoint', '2026-06-05T10:00:00Z', 'closed'),
@@ -416,13 +430,41 @@ const SEARCHES = {
 };
 
 /**
- * Tells the three searches apart by the qualifiers of their query. The
- * review query carries the review-requested qualifier, the mentions query
- * the mentions qualifier, and the authored query neither.
+ * Adds an open PR created long before the window of any test, which
+ * testuser reviewed on a first request and was asked again about since.
+ * Only the request search returns it, the way GitHub's review search
+ * drops it on its creation bound. It joins the canned data only while
+ * PR_STATS_TEST_OLD_REQUEST is set, so the App tests keep their queues
+ * and the load test opts in.
+ */
+if (process.env.PR_STATS_TEST_OLD_REQUEST === '1') {
+  REVIEW_TIMELINES['acme/api#30'] = {
+    additions: 40,
+    deletions: 8,
+    requests: [
+      { at: '2025-11-03T09:00:00Z', login: 'testuser' },
+      { at: '2026-08-27T09:00:00Z', login: 'testuser' },
+    ],
+    reviews: [{ login: 'testuser', at: '2025-11-04T09:00:00Z', state: 'APPROVED' }],
+    outstanding: [{ login: 'testuser' }],
+  };
+
+  SEARCHES.requested.push(searchItem('acme/api', 30, 'Retire the legacy importer', '2025-11-01T10:00:00Z', 'open'));
+}
+
+/**
+ * Tells the four searches apart by the qualifiers of their query. The
+ * review query carries the reviewed-by qualifier, the request query the
+ * review-requested qualifier without it, the mentions query the mentions
+ * qualifier, and the authored query none of them.
  */
 function searchMode(query) {
-  if (query.includes('review-requested:')) {
+  if (query.includes('reviewed-by:')) {
     return 'review';
+  }
+
+  if (query.includes('review-requested:')) {
+    return 'requested';
   }
 
   if (query.includes('mentions:')) {
@@ -464,16 +506,27 @@ function handleSearch(fields) {
   }
 
   /**
-   * The real review search excludes the user's own PRs with a negated
-   * author term, because GitHub records inline replies as reviews. The
-   * fake insists on that term so a search that drops it fails every test
-   * that loads through it. The authored and mentions searches keep the
-   * user's own PRs on purpose, so the fake refuses the term there.
+   * The real review and request searches exclude the user's own PRs with
+   * a negated author term, because GitHub records inline replies as
+   * reviews. The fake insists on that term so a search that drops it
+   * fails every test that loads through it. The authored and mentions
+   * searches keep the user's own PRs on purpose, so the fake refuses the
+   * term there.
    */
   const excludesOwn = query.includes('-author:testuser');
 
-  if ((mode === 'review') !== excludesOwn) {
+  if ((mode === 'review' || mode === 'requested') !== excludesOwn) {
     process.stderr.write(`fake gh got a ${mode} search with the wrong author exclusion: ${query}\n`);
+    process.exit(1);
+  }
+
+  /**
+   * The request search has no creation bound and asks for open PRs only,
+   * because it exists to find the requests the review search's window
+   * hides. A bound on it would defeat that, so the fake refuses one.
+   */
+  if (mode === 'requested' && (query.includes('created:') || !query.includes('is:open'))) {
+    process.stderr.write(`fake gh got a request search with the wrong bounds: ${query}\n`);
     process.exit(1);
   }
 
