@@ -2,7 +2,7 @@ import type { ScrollBoxRenderable } from '@opentui/core';
 import { useTerminalDimensions } from '@opentui/react';
 import { useEffect, useRef } from 'react';
 import { linkUrl, type LinkTarget } from '../../settings';
-import { overlayScrollbar, useScrollbarSettle } from '../hooks/scrollbar';
+import { overlayScrollbar, useScrollbarSettle, wheelStep } from '../hooks/scrollbar';
 import { theme } from '../theme';
 import type { QueueSection } from '../views/queue';
 import type { PrRow } from '../views/rows';
@@ -216,7 +216,8 @@ export function QueuePanel({
         flexGrow={1}
         paddingLeft={1}
         paddingRight={2}
-        verticalScrollbarOptions={overlayScrollbar}
+        scrollAcceleration={wheelStep}
+        verticalScrollbarOptions={overlayScrollbar()}
       >
         {warning !== null && (
           <text wrapMode="word" fg={theme.warn} marginTop={1}>

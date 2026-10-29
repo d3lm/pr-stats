@@ -765,7 +765,7 @@ export function App({
         draftRef.current = value;
         dispatchUi({ type: 'editStarted' });
       },
-      scrollBy: (forTab, delta) => {
+      scrollBy: (forTab, delta, unit) => {
         // tab 1 scrolls the merged sub-tab, the only stats view it hosts
         const ref =
           forTab === 1
@@ -776,7 +776,7 @@ export function App({
                 ? sizeScrollRef
                 : commentScrollRef;
 
-        ref.current?.scrollBy(delta);
+        ref.current?.scrollBy(delta, unit);
       },
     });
   });
@@ -803,7 +803,6 @@ export function App({
         views={views}
         browse={browse}
         warning={capWarning}
-        focused={ui.modal === null}
         scrollRefs={{
           review: reviewScrollRef,
           size: sizeScrollRef,

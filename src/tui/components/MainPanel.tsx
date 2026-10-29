@@ -73,7 +73,6 @@ function StatsTab({
   view,
   cursor,
   scrollRef,
-  focused,
   warning,
   openIn,
 }: {
@@ -82,7 +81,6 @@ function StatsTab({
   view: StatsView | null;
   cursor: number;
   scrollRef: RefObject<ScrollBoxRenderable | null>;
-  focused: boolean;
   warning: string | null;
   openIn: LinkTarget;
 }) {
@@ -97,7 +95,6 @@ function StatsTab({
   return (
     <ChartsPanel
       scrollRef={scrollRef}
-      focused={focused}
       heading={repos.length > 0 ? (scope.repo ?? 'All repos') : null}
       warning={warning}
       view={view}
@@ -116,7 +113,6 @@ export function MainPanel({
   views,
   browse,
   warning,
-  focused,
   scrollRefs,
   error,
   loading,
@@ -131,11 +127,6 @@ export function MainPanel({
    * their content, or null when no search hit the cap.
    */
   warning: string | null;
-  /**
-   * Marks the charts pane of the active stats tab as the scroll focus,
-   * which an open modal takes away.
-   */
-  focused: boolean;
   scrollRefs: Record<'review' | 'size' | 'comment' | 'merged', RefObject<ScrollBoxRenderable | null>>;
   error: string | null;
   loading: boolean;
@@ -223,7 +214,6 @@ export function MainPanel({
               view={views.merged}
               cursor={browse.repoCursors.merged}
               scrollRef={scrollRefs.merged}
-              focused={focused}
               warning={warning}
               openIn={openIn}
             />
@@ -236,7 +226,6 @@ export function MainPanel({
           view={views.review}
           cursor={browse.repoCursors.review}
           scrollRef={scrollRefs.review}
-          focused={focused}
           warning={warning}
           openIn={openIn}
         />
@@ -247,7 +236,6 @@ export function MainPanel({
           view={views.size}
           cursor={browse.repoCursors.size}
           scrollRef={scrollRefs.size}
-          focused={focused}
           warning={warning}
           openIn={openIn}
         />
@@ -258,7 +246,6 @@ export function MainPanel({
           view={views.comments}
           cursor={browse.repoCursors.comment}
           scrollRef={scrollRefs.comment}
-          focused={focused}
           warning={warning}
           openIn={openIn}
         />

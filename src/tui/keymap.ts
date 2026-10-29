@@ -1,4 +1,4 @@
-import type { KeyEvent } from '@opentui/core';
+import type { KeyEvent, ScrollUnit } from '@opentui/core';
 import type { Dispatch, SetStateAction } from 'react';
 import { clearCache } from '../cache';
 import {
@@ -25,6 +25,7 @@ import type { SnoozeTargetKey } from '../snooze';
 import { exportStatsFile } from './data/export';
 import type { RawData } from './data/load';
 import { TEST_NOTIFICATION } from './data/notifications';
+import { SCROLL_STEP_ROWS } from './hooks/scrollbar';
 import type { AppViews } from './hooks/useViewModel';
 import {
   activeQueueTab,
@@ -158,9 +159,10 @@ export interface KeymapContext {
 
   /**
    * Scrolls the charts pane of the given stats tab by the given number
-   * of rows.
+   * of rows, or by that share of the viewport or the content when the
+   * unit says so.
    */
-  scrollBy: (tab: number, delta: number) => void;
+  scrollBy: (tab: number, delta: number, unit?: ScrollUnit) => void;
 }
 
 function handleOptionsModalKey(key: KeyEvent, context: KeymapContext): void {
@@ -863,10 +865,56 @@ function handleStatsKey(key: KeyEvent, context: KeymapContext): void {
   } else if (key.name === 'x' && view?.expandable === true) {
     // x lifts the row cap of the capped comparison cards and restores it
     context.dispatchBrowse({ type: 'expandToggled', tab });
-  } else if (key.name === 'j') {
-    context.scrollBy(context.browse.tab, 2);
-  } else if (key.name === 'k') {
-    context.scrollBy(context.browse.tab, -2);
+  } else {
+    handleStatsScrollKey(key, context);
+  }
+}
+
+/**
+ * Scrolls the charts pane of the active stats tab. The keymap is the only
+ * owner of these keys, because the pane is never focused and so never
+ * scrolls on a key by itself. The step keys move SCROLL_STEP_ROWS like a
+ * mouse wheel notch, the page keys move half a viewport, and home and end
+ * jump to either end of the content.
+ */
+function handleStatsScrollKey(key: KeyEvent, context: KeymapContext): void {
+  const { tab } = context.browse;
+
+  switch (key.name) {
+    case 'j':
+    case 'down': {
+      context.scrollBy(tab, SCROLL_STEP_ROWS);
+
+      break;
+    }
+    case 'k':
+    case 'up': {
+      context.scrollBy(tab, -SCROLL_STEP_ROWS);
+
+      break;
+    }
+    case 'pagedown': {
+      context.scrollBy(tab, 0.5, 'viewport');
+
+      break;
+    }
+    case 'pageup': {
+      context.scrollBy(tab, -0.5, 'viewport');
+
+      break;
+    }
+    case 'end': {
+      context.scrollBy(tab, 1, 'content');
+
+      break;
+    }
+    case 'home': {
+      context.scrollBy(tab, -1, 'content');
+
+      break;
+    }
+
+    // no default
   }
 }
 

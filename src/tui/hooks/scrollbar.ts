@@ -1,28 +1,98 @@
-import type { ScrollBoxOptions, ScrollBoxRenderable } from '@opentui/core';
+import type { ScrollAcceleration, ScrollBoxOptions, ScrollBoxRenderable } from '@opentui/core';
 import { CliRenderEvents } from '@opentui/core';
 import { useRenderer } from '@opentui/react';
 import type { RefObject } from 'react';
 import { useLayoutEffect } from 'react';
+import { theme } from '../theme';
+
+type ScrollbarOptions = NonNullable<ScrollBoxOptions['verticalScrollbarOptions']>;
+
+let cachedOverlay: { key: string; options: ScrollbarOptions } | null = null;
 
 /**
- * Takes a scrollbox's vertical scrollbar out of the layout flow by
- * pinning it over the right edge. An in-flow scrollbar claims a column of
- * viewport width whenever it appears, which shifts every right-aligned
- * row in the scroll area the moment the overflow check turns the bar on.
- * The overlaid bar leaves the viewport width alone, so content renders at
- * its final position from the first frame and the bar simply fades in
- * over the gutter when the content overflows.
+ * Returns the options that take a scrollbox's vertical scrollbar out of
+ * the layout flow by pinning it over the right edge. An in-flow scrollbar
+ * claims a column of viewport width whenever it appears, which shifts
+ * every right-aligned row in the scroll area the moment the overflow
+ * check turns the bar on. The overlaid bar leaves the viewport width
+ * alone, so content renders at its final position from the first frame
+ * and the bar simply fades in over the gutter when the content overflows.
+ *
+ * The track paints in the theme background and only the thumb shows, in
+ * the muted text color. OpenTUI's default track is a lighter gray, which
+ * fills the whole last column of the terminal while the bar is up, and
+ * iTerm2 extends the background of a row's last cell into the window
+ * margin, so the default track appeared as a wide bright band along the
+ * right edge next to a thumb that stayed one cell wide.
+ *
+ * The options are cached until the theme colors change, because a fresh
+ * object on every render would make the reconciler re-apply them on each
+ * commit. Call this at render time, so a theme change reaches the bar.
  *
  * Every scrollbox that uses this must reserve the gutter itself with
  * paddingRight={2}, one column that the bar covers and one blank column
  * that keeps a gap between the content and the bar.
  */
-export const overlayScrollbar: ScrollBoxOptions['verticalScrollbarOptions'] = {
-  position: 'absolute',
-  top: 0,
-  right: 0,
-  bottom: 0,
-};
+export function overlayScrollbar(): ScrollbarOptions {
+  const key = `${theme.bg}|${theme.muted}`;
+
+  if (cachedOverlay?.key === key) {
+    return cachedOverlay.options;
+  }
+
+  cachedOverlay = {
+    key,
+    options: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      bottom: 0,
+      trackOptions: { backgroundColor: theme.bg, foregroundColor: theme.muted },
+    },
+  };
+
+  return cachedOverlay.options;
+}
+
+/**
+ * Counts the rows one scroll step moves, for a mouse wheel notch as well
+ * as for a j, k, or arrow key press. The keymap and the wheel step below
+ * read it so the two inputs stay in lockstep.
+ */
+export const SCROLL_STEP_ROWS = 4;
+
+/**
+ * Scrolls a fixed number of rows per mouse wheel notch. OpenTUI's default
+ * acceleration moves one row per notch, which crawls through a long list
+ * or chart pane. The scrollbox multiplies the wheel delta by whatever
+ * tick() returns, so a constant multiplier turns every notch into the same
+ * jump.
+ *
+ * The scrollbox keeps the instance it was given and only calls tick() and
+ * reset() on it, so one shared instance per step size is safe to reuse
+ * across scrollboxes and renders.
+ */
+class FixedWheelStep implements ScrollAcceleration {
+  readonly #rows: number;
+
+  constructor(rows: number) {
+    this.#rows = rows;
+  }
+
+  tick(): number {
+    return this.#rows;
+  }
+
+  reset(): void {}
+}
+
+/**
+ * Holds the wheel step every scrollbox in the app shares, SCROLL_STEP_ROWS
+ * per notch. The object is created once, so passing it as a prop never
+ * makes the reconciler re-apply it on every commit. Every scrollbox should
+ * pass this as scrollAcceleration alongside overlayScrollbar().
+ */
+export const wheelStep: ScrollAcceleration = new FixedWheelStep(SCROLL_STEP_ROWS);
 
 /**
  * Keeps a scrollbox's vertical scrollbar hidden through the mount frame.
