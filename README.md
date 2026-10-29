@@ -1,223 +1,95 @@
 # pr-stats
 
-An interactive terminal UI for GitHub PR statistics, built with [OpenTUI](https://github.com/anomalyco/opentui) and React. It shows time to review, PR size, and comment stats for any repository your GitHub login can see, plus a live queue of the PRs waiting on you.
+Track GitHub pull requests (PRs), review requests, and mentions from your terminal. See how long reviews take, how large PRs grow, and where discussion happens.
 
 ![pr-stats](./assets/screenshot.png)
 
-## Requirements
+## Get started
 
-- Node 26.4+ or Bun 1.3+. The TUI renders through native FFI. Node gates that behind `--experimental-ffi`, and the launcher re-executes itself with the flag, so a plain `pr-stats` works on both runtimes.
-- Either an authenticated gh CLI (`gh auth login`) or a GitHub access token via `--token`, `GITHUB_TOKEN`, or `GH_TOKEN`. With a token, the tool calls the GitHub API directly and does not need the gh CLI. See [Tokens](#tokens) for the access a token needs.
-
-## Install
+Use Node.js 26.4+ or Bun 1.3+. For GitHub access, install the GitHub CLI (`gh`) and sign in.
 
 ```bash
+gh auth login
 npm install -g @d3lm/pr-stats
-```
-
-You can also run it without installing through `npx @d3lm/pr-stats` or `bunx --bun @d3lm/pr-stats`.
-
-## Usage
-
-```bash
 pr-stats
 ```
 
-Without flags, it covers PRs from the last 90 days across all repositories you can access. An open PR older than that still shows up in Awaiting review while it awaits your review, because one extra search per load finds the open requests without a date bound. It stays out of the statistics, which only cover the window.
+To run without installing, use `npx @d3lm/pr-stats` or `bunx --bun @d3lm/pr-stats`.
 
-- **Awaiting you** splits into three sub-tabs, which the `t` key cycles forward and `T` (shift+t) cycles backward. Awaiting review lists the open PRs awaiting your review with their wait time, followed by the open PRs where only a team you belong to was asked, Reviewed lists the open PRs you already reviewed, and Mentions is an inbox of the PRs that @-mention you. A fresh review request moves a PR back into the awaiting list. The `s` key snoozes a PR or a mention you are not ready for yet, which parks it in a snoozed list until a time you pick, and `d` marks a mention read. See [Team review requests](#team-review-requests), [Mentions](#mentions), and [Snoozing](#snoozing).
-- **Your PRs** splits into your open PRs and a merged-and-closed report with merge-time, first-review, backlog, and outcome charts plus a reviewer leaderboard. The `t` and `T` keys switch the sub-tabs.
-- **Reviews** counts the PRs you reviewed on request next to the review rounds they took, and charts your review times as a histogram, trend, heatmap, and weekly volume, plus review cycles, verdicts, an off-hours gauge, and the requests still waiting on you.
-- **PR size** carries the same charts for PR sizes and adds a weekly net-lines trend.
-- **Comments** holds a histogram of comments per PR, a scatter against PR size, and the most commented PRs.
+On the first run, pr-stats shows your statistics for PRs created in the last 90 days across repositories you can access. Older open PRs still appear in your review queue when they await your review.
 
-When the data spans multiple repos, every tab opens on a repo picker that drills into one repo or the aggregate. On the queue lists, `g` groups the aggregate by repo, and on stats tabs, `x` lifts the row cap on comparison cards. The charts scroll four rows per `j`/`k`, arrow key, or mouse wheel notch, half a screen per `pgup`/`pgdn`, and to either end with `home`/`end`. The `o` key opens the options modal and `S` the settings dialog. The settings spread over five pages, General, Awaiting you, Notifications, Appearance, and Data, which `tab` and `shift+tab` cycle and the digits `1` to `5` jump to, and `↑`/`↓` walk the rows across the page boundaries.
+### Use a GitHub token
 
-## Options
+You can use `GITHUB_TOKEN`, `GH_TOKEN`, or `--token <token>` instead of the GitHub CLI. The token must have access to the repositories you want to see.
 
-All flags pre-seed the options modal. Run `pr-stats --help` for full details.
+A classic token needs `repo` for private repositories, or `public_repo` for public repositories only. Add `read:org` for team review requests. A fine-grained token needs repository access and read permissions for Metadata, Pull requests, and Contents. Team review requests also need read access to organization members.
 
-| Flag                          | Default   | Description                                                                                                      |
-| ----------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
-| `-s, --since <value>`         | `90d`     | Only include PRs created after this point. Accepts an ISO date or a relative value like `30d`, `8w`, `6m`, `1y`. |
-| `-r, --repo <name>`           | all repos | Restrict the search to a repository, repeatable. Accepts `owner/name` or a bare name.                            |
-| `-u, --user <login>`          | you       | Compute stats for this user instead of the authenticated one.                                                    |
-| `--token <token>`             |           | Authenticate with a GitHub access token instead of the gh CLI.                                                   |
-| `-t, --target <value>`        |           | Report how many reviews finished within this time, like `24h`, `2d`, or `90m`.                                   |
-| `--target-percentile <value>` | `90`      | Check the target against this percentile of your review times, like `90` or `p90`.                               |
-| `--size-target <value>`       |           | Report how many authored PRs fit within this size, like `400`, `400l`, `20f`, or `400l,20f`.                     |
-| `--tz <zone>`                 | system    | Set the IANA timezone for the weekend and working-hours math.                                                    |
-| `--work-days <days>`          | `mon-fri` | Count only these days as working days, like `mon-fri`, `sun-thu`, or `mon,wed,fri`.                              |
-| `-w, --work-hours <value>`    | `0-24`    | Count only these working hours, like `9-17`, `8:30-16:30`, or `9am-6pm`.                                         |
-| `--wall-clock`                | off       | Measure raw elapsed time, including weekends.                                                                    |
-| `--include-drafts`            | off       | Include PRs that are currently drafts.                                                                           |
-| `--review-types <list>`       | all       | Count only these review types. Takes a comma-separated list of `approve`, `comment`, and `request-changes`.      |
-| `--no-cache`                  | off       | Refetch every PR instead of reading the disk cache.                                                              |
-| `--json`                      | off       | Print every stat as JSON to stdout instead of starting the TUI.                                                  |
-| `--debug <path>`              |           | Serve canned data from a fake `gh` binary in a testdata directory.                                               |
-| `-h, --help`                  |           | Show the help page.                                                                                              |
+If repositories are missing, make sure that your token has access and any required organization approval. Run `pr-stats --repo owner/name` to surface an access error for a specific repository.
 
-A few examples:
+## Use the dashboard
+
+- Awaiting you lists review requests for you and your teams, PRs you already reviewed, and mentions.
+- Your PRs shows your open PRs and statistics for merged and closed PRs.
+- Reviews shows review times, trends, and pending requests.
+- PR size shows changed lines, changed files, and trends.
+- Comments shows discussion activity and the most commented PRs.
+
+When several repositories have data, choose one repository or the combined view.
+
+| Key                             | Action                                                 |
+| ------------------------------- | ------------------------------------------------------ |
+| `1`–`5` or `tab` / `shift+tab`  | Switch tabs.                                           |
+| `t` / `T`                       | Switch sub-tabs in Awaiting you and Your PRs.          |
+| `↑` / `↓` or `k` / `j`          | Move through lists or scroll charts.                   |
+| `pgup` / `pgdn`, `home` / `end` | Scroll charts by half a screen, or to either end.      |
+| `enter`                         | Open the selected repository or PR.                    |
+| `esc`                           | Go back or close a dialog.                             |
+| `s`                             | Snooze a review request or mention, or end its snooze. |
+| `d`                             | Mark a mention read or unread in Mentions.             |
+| `r` / `R`                       | Reload data, or refetch without the cache.             |
+| `o`                             | Open filters and targets.                              |
+| `S`                             | Open settings.                                         |
+| `q`                             | Quit.                                                  |
+
+The footer shows the controls for your current view. The Mentions inbox marks existing mentions as read on its first load, so only later mentions appear as unread.
+
+## Filter and export statistics
 
 ```bash
-# Limit the search to one repository and a start date
-pr-stats --repo owner/name --since 2026-01-01
+# Limit the report to one repository and the last 30 days.
+pr-stats --repo owner/name --since 30d
 
-# Report how many reviews finished within one working day
+# Include several repositories.
+pr-stats --repo owner/frontend --repo owner/backend
+
+# Measure reviews against a target of one working day.
 pr-stats --work-hours 9-17 --target 1d
 
-# Count only approvals and change requests as reviews
-pr-stats --review-types approve,request-changes
+# Set a PR size target of 400 changed lines.
+pr-stats --size-target 400
+
+# Export the report to a JSON file.
+pr-stats --json > pr-stats.json
 ```
 
-## Tokens
+By default, durations count all hours from Monday through Friday in your system timezone. Use `--work-days`, `--work-hours`, and `--tz` to match your schedule, or `--wall-clock` to include all elapsed time. Draft PRs are excluded from statistics unless you add `--include-drafts`.
 
-The `--token` flag and the `GITHUB_TOKEN` and `GH_TOKEN` environment variables switch the tool from the gh CLI to direct GitHub API calls. The PR list comes from the GitHub search API, which silently leaves out every repository the token cannot see, so a token with too little access shows an empty view instead of an error.
+Press `o` to change filters and targets in the app. Targets and the work schedule apply at once, and a changed search filter such as `--since` or `--repo` applies on the next reload with `r`. Press `s` in that dialog to save them for future runs. Command-line flags override saved values. Run `pr-stats --help` for all flags.
 
-A classic token needs the `repo` scope, or `public_repo` when every repository is public.
+If loads are slow or hit GitHub rate limits, narrow the search with `--repo` or `--since`. The app shows a countdown when GitHub asks it to wait.
 
-A fine-grained token needs more care, because it only covers one resource owner and only the repositories you select for it.
+## Configure the app
 
-- Pick the organization as the resource owner when the PRs live in an organization's repositories. A token owned by your user account never sees them.
-- Grant access to all repositories or select the ones you care about. The public repositories option hides every private one.
-- Grant read access to `Metadata`, `Pull requests`, and `Contents`. Searching pull requests in private repositories needs `Contents` on top of `Pull requests`, even though GitHub's permission tables do not mention it.
-- Ask an organization owner to approve the token when the organization requires approval for fine-grained tokens. Until then, the token sees nothing in that organization.
+Press `S` to configure automatic reloads, desktop notifications, themes, and link behavior. Changes save automatically. Enable automatic reloads and notifications to hear about new review requests while the app runs, and turn on mention notifications to hear about new mentions too.
 
-To check a token, run `pr-stats --token <token> --repo owner/name` against a repository you expect to see. Naming the repository makes the search fail with a `422 Validation Failed` error when the token cannot see it, where a search without `--repo` would just return nothing.
+Settings live in `settings.json` inside the cache directory. On macOS, this directory is `~/Library/Caches/pr-stats`. Elsewhere, it is `$XDG_CACHE_HOME/pr-stats` or `~/.cache/pr-stats`. Set `PR_STATS_CACHE_DIR` to use another location.
 
-## Rate limits
+The app caches closed and merged PRs and refreshes the review data of open PRs on each load. Use `--no-cache` to skip cached data for one run. The Clear cache action in settings deletes the cached data and keeps your saved filters, settings, snoozes, and mention read state.
 
-Every load runs three searches, one for the PRs you were asked to review or reviewed, one for the PRs you authored, and one for the PRs that mention you while the inbox is on, and then fetches the details of the PRs they found in batched GraphQL calls. GitHub caps the search endpoint at thirty requests per minute and enforces secondary limits on bursts, so the searches run one at a time and pace their pages under that bound, which a user with hundreds of PRs in the window notices as a slower search phase. A request GitHub still refuses over a rate limit is retried after the pause GitHub asks for, or after one minute that doubles with every further retry when it names none, up to three times. The load shows the countdown while it waits, in the header behind data on screen and in place of the progress spinner otherwise. A load that stays refused through the retries, or whose limit lifts more than five minutes away, gives up and keeps the previous data on screen, and the header asks you to wait a few minutes before you press `r`. Narrowing `since` or naming repos with `--repo` keeps the searches small enough to never come near the limits.
+## Read more
 
-## JSON export
-
-The `--json` flag prints the full report to stdout instead of starting the TUI. Every other flag applies the same way, and progress renders on stderr, so a piped stdout stays pure JSON.
-
-```bash
-pr-stats --json | jq '.review.reviewTimeHours'
-```
-
-The report holds a `review`, `authored`, and `comments` object with one entry per PR. Summaries report the count, mean, p50, p90, min, and max, and every duration respects the configured time mode. The settings dialog has an export row that writes the same report to `pr-stats.json` in the current directory.
-
-## Caching
-
-Closed and merged PRs are cached on disk per PR, because their timelines and sizes no longer change. Searches and open PRs are fetched fresh on each run. The TUI also snapshots the last successful load, so a later start with the same options renders instantly while the real load refreshes in the background.
-
-The cache lives in `~/Library/Caches/pr-stats` on macOS and in `$XDG_CACHE_HOME/pr-stats` or `~/.cache/pr-stats` elsewhere. The `PR_STATS_CACHE_DIR` environment variable overrides the location. `--no-cache` skips every cache read for one run, and the settings dialog can disable the cache permanently. The Clear cache row in the settings dialog shows the path next to the size of the directory on disk, and deletes the cached PR data while keeping the saved options and settings.
-
-The options modal saves the current options to the cache directory with the `s` key. Later runs start from the saved options wherever no flag was given, and flags always take precedence.
-
-## Auto Reload
-
-The `r` key reloads the data by hand, and `R` refetches everything past the cache. The TUI can also keep itself fresh while it stays open. The Auto reload row in the settings dialog turns background reloads on, and the Reload interval row below it sets how long the TUI waits after one load finishes before the next one starts, as a value in seconds, minutes, or hours like `30s`, `10m`, or `2h`. The header shows the interval next to the refresh time while it is on. Both settings persist in `settings.json` in the cache directory.
-
-```json
-{
-  "autoReload": true,
-  "reloadInterval": "10m"
-}
-```
-
-## Links
-
-Enter on a queue row opens the highlighted PR in the browser, and the PR references in every list are terminal hyperlinks that open the same way on a click. The "Open PRs in" row in the settings dialog picks the site they open on. On `github` they open the PR page, and on `linear` they open the PR in [Linear Diffs](https://linear.app/docs/diffs) at `linear.review`, Linear's review view of a GitHub PR, which needs no issue linked to the PR. Diffs has to be enabled in your Linear workspace first, because a workspace without it lands on Linear's page for turning it on. The choice persists as `openIn`. The "Copy instead of open" row below it makes enter and a click copy the PR's link to the clipboard instead, and the copied link stays the GitHub link whatever the open-in row says. That setting persists as `copyLinks`.
-
-```json
-{
-  "openIn": "linear",
-  "copyLinks": false
-}
-```
-
-## Notifications
-
-The Desktop notifications row in the settings dialog makes the TUI send a desktop notification whenever a load finds a PR newly awaiting your review or a review re-requested from you after you already reviewed the PR. Every load diffs its review requests against the data shown before it. For the first load of a session that is the startup snapshot from the previous session, so a restart tells you what came in while the TUI was closed. Only a session without a snapshot, after `--no-cache` or on the first run, starts by recording what is already waiting without notifying about it. Manual reloads count as well, but the feature pairs naturally with auto reload, which lets the TUI watch your review queue from a spare terminal. The setting persists in `settings.json` in the cache directory.
-
-```json
-{
-  "notifications": true,
-  "notifyMentions": true,
-  "notifyChannel": "auto"
-}
-```
-
-The Mention notifications row below it extends the notifications to @-mentions. While it is on together with the desktop notifications and the mention tracking described under [Mentions](#mentions), every load notifies you about a PR whose body, conversation comment, review, or inline review comment newly names you. The diff works like the one for review requests, so the first load with the setting on only records the mentions already there, and every later load reports the texts that newly mention you since the load before it. A text counts once, when it first shows up, so a comment that already mentioned you stays quiet when its author fixes a typo in it, and a PR that leaves the results and comes back does not report its old mentions again. A text that was edited to add the mention, or a review comment that was drafted earlier and published with its review, counts from the edit or the publication. The setting persists as `notifyMentions`.
-
-Notifications go through the terminal itself when it supports a notification escape sequence, which covers iTerm2, Kitty, Ghostty, WezTerm, and most VTE-based terminals like GNOME Terminal. The terminal posts the notification under its own notification permission and the sequence travels through SSH, so this path needs no setup beyond what the terminal asks for. Some terminals only show the banner while their window is unfocused. Terminals without such support get the platform's own command instead, the bundled `pr-stats.app` helper on macOS and `notify-send` on Linux. A notification that fails to send reports in the footer, for example when `notify-send` is missing on a Linux machine, and in the bottom line of the settings dialog while that is open.
-
-The "Notification channel" row picks the path, and the choice persists as `notifyChannel` with the values `auto`, `terminal`, `command`, and `bell`. On `auto` the TUI tries the terminal first and falls back to the platform command, `terminal` and `command` force one of those paths, and `bell` rings the terminal bell instead of posting any text. The dialog shows the `command` value as the command's name on this platform. Forcing the command pays off inside editor terminals like the one in VS Code, which render the terminal path as a small in-editor toast instead of a system notification. The bell reaches every terminal, including the ones that swallow notifications, and each terminal turns it into its own signal, a sound, a flashing screen, a bell icon on the tab, or a badge on the dock icon. The "Send test notification" row below the channel names the channel the next send takes and sends a sample notification, so you can check that your desktop displays it before relying on it.
-
-Two terminals accept the notification sequence without showing anything, and the test row warns about both. iTerm2 drops it until the profile has "Notification Center Alerts" turned on under Settings → Profiles → Terminal, which is off by default. Behind the "Filter Alerts…" button next to it, "Send escape sequence-generated alerts" has to stay on as well, and macOS asks for iTerm2's notification permission on the first send. iTerm2 prefixes the banner with the session name unless its advanced setting "Omit session identifier from notifications" is on. Apple Terminal never implemented the sequence at all, so `auto` skips the terminal there and goes straight to the platform command.
-
-On macOS the command path runs a small app bundle that ships inside the package, `dist/pr-stats.app`, so the banner carries the pr-stats name and icon and the app gets its own entry under System Settings › Notifications. The first send asks for permission the way any app does, and the helper waits for your answer, because macOS treats a prompt that goes unanswered until the requesting app quits as a refusal. Should notifications end up turned off, the footer says so, and the switch to turn them back on sits under System Settings › Notifications › pr-stats. The helper runs on macOS 13 and later on both Apple silicon and Intel Macs. A source checkout without the bundle falls back to `osascript`, whose notifications post under Script Editor and stay invisible since macOS 15 until Script Editor holds notification permission, which the Script Editor app grants after running the one-line script `display notification "test"` once.
-
-## Mentions
-
-The Mentions sub-tab of the Awaiting you tab is an inbox of the PRs that @-mention you. Its Unread list holds the PRs with a mention you have not handled, newest mention first, each row leading with the time since that mention, and its Read list at the bottom holds the ones you marked read. A mention is the exact login behind an at sign in a PR's body, a conversation comment, a review, or an inline review comment, written by someone else, so a team mention or a longer login that starts the same way does not count. A login inside a code span, a code block, or an HTML comment does not count either, because GitHub neither links nor notifies it there. Your own PRs count as well, because a mention asks for your attention no matter who opened the PR, and so do drafts and PRs that are already merged or closed. A PR can await your review and sit in the inbox at once, because a review request and a mention are two separate asks, and its row on the Awaiting review and the Reviewed sub-tabs carries an `@` badge in front of the title while the mention is unread, so you can see where a review also answers a question.
-
-The inbox starts empty. The first data with mentions seeds it, so only the mentions written after that point show up as unread, and a restart continues from the previous session's seed, listing what came in while the TUI was closed. Pressing `d` on a mention marks it read, which moves the PR into the Read list, where `d` marks it unread again and pulls it back into the Unread list. That also works on a PR whose mentions predate the seed. `D` marks every unread mention on screen read in one go. A new mention on a PR you already marked read brings the PR back into the Unread list, while an edit to a text you already handled does not, because the mark remembers which texts it covered. The read state is kept per account, so switching the account switches the inbox with it. The sub-tab has its own repo picker, which counts the unread, snoozed, and read mentions per repo, and `g` groups the aggregate by repo like the other queues. The `s` key snoozes a mention the way it snoozes a review request, see [Snoozing](#snoozing).
-
-The Track mentions row in the settings dialog turns the inbox on and off. It starts on, and while it is on every load runs one extra search for the PRs that mention you, filtered on the last update instead of the creation date within the `since` window, because a fresh mention on an old PR is exactly what it looks for. Only the mentions written or edited within the window count, so a push or a comment on an old PR does not bring back a mention from before the window, and an unread mention you never handled drops out of the inbox once it ages past the window. Widen `since` to see older mentions. The search unites two lookups. One asks GitHub's mentions index, which only covers PR bodies and conversation comments, and the other looks for your login as text among the PRs you authored, commented on, reviewed, or are indexed as mentioned on, which reaches reviews and inline review comments too. A mention in a review of a PR you have only been asked to review, or have nothing to do with, stays out, because no search reaches those texts. Each load fetches the texts of the found PRs only when GitHub reports new activity on them since the last fetch, and confirms the mention against the texts, so the ongoing cost stays at that one search. Turning it off skips the search, hides the inbox, and drops the seed, so turning it back on starts the inbox afresh. The setting persists as `trackMentions` in `settings.json`, and the read state persists in `mention-reads.json` in the cache directory, where it survives a restart and a cache clear.
-
-```json
-{
-  "trackMentions": true
-}
-```
-
-## Team review requests
-
-GitHub lets an author ask a whole team for a review, and the review-requested search returns those PRs to every member of the team. The Awaiting review sub-tab lists the open PRs where only a team you belong to was asked in a "Requested of your team" section below the awaiting list, each row naming the team after the PR title, and the repo picker counts them apart from the PRs that name you. A request that names you directly always wins, so a PR with both sits in the awaiting list alone. The team request leaves the section once you or a teammate reviews the PR, because GitHub clears the team's request with the first review from a member, and a team asked again after that comes back as a new request. The `s` key snoozes a team request like a direct one, and the snoozed row keeps the team name.
-
-To know which teams are yours, every load asks GitHub for the teams of the login the stats cover across the organizations you can see. The answer is cached in `teams.json` in the cache directory for six hours, and `R` refreshes it right away, so a new membership shows up on the next hard reload. The lookup needs the `read:org` scope on a classic token, or read access to organization members on a fine-grained one. Without it the lookup fails quietly, the cached teams keep serving when there are any, and otherwise the team requests are treated like requests of a team you are not on, which is how earlier versions treated every team request.
-
-Three rows in the settings dialog steer the feature, and each persists in `settings.json` in the cache directory. Team requests, under Awaiting you, turns the section on and off and starts on. Count team reviews, below it, folds the reviews you gave on a team request, and the team requests still open, into the Reviews tab and the JSON export, which lists them under `reviewedTeam` and `pendingTeam` either way. It starts off, so the review times keep measuring the requests that named you, and the Reviews tab then reports how many team reviews it leaves out. Team request notifications, under Notifications, extends the desktop notifications to PRs newly requested of a team you belong to, and only applies while the desktop notifications and the team requests are both on.
-
-```json
-{
-  "teamReviews": true,
-  "teamReviewStats": false,
-  "notifyTeamReviews": false
-}
-```
-
-## Snoozing
-
-A PR you commented on without leaving a review stays in the awaiting list, because GitHub still counts the review as requested. When you are waiting on the author, the `s` key snoozes the highlighted PR. A small dialog asks how long, starting from the default snooze duration, and takes a value in minutes, hours, days, or weeks like `30m`, `2h`, `1d`, or `1w`, up to four weeks. The PR then moves into a Snoozed list below the awaiting one, where its row shows the wake-up time instead of the wait, and the repo picker counts the snoozed PRs apart from the awaiting ones. Pressing `s` on a snoozed PR ends the snooze right away. The same key snoozes an unread mention on the Mentions sub-tab, which parks it in a Snoozed list between the Unread and the Read lists, and `d` on a snoozed mention marks it read and ends the snooze in one step.
-
-When the snooze ends and the PR still awaits your review, it moves back into the awaiting list, and a desktop notification says so while notifications are on. A snoozed mention comes back into the inbox the same way. A PR that got reviewed, merged, or closed in the meantime ends its snooze quietly, and a review re-requested from you after the snooze voids it, so a re-request never hides behind a snooze. A mention snooze works the same way, a mention you marked read ends it quietly and a newer mention voids it. Snoozes persist in `snoozes.json` in the cache directory and survive a restart and a cache clear. A snooze that ended while the TUI was closed wakes up as soon as the TUI starts, so the restart reports it like the review requests that came in while it was closed.
-
-The Default snooze row in the settings dialog sets the duration the dialog starts with, and the setting persists in `settings.json` in the cache directory.
-
-```json
-{
-  "snoozeDuration": "30m"
-}
-```
-
-## Theming
-
-The TUI ships five built-in themes, the warm amber default plus green, blue, purple, and yellow variants. The Theme row in the settings dialog cycles through them, and the Edit colors row below it edits individual colors, which creates a custom theme that joins the cycle as a sixth entry. Everything persists in a `theme` object in `settings.json` in the cache directory, which you can also edit by hand.
-
-```json
-{
-  "theme": {
-    "preset": "custom",
-    "base": "blue",
-    "accent": "#89b4f0",
-    "heat": ["#32475c", "#49688a", "#5f92c0", "#89b4f0"]
-  }
-}
-```
-
-The `preset` key names the active theme, one of `default`, `green`, `blue`, `purple`, `yellow`, and `custom`. The `base` key names the built-in theme the custom colors start from. The color keys are `bg`, `border`, `text`, `muted`, `dim`, `accent`, `selectedBg`, `inputBg`, `inputFocusedBg`, `warn`, `error`, `success`, `chartBar`, `chartLine`, `chartDim`, and `heat`, where `heat` takes four heatmap colors from cool to hot. An invalid key or color fails the start with a message naming the mistake.
-
-## Development
-
-The TUI runs with `bun tui/main.tsx`, or under Node with `pnpm tui:node`. The `--debug tui/testdata` flag serves canned data from the fake `gh` binary in that directory instead of fetching from GitHub, and `bun test tui` drives the whole pipeline against it. `pnpm build` bundles everything into `dist/`, where `tui.mjs` is the launcher and `tui-app.mjs` is the app bundle it loads.
-
-The macOS notification helper lives in `native/macos` as a Swift source, an `Info.plist`, and the icon PNG, and `pnpm build:notifier` compiles it into `dist/pr-stats.app` as a universal, ad-hoc signed bundle. The build needs the Xcode command line tools and only runs on macOS, so the publish workflow builds the bundle on a macOS runner and adds it to the package before publishing. Without the bundle the TUI falls back to `osascript`, so the rest of the development setup does not depend on it. The bundle identifier `dev.d3lm.pr-stats.notifier` keys the notification permission, so it must stay the same across releases.
+See the [documentation](docs/README.md) for configuration details, data handling, and development setup.
 
 ## License
 
-OpenTUI is licensed under the [MIT License](LICENSE).
+pr-stats uses the [MIT License](LICENSE).
