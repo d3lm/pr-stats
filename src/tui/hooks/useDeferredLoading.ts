@@ -24,7 +24,10 @@ export interface DeferredLoadingOptions {
  * the indicator up without a gap.
  *
  * The hide side needs to know when the indicator appeared, so the show
- * timestamp lives in a ref that survives across effect runs. The effect
+ * timestamp lives in a ref that survives across effect runs. A zero
+ * delay shows the indicator from the first render, so the timestamp
+ * starts with it, and a load that ends before the show timer fires still
+ * lingers for the minimum instead of vanishing at once. The effect
  * depends only on the loading flag, which keeps the timers untouched
  * while progress updates re-render the component, and every visibility
  * change flows through a timer callback, an immediate hide included, so
@@ -34,9 +37,10 @@ export function useDeferredLoading(
   isLoading: boolean,
   { showDelay = 300, minDuration = 500 }: DeferredLoadingOptions = {},
 ): boolean {
-  const [visible, setVisible] = useState(isLoading && showDelay === 0);
+  const [shownAtMount] = useState(() => (isLoading && showDelay === 0 ? Date.now() : null));
+  const [visible, setVisible] = useState(shownAtMount !== null);
 
-  const shownAtRef = useRef<number | null>(null);
+  const shownAtRef = useRef<number | null>(shownAtMount);
 
   useEffect(() => {
     if (isLoading) {
