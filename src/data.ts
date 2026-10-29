@@ -291,6 +291,66 @@ export function collectReviewPrs(review: SearchPrItem[]): ReviewPr[] {
 }
 
 /**
+ * The PR list of the review fetch together with the keys of the PRs the
+ * windowed review search did not return, see mergeRequestedPrs.
+ */
+export interface MergedReviewPrs {
+  prs: ReviewPr[];
+  outsideWindow: Set<string>;
+}
+
+/**
+ * Unites the PRs of the windowed review search with the ones of the
+ * unbounded request search into the list the review fetch works from, so
+ * a request on a PR older than the window reaches the queue. Each PR
+ * comes out once, in the order of the review search first, and the keys
+ * of the PRs only the request search returned come out as the outside
+ * set, which the load hands to queueResultsOnly once the fetch classified
+ * them, because those PRs may only feed the queue and not the histogram.
+ * A PR both searches return counts as inside the window, whatever its
+ * creation date, because the review search decides what the histogram
+ * covers.
+ */
+export function mergeRequestedPrs(review: SearchPrItem[], requested: SearchPrItem[]): MergedReviewPrs {
+  const prs = collectReviewPrs(review);
+  const inside = new Set(prs.map((pr) => prKey(pr.repo, pr.number)));
+  const outsideWindow = new Set<string>();
+
+  for (const pr of collectReviewPrs(requested)) {
+    const key = prKey(pr.repo, pr.number);
+
+    if (!inside.has(key) && !outsideWindow.has(key)) {
+      outsideWindow.add(key);
+      prs.push(pr);
+    }
+  }
+
+  return { prs, outsideWindow };
+}
+
+/**
+ * Drops every result of the PRs outside the window except their open
+ * requests, direct or of a team, so those PRs sit in the awaiting queue
+ * while their completed cycles stay out of the review-time statistics,
+ * which the since window bounds by the PR's creation date. The results
+ * of the other PRs pass through untouched. An outside PR whose request
+ * was answered in the meantime, which the search may still return while
+ * its index catches up, leaves no result at all.
+ */
+export function queueResultsOnly(results: ReviewResult[], outsideWindow: ReadonlySet<string>): ReviewResult[] {
+  if (outsideWindow.size === 0) {
+    return results;
+  }
+
+  return results.filter(
+    (result) =>
+      !outsideWindow.has(prKey(result.pr.repo, result.pr.number)) ||
+      result.kind === 'pending' ||
+      result.kind === 'team-pending',
+  );
+}
+
+/**
  * Classifies one PR from its review timeline into one result per request
  * cycle. Requests and reviews merge into one chronological walk where the
  * earliest unanswered request opens a cycle and the next review closes it,

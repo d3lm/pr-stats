@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import { classifyPr, findMentions, type ReviewPr } from './data';
-import type { PrDetails, PrMentionDetails } from './github';
+import { classifyPr, collectReviewPrs, findMentions, mergeRequestedPrs, queueResultsOnly, type ReviewPr } from './data';
+import type { PrDetails, PrMentionDetails, SearchPrItem } from './github';
 
 const pr: ReviewPr = {
   repo: 'acme/api',
@@ -387,6 +387,105 @@ test('a pending team cycle dates from the latest request of each team still requ
   expect(classifyPr(pr, reRequestedTeam, 'me', undefined, teams)).toEqual([
     { kind: 'team-pending', pr, requestedAt: new Date('2026-07-03T09:00:00Z'), team: 'acme/backend' },
   ]);
+});
+
+/**
+ * Builds one search item of the given repo and number, open and created
+ * on the given day, the way the searches hand them to the merge.
+ */
+function searchItem(repo: string, number: number, createdAt: string): SearchPrItem {
+  return {
+    number,
+    repository: { nameWithOwner: repo },
+    title: `pr ${number}`,
+    url: `https://github.com/${repo}/pull/${number}`,
+    createdAt,
+    updatedAt: createdAt,
+    isDraft: false,
+    state: 'open',
+  };
+}
+
+test('the request search adds the PRs the windowed review search missed, each once, and marks them', () => {
+  const review = [searchItem('acme/api', 1, '2026-07-01T00:00:00Z'), searchItem('acme/web', 2, '2026-07-02T00:00:00Z')];
+
+  /**
+   * The PR api#1 sits in both searches and stays a windowed PR, api#9
+   * was created before the window and only the request search returns
+   * it, and the repeated api#9 stands for a page boundary that hands an
+   * item out twice.
+   */
+  const requested = [
+    searchItem('acme/api', 9, '2026-05-01T00:00:00Z'),
+    searchItem('acme/api', 1, '2026-07-01T00:00:00Z'),
+    searchItem('acme/api', 9, '2026-05-01T00:00:00Z'),
+  ];
+
+  const merged = mergeRequestedPrs(review, requested);
+
+  expect(merged.prs.map((entry) => `${entry.repo}#${entry.number}`)).toEqual([
+    'acme/api#1',
+    'acme/web#2',
+    'acme/api#9',
+  ]);
+
+  expect(merged.outsideWindow).toEqual(new Set(['acme/api#9']));
+
+  expect(merged.prs[2]).toEqual({
+    repo: 'acme/api',
+    number: 9,
+    title: 'pr 9',
+    url: 'https://github.com/acme/api/pull/9',
+    state: 'open',
+    createdAt: new Date('2026-05-01T00:00:00Z'),
+  });
+
+  expect(mergeRequestedPrs(review, [])).toEqual({ prs: collectReviewPrs(review), outsideWindow: new Set() });
+});
+
+test('a PR outside the window keeps its open requests and loses every other result', () => {
+  const old: ReviewPr = { ...pr, number: 9, createdAt: new Date('2026-05-01T00:00:00Z') };
+  const outside = new Set(['acme/api#9']);
+
+  /**
+   * The old PR was reviewed once on a team request and then re-requested
+   * directly, so its classification holds a completed team cycle and a
+   * pending one. Only the pending one may reach the queue, because the
+   * completed cycle predates the window the histogram covers.
+   */
+  const results = classifyPr(
+    old,
+    details([{ at: '2026-05-02T09:00:00Z', team: 'acme/backend' }, '2026-07-10T09:00:00Z'], ['2026-05-03T09:00:00Z']),
+    'me',
+    undefined,
+    teams,
+  );
+
+  const inside = classifyPr(pr, details(['2026-07-01T09:00:00Z'], ['2026-07-01T15:00:00Z']), 'me');
+
+  expect(results.map((result) => result.kind)).toEqual(['team-reviewed', 'pending']);
+
+  expect(queueResultsOnly([...inside, ...results], outside)).toEqual([
+    ...inside,
+    { kind: 'pending', pr: old, requestedAt: new Date('2026-07-10T09:00:00Z') },
+  ]);
+
+  /**
+   * An open team request survives the trim like a direct one, a reviewed
+   * or an unrequested result of an outside PR never does, and without
+   * any outside PR the results pass through as they are.
+   */
+  const teamPending = classifyPr(
+    old,
+    details([{ at: '2026-07-10T09:00:00Z', team: 'acme/backend' }], [], ['acme/backend']),
+    'me',
+    undefined,
+    teams,
+  );
+
+  expect(queueResultsOnly(teamPending, outside)).toEqual(teamPending);
+  expect(queueResultsOnly(classifyPr(old, details([], ['2026-07-03T15:00:00Z']), 'me'), outside)).toEqual([]);
+  expect(queueResultsOnly(results, new Set())).toBe(results);
 });
 
 /**

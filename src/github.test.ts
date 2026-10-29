@@ -35,9 +35,9 @@ afterEach(() => {
  * call of that search mode do the same.
  */
 interface FakeSpec {
-  counts: { review: number; authored: number; mentioned: number };
+  counts: { review: number; requested?: number; authored: number; mentioned: number };
   failCalls?: number;
-  failSearch?: 'review' | 'authored' | 'mentioned';
+  failSearch?: 'review' | 'requested' | 'authored' | 'mentioned';
   failMessage?: string;
 }
 
@@ -77,12 +77,14 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 const q = fields.q ?? '';
-const mode = q.includes('review-requested:') ? 'review' : q.includes('mentions:') ? 'mentioned' : 'authored';
+const mode = q.includes('reviewed-by:')
+  ? 'review'
+  : q.includes('review-requested:') ? 'requested' : q.includes('mentions:') ? 'mentioned' : 'authored';
 if (state.calls <= (spec.failCalls ?? 0) || mode === spec.failSearch) {
   process.stderr.write(spec.failMessage + '\\n');
   process.exit(1);
 }
-const total = spec.counts[mode];
+const total = spec.counts[mode] ?? 0;
 const perPage = Number(fields.per_page);
 const page = Number(fields.page);
 const items = [];
@@ -154,9 +156,10 @@ function recordWaits(): { waits: (RateLimitWait | null)[]; stop: () => void } {
 const searchArgs = { user: 'testuser', sinceIso: '2026-06-01', repos: [] as string[], includeDrafts: false };
 
 test('each mode is one advanced search query with the alternatives grouped by OR', async () => {
-  installFakeGh({ counts: { review: 3, authored: 2, mentioned: 1 } });
+  installFakeGh({ counts: { review: 3, requested: 2, authored: 2, mentioned: 1 } });
 
   const review = await searchPrs({ ...searchArgs, repos: ['acme/web', 'acme/api'], mode: 'review' });
+  const requested = await searchPrs({ ...searchArgs, repos: ['acme/web'], mode: 'requested' });
   const authored = await searchPrs({ ...searchArgs, repos: ['acme/web'], includeDrafts: true, mode: 'authored' });
   const mentioned = await searchPrs({ ...searchArgs, mode: 'mentioned' });
 
@@ -173,21 +176,24 @@ test('each mode is one advanced search query with the alternatives grouped by OR
     state: 'open',
   });
 
+  expect(requested.items).toHaveLength(2);
   expect(authored.items).toHaveLength(2);
   expect(mentioned.items).toHaveLength(1);
 
   const calls = loggedCalls();
 
-  expect(calls).toHaveLength(3);
+  expect(calls).toHaveLength(4);
 
   /**
    * The review query ORs the two review qualifiers and excludes the
    * user's own PRs, the repos group with OR because the advanced syntax
    * reads a bare space between them as AND, and the drafts filter
-   * applies unless drafts are included. The mentioned query ORs the
-   * mentions index with the quoted login bounded by involves, filters on
-   * the update time, keeps drafts, and sorts by the update time so its
-   * pages stay stable.
+   * applies unless drafts are included. The requested query carries the
+   * request qualifier alone and bounds itself to open PRs instead of a
+   * creation date, so a request on a PR older than the window still
+   * comes back. The mentioned query ORs the mentions index with the
+   * quoted login bounded by involves, filters on the update time, keeps
+   * drafts, and sorts by the update time so its pages stay stable.
    */
   expect(calls[0]).toEqual({
     q: 'type:pr (review-requested:testuser OR reviewed-by:testuser) -author:testuser created:>=2026-06-01 draft:false (repo:acme/web OR repo:acme/api)',
@@ -197,13 +203,20 @@ test('each mode is one advanced search query with the alternatives grouped by OR
   });
 
   expect(calls[1]).toEqual({
-    q: 'type:pr author:testuser created:>=2026-06-01 repo:acme/web',
+    q: 'type:pr review-requested:testuser -author:testuser is:open draft:false repo:acme/web',
     advanced_search: 'true',
     per_page: '100',
     page: '1',
   });
 
   expect(calls[2]).toEqual({
+    q: 'type:pr author:testuser created:>=2026-06-01 repo:acme/web',
+    advanced_search: 'true',
+    per_page: '100',
+    page: '1',
+  });
+
+  expect(calls[3]).toEqual({
     q: 'type:pr (mentions:testuser OR ("@testuser" involves:testuser)) updated:>=2026-06-01',
     advanced_search: 'true',
     per_page: '100',

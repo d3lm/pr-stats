@@ -311,12 +311,17 @@ export interface PrSize {
  * authored that the user was asked to review or reviewed, in one query,
  * and excludes the user's own, because GitHub records an author's inline
  * replies as reviews, so a plain reviewed-by search returns your own PRs
- * whenever you answered a comment on them. The authored mode covers the
- * user's own PRs. The mentioned mode finds the PRs whose texts name the
- * user, the user's own PRs included, because a mention asks for attention
- * no matter who opened the PR. It also keeps drafts and filters on the
- * last update instead of the creation date, because a fresh mention on an
- * old PR is exactly what it looks for.
+ * whenever you answered a comment on them. The requested mode covers the
+ * open PRs with an outstanding review request for the user or a team of
+ * the user, without any date bound, because a request on a PR older than
+ * the window still asks for a review and the review mode's creation
+ * filter would hide it. The set stays small by nature, since a request
+ * clears as soon as it is answered, and the mode ignores sinceIso. The
+ * authored mode covers the user's own PRs. The mentioned mode finds the
+ * PRs whose texts name the user, the user's own PRs included, because a
+ * mention asks for attention no matter who opened the PR. It also keeps
+ * drafts and filters on the last update instead of the creation date,
+ * because a fresh mention on an old PR is exactly what it looks for.
  *
  * The mentioned mode unites two lookups in one query. The first uses the
  * mentions qualifier, whose index only covers the PR body and the
@@ -340,7 +345,7 @@ export interface SearchArgs {
   sinceIso: string;
   repos: string[];
   includeDrafts: boolean;
-  mode: 'review' | 'authored' | 'mentioned';
+  mode: 'review' | 'requested' | 'authored' | 'mentioned';
 }
 
 /**
@@ -677,21 +682,37 @@ function orGroup(terms: string[]): string {
  * search syntax, see SearchArgs for what each mode asks for. The review
  * mode ORs the two review qualifiers into one query, and the mentioned
  * mode ORs the mentions index with the quoted login as text bounded by
- * the involves qualifier, so each mode costs one query.
+ * the involves qualifier, so each mode costs one query. The requested
+ * mode carries the request qualifier alone, bounded to open PRs instead
+ * of a creation date, which is also what tells its query apart from the
+ * review mode's in the test fakes.
  */
 function buildSearchQuery({ user, sinceIso, repos, includeDrafts, mode }: SearchArgs): string {
   const terms = ['type:pr'];
 
-  if (mode === 'review') {
-    terms.push(
-      orGroup([`review-requested:${user}`, `reviewed-by:${user}`]),
-      `-author:${user}`,
-      `created:>=${sinceIso}`,
-    );
-  } else if (mode === 'authored') {
-    terms.push(`author:${user}`, `created:>=${sinceIso}`);
-  } else {
-    terms.push(`(mentions:${user} OR ("@${user}" involves:${user}))`, `updated:>=${sinceIso}`);
+  switch (mode) {
+    case 'review': {
+      terms.push(
+        orGroup([`review-requested:${user}`, `reviewed-by:${user}`]),
+        `-author:${user}`,
+        `created:>=${sinceIso}`,
+      );
+
+      break;
+    }
+    case 'requested': {
+      terms.push(`review-requested:${user}`, `-author:${user}`, 'is:open');
+
+      break;
+    }
+    case 'authored': {
+      terms.push(`author:${user}`, `created:>=${sinceIso}`);
+
+      break;
+    }
+    default: {
+      terms.push(`(mentions:${user} OR ("@${user}" involves:${user}))`, `updated:>=${sinceIso}`);
+    }
   }
 
   if (!includeDrafts && mode !== 'mentioned') {

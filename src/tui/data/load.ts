@@ -2,10 +2,11 @@ import { readCacheFile, writeCacheFile } from '../../cache';
 import {
   collectAuthoredPrs,
   collectMentionedPrs,
-  collectReviewPrs,
   fetchMentionsRaw,
   fetchReviewRaw,
   fetchSizeRaw,
+  mergeRequestedPrs,
+  queueResultsOnly,
   resolveTeams,
   resolveUser,
   type MentionEntry,
@@ -346,6 +347,9 @@ async function runLoad(
   const includeDrafts = options.includeDrafts;
 
   /**
+   * The request search follows the review search and adds the open PRs
+   * with an outstanding request that the review search's creation filter
+   * left out, so a re-request on an old PR still reaches the queue.
    * The mentions search only runs when the load looks for mentions,
    * so a session without mention notifications pays nothing for them.
    * The searches run one after the other, and each starts only once the
@@ -358,25 +362,28 @@ async function runLoad(
    */
   const runSearches = async () => {
     const reviewSearch = await searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'review' });
+    const requestedSearch = await searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'requested' });
     const authoredSearch = await searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'authored' });
 
     const mentionedSearch = mentions
       ? await searchPrs({ user, sinceIso, repos, includeDrafts, mode: 'mentioned' })
       : null;
 
-    return { reviewSearch, authoredSearch, mentionedSearch };
+    return { reviewSearch, requestedSearch, authoredSearch, mentionedSearch };
   };
 
-  const [{ reviewSearch, authoredSearch, mentionedSearch }, teams] = await Promise.all([
+  const [{ reviewSearch, requestedSearch, authoredSearch, mentionedSearch }, teams] = await Promise.all([
     runSearches(),
     resolveTeams(user, bypassCache),
   ]);
 
-  const reviewPrs = collectReviewPrs(reviewSearch.items);
+  const { prs: reviewPrs, outsideWindow } = mergeRequestedPrs(reviewSearch.items, requestedSearch.items);
   const authoredPrs = collectAuthoredPrs(authoredSearch.items);
   const mentionedPrs = mentionedSearch === null ? null : collectMentionedPrs(mentionedSearch.items);
 
-  const searchCapped = [reviewSearch, authoredSearch, mentionedSearch].some((result) => result?.capped === true);
+  const searchCapped = [reviewSearch, requestedSearch, authoredSearch, mentionedSearch].some(
+    (result) => result?.capped === true,
+  );
 
   /**
    * The timeline, size, and mention fetches are independent, so they run
@@ -438,7 +445,7 @@ async function runLoad(
     user,
     sinceIso,
     repos,
-    reviewResults: review.results,
+    reviewResults: queueResultsOnly(review.results, outsideWindow),
     sizes: size.sizes,
     authoredTotal: authoredPrs.length,
     mentions: mentionedPrs === null ? null : mention.mentions,
