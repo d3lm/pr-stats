@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test';
-import { classifyPr, collectReviewPrs, findMentions, mergeRequestedPrs, queueResultsOnly, type ReviewPr } from './data';
+import {
+  classifyPr,
+  collectReviewPrs,
+  findMentions,
+  mergeRequestedPrs,
+  queueResultsOnly,
+  stripCodeAndComments,
+  type ReviewPr,
+} from './data';
 import type { PrDetails, PrMentionDetails, SearchPrItem } from './github';
 
 const pr: ReviewPr = {
@@ -658,6 +666,38 @@ test('texts without a mention of the user, and the user own texts, never count',
   // a longer login, an email address, and a path never count as the mention
   expect(findMentions(mentionDetails({ body: '@meg @me-bot foo@me.com org/@me' }), 'me')).toEqual([]);
 
+  /**
+   * A login inside code or an HTML comment is not a mention on GitHub.
+   * This is the shape of a bot review that lists the approvers of a PR
+   * in code spans, which used to pull every PR the user approved into
+   * the inbox.
+   */
+  expect(
+    findMentions(
+      mentionDetails({
+        reviews: [
+          {
+            id: 'r1',
+            body: [
+              '<!-- AUTOMATION_ID: 123 | pinging @me -->',
+              '**Additional reviewers:** Not needed, `@bob` is already requested and `@me` approved.',
+              '```',
+              'git log --author=@me',
+              '```',
+            ].join('\n'),
+            at: '2026-07-03T00:00:00Z',
+          },
+        ],
+      }),
+      'me',
+    ),
+  ).toEqual([]);
+
+  // the same login outside the code still counts
+  expect(findMentions(mentionDetails({ body: 'see `@bob` and @me' }), 'me')).toEqual([
+    { id: 'pr', at: at('2026-07-01T00:00:00Z') },
+  ]);
+
   // your own words are not news, in the body, a comment, a review, or an inline comment
   expect(
     findMentions(
@@ -696,4 +736,30 @@ test('texts without a mention of the user, and the user own texts, never count',
       'me',
     ),
   ).toEqual([{ id: 'c1', at: at('2026-07-02T00:00:00Z') }]);
+});
+
+test('stripping code and comments follows how GitHub renders them', () => {
+  // inline code spans close on a backtick run of the same length, so a longer run inside stays code
+  expect(stripCodeAndComments('a `x` b')).toBe('a   b');
+  expect(stripCodeAndComments('a ``x ` y`` b')).toBe('a   b');
+  expect(stripCodeAndComments('a `x``y` b')).toBe('a   b');
+
+  // a lone backtick opens nothing
+  expect(stripCodeAndComments('a ` b @me')).toBe('a ` b @me');
+
+  // fences close on a fence of the same character at least as long, and an unclosed fence runs to the end
+  expect(stripCodeAndComments('a\n```js\n@me\n```\nb')).toBe('a\n \nb');
+  expect(stripCodeAndComments('a\n~~~\n@me\n~~~~\nb')).toBe('a\n \nb');
+  expect(stripCodeAndComments('a\n```\n@me\n~~~\nb')).toBe('a\n ');
+
+  // a fence swallows the backticks and comment openers inside it, and a comment swallows the backticks inside it
+  expect(stripCodeAndComments('```\n` <!--\n```\n@me')).toBe(' \n@me');
+  expect(stripCodeAndComments('<!-- ` -->@me`')).toBe(' @me`');
+
+  // an HTML comment goes, whether it sits on one line or spans several
+  expect(stripCodeAndComments('x <!-- @me --> y')).toBe('x   y');
+  expect(stripCodeAndComments('x <!--\n@me\n--> y')).toBe('x   y');
+
+  // prose stays as it is
+  expect(stripCodeAndComments('cc @me, thanks')).toBe('cc @me, thanks');
 });

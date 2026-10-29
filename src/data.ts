@@ -816,6 +816,38 @@ function mentionPattern(user: string): RegExp {
 }
 
 /**
+ * Matches the stretches of a text that GitHub shows as code or does not
+ * show at all, which are the fenced code blocks, the inline code spans,
+ * and the HTML comments. A login behind an at sign inside them is not a
+ * mention on GitHub, which neither links it nor notifies anyone, so the
+ * mention check blanks these stretches before it looks. A fence closes
+ * on a line that carries a fence of the same character at least as
+ * long, or runs to the end of the text when nothing closes it, and a
+ * code span closes on the next backtick run of the same length, the way
+ * CommonMark reads them. The alternatives are tried left to right at
+ * every position, so whichever stretch opens first swallows the others
+ * that start inside it.
+ */
+const CODE_OR_COMMENT_PATTERN = new RegExp(
+  [
+    String.raw`^[ \t]*(\`{3,}|~{3,})[^\n]*(?:\n[\s\S]*?(?:^[ \t]*\1[\`~]*[ \t]*$|(?![\s\S])))?`,
+    String.raw`<!--[\s\S]*?-->`,
+    String.raw`(\`+)[\s\S]*?[^\`]\2(?!\`)`,
+  ].join('|'),
+  'gm',
+);
+
+/**
+ * Blanks the code and the comments of a text, so a login named in them
+ * does not read as a mention. Each stretch becomes one space, which
+ * keeps the words around it apart. Exported for the tests, findMentions
+ * is the only production caller.
+ */
+export function stripCodeAndComments(body: string): string {
+  return body.replaceAll(CODE_OR_COMMENT_PATTERN, ' ');
+}
+
+/**
  * Returns the latest of the given times, skipping the ones GitHub left
  * null. At least one time is expected to be set.
  */
@@ -840,8 +872,10 @@ function latestOf(...times: (string | null)[]): Date {
  * anew, because an edit is how a mention gets added to an older text.
  * Texts the user wrote never count, because your own words are not news
  * to you, and a review that was never submitted is a draft nobody else
- * can see, so it drops out with its comments. Exported for the tests,
- * the mention fetch is the only production caller.
+ * can see, so it drops out with its comments. A login inside code or an
+ * HTML comment never counts either, because GitHub does not treat it as
+ * a mention there, see stripCodeAndComments. Exported for the tests, the
+ * mention fetch is the only production caller.
  */
 export function findMentions(details: PrMentionDetails, user: string): Mention[] {
   const pattern = mentionPattern(user);
@@ -884,7 +918,7 @@ export function findMentions(details: PrMentionDetails, user: string): Mention[]
   const mentions: Mention[] = [];
 
   for (const source of sources) {
-    if (source.login?.toLowerCase() !== own && pattern.test(source.body)) {
+    if (source.login?.toLowerCase() !== own && pattern.test(stripCodeAndComments(source.body))) {
       mentions.push({ id: source.id, at: source.at });
     }
   }
