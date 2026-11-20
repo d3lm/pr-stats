@@ -8,7 +8,7 @@ Press `S` to open settings. Changes save automatically to `settings.json` in the
 
 `--since` accepts an ISO date or a relative value such as `30d`, `8w`, `6m`, or `1y`. It defaults to `90d`. Older open requests still appear in the awaiting queue, but their completed reviews stay outside the statistics.
 
-Repeat `--repo` to include several repositories. Use `owner/name`, or a bare name that resolves against the repository owner in your current directory. Use `--user <login>` to report on another user.
+Repeat `--repo` to include several repositories. Use `owner/name`, or a bare name that resolves against the repository owner in your current directory. Use `owner/*` for every repository of a user or organization. A `*` matches any text, so `acme/web-*` covers the repositories of acme whose names start with `web-`. A pattern without a slash matches owners, so `acme*` covers your own account and every organization you belong to whose name starts with `acme`. A classic token needs `read:org` to see private organization memberships. The repositories field in the options dialog accepts the same values separated by commas. Use `--user <login>` to report on another user.
 
 Review durations count all hours on Monday through Friday by default. `--work-days`, `--work-hours`, and `--tz` define your work schedule. `--wall-clock` counts all elapsed time.
 

@@ -15,6 +15,7 @@ import {
 } from '../../data';
 import { parseReviewTypes, parseSince } from '../../flags';
 import { onRateLimitWait, resolveRepos, searchPrs, type RateLimitWait } from '../../github';
+import { parseRepoEntries } from '../../repos';
 import type { FetchParams } from '../state/options';
 
 export type { MentionEntry, ReviewResult, SizeEntry } from '../../data';
@@ -239,12 +240,10 @@ async function runLoad(
 
   onPhase({ phase: 'search' });
 
-  const repoNames = options.repos
-    .split(',')
-    .map((name) => name.trim())
-    .filter((name) => name !== '');
-
-  const [user, repos] = await Promise.all([resolveUser(options.user, bypassCache), resolveRepos(repoNames)]);
+  const [user, repos] = await Promise.all([
+    resolveUser(options.user, bypassCache),
+    resolveRepos(parseRepoEntries(options.repos)),
+  ]);
 
   const includeDrafts = options.includeDrafts;
 

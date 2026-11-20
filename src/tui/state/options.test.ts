@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { checkedReviewTypes, checkedWorkDays, toggleReviewType, toggleWorkDay } from './options';
+import { CliError } from '../../utils';
+import { checkedReviewTypes, checkedWorkDays, toggleReviewType, toggleWorkDay, validateField } from './options';
 
 test('the empty value checks every review type', () => {
   expect(checkedReviewTypes('')).toEqual(new Set(['approve', 'comment', 'request-changes']));
@@ -41,4 +42,14 @@ test('toggling a work day reformats the value into compact ranges', () => {
 
 test('the last checked work day never unchecks', () => {
   expect(toggleWorkDay('Fri', 'Fri')).toBe('Fri');
+});
+
+test('the repositories field accepts patterns and rejects a malformed entry before any reload', () => {
+  expect(() => {
+    validateField('repos', 'stackblitz*, acme/*, acme/web-*, web');
+  }).not.toThrow();
+
+  expect(() => {
+    validateField('repos', 'acme/web, org:stackblitz');
+  }).toThrow(CliError);
 });
