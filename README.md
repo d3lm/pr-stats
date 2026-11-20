@@ -32,7 +32,7 @@ If repositories are missing, make sure that your token has access and any requir
 - Your PRs shows your open PRs and statistics for merged and closed PRs.
 - Stats has three sub-tabs. Review time shows review times, trends, and pending requests. PR size shows changed lines, changed files, and trends. Comments shows discussion activity and the most commented PRs.
 
-When several repositories have data, choose one repository or the combined view.
+When several repositories have data, choose one repository or the combined view. When the data spans several owners, you can also choose every repository of one owner.
 
 | Key                             | Action                                                 |
 | ------------------------------- | ------------------------------------------------------ |

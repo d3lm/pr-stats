@@ -337,6 +337,26 @@ if (process.env.PR_STATS_TEST_OLD_REQUEST === '1') {
   SEARCHES.requested.push(searchItem('acme/api', 30, 'Retire the legacy importer', '2025-11-01T10:00:00Z', 'open'));
 }
 
+if (process.env.PR_STATS_TEST_SECOND_OWNER === '1') {
+  for (const [repo, number, title] of [
+    ['globex/portal', 40, 'Add the partner login'],
+    ['globex/billing', 41, 'Round invoice totals'],
+  ]) {
+    REVIEW_TIMELINES[`${repo}#${number}`] = {
+      additions: 30,
+      deletions: 5,
+      requests: [{ at: '2026-08-24T09:00:00Z', login: 'testuser' }],
+      reviews: [],
+      outstanding: [{ login: 'testuser' }],
+    };
+
+    const item = searchItem(repo, number, title, '2026-08-23T10:00:00Z', 'open');
+
+    SEARCHES.review.push(item);
+    SEARCHES.requested.push(item);
+  }
+}
+
 function searchMode(query) {
   if (query.includes('reviewed-by:')) {
     return 'review';

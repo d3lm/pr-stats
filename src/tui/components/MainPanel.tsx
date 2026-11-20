@@ -12,7 +12,7 @@ import {
   type StatsTabKey,
 } from '../state/browse';
 import { queueRows, type QueueView } from '../views/queue';
-import type { RepoOption } from '../views/repos';
+import { scopeLabel, spansRepos, type RepoOption } from '../views/repos';
 import type { PrRow } from '../views/rows';
 import type { StatsView } from '../views/stats';
 import { ChartsPanel } from './ChartsPanel';
@@ -54,7 +54,11 @@ function QueueTab({
 
   return (
     <QueuePanel
-      heading={repos.length > 0 ? (scope.repo ?? (grouped ? 'All repos · grouped by repo' : 'All repos')) : null}
+      heading={
+        repos.length > 0
+          ? scopeLabel(scope.repo) + (grouped && spansRepos(scope.repo) ? ' · grouped by repo' : '')
+          : null
+      }
       warning={warning}
       empty={view.empty}
       sections={view.sections}
@@ -93,7 +97,7 @@ function StatsTab({
   return (
     <ChartsPanel
       scrollRef={scrollRef}
-      heading={repos.length > 0 ? (scope.repo ?? 'All repos') : null}
+      heading={repos.length > 0 ? scopeLabel(scope.repo) : null}
       warning={warning}
       view={view}
       openIn={openIn}

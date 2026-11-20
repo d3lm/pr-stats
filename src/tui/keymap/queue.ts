@@ -3,6 +3,7 @@ import { linkUrl } from '../../settings';
 import type { AppViews } from '../hooks/useViewModel';
 import type { QueueTabKey } from '../state/browse';
 import { queueRows, unreadMentionRows, type QueueView } from '../views/queue';
+import { spansRepos } from '../views/repos';
 import type { PrRow } from '../views/rows';
 import type { KeymapContext } from './context';
 import { entryAt, handleRepoPickerKey } from './helpers';
@@ -92,7 +93,7 @@ export function handleQueueKey(key: KeyEvent, queue: QueueTabKey, context: Keyma
     return;
   }
 
-  if (key.name === 'g' && repos.length > 0 && scope?.view === 'detail' && scope.repo === null) {
+  if (key.name === 'g' && repos.length > 0 && scope?.view === 'detail' && spansRepos(scope.repo)) {
     context.dispatchBrowse({ type: 'groupingToggled', tab });
     return;
   }

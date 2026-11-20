@@ -19,6 +19,7 @@ import {
 import { formatWakeTime, splitSnoozed, type Snooze } from '../../snooze';
 import { durationHours } from '../../time';
 import type { RawData, SizeEntry } from '../data/load';
+import { inRepoScope, spansRepos, type RepoScope } from './repos';
 import { durationLead, toPrRows, type PrList, type PrRow } from './rows';
 
 export interface QueueSection {
@@ -86,8 +87,8 @@ function groupedLists<T extends { pr: { repo: string } }>(entries: T[], rowsOf: 
     });
 }
 
-function inScopeOf<T extends { pr: { repo: string } }>(entries: T[], repo: string | null): T[] {
-  return repo === null ? entries : entries.filter((entry) => entry.pr.repo === repo);
+function inScopeOf<T extends { pr: { repo: string } }>(entries: T[], repo: RepoScope): T[] {
+  return entries.filter((entry) => inRepoScope(entry.pr.repo, repo));
 }
 
 function sectionOf<T extends { pr: { repo: string } }>(
@@ -128,7 +129,7 @@ export function queueAlerts(
 
 export function buildPendingReviewView(
   raw: RawData,
-  repo: string | null = null,
+  repo: RepoScope = null,
   grouped = false,
   snoozes: readonly Snooze[] = [],
   reads: MentionReads = emptyMentionReads(),
@@ -147,7 +148,7 @@ export function buildPendingReviewView(
     return { empty: 'No PRs are awaiting your review.', sections: [] };
   }
 
-  const split = repo === null && grouped;
+  const split = grouped && spansRepos(repo);
   const mentioned = unreadMentionRefs(raw, snoozes, reads, now);
 
   const awaitingRowsOf = (group: PendingRequest[]) =>
@@ -192,7 +193,7 @@ export function buildPendingReviewView(
 
 export function buildReviewedView(
   raw: RawData,
-  repo: string | null = null,
+  repo: RepoScope = null,
   grouped = false,
   snoozes: readonly Snooze[] = [],
   reads: MentionReads = emptyMentionReads(),
@@ -213,7 +214,7 @@ export function buildReviewedView(
 
   return {
     empty: null,
-    sections: [sectionOf(`Reviewed (n=${reviewing.length})`, reviewing, reviewedRowsOf, repo === null && grouped)],
+    sections: [sectionOf(`Reviewed (n=${reviewing.length})`, reviewing, reviewedRowsOf, grouped && spansRepos(repo))],
   };
 }
 
@@ -222,7 +223,7 @@ export function buildReviewedView(
  */
 export function buildMentionsView(
   raw: RawData,
-  repo: string | null = null,
+  repo: RepoScope = null,
   grouped = false,
   snoozes: readonly Snooze[] = [],
   reads: MentionReads = emptyMentionReads(),
@@ -241,7 +242,7 @@ export function buildMentionsView(
     return { empty: 'No PR mentions you.', sections: [] };
   }
 
-  const split = repo === null && grouped;
+  const split = grouped && spansRepos(repo);
 
   const unreadRowsOf = (group: MentionItem[]) => mentionRows(group, 'unread', raw.fetchedAt);
   const readRowsOf = (group: MentionItem[]) => mentionRows(group, 'read', raw.fetchedAt);
@@ -281,9 +282,9 @@ function mentionRows(group: MentionItem[], state: 'unread' | 'read', fetchedAt: 
   });
 }
 
-export function buildOpenAuthoredView(raw: RawData, repo: string | null = null, grouped = false): QueueView {
+export function buildOpenAuthoredView(raw: RawData, repo: RepoScope = null, grouped = false): QueueView {
   const open = raw.sizes
-    .filter((entry) => entry.pr.state === 'open' && (repo === null || entry.pr.repo === repo))
+    .filter((entry) => entry.pr.state === 'open' && inRepoScope(entry.pr.repo, repo))
     .toSorted((a, b) => a.pr.createdAt.getTime() - b.pr.createdAt.getTime());
 
   if (open.length === 0) {
@@ -304,7 +305,7 @@ export function buildOpenAuthoredView(raw: RawData, repo: string | null = null, 
 
   const title = `Your open authored PRs (n=${open.length})`;
 
-  if (repo === null && grouped) {
+  if (grouped && spansRepos(repo)) {
     return { empty: null, sections: [{ title, rows: [], lists: groupedLists(open, rowsOf) }] };
   }
 

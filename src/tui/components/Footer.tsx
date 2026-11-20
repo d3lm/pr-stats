@@ -13,6 +13,7 @@ import {
 import type { Modal } from '../state/ui';
 import { theme } from '../theme';
 import { mentionActionOf, queueRowAt, snoozeActionOf, unreadMentionRows, type QueueView } from '../views/queue';
+import { spansRepos } from '../views/repos';
 
 export function Footer({
   width,
@@ -184,7 +185,7 @@ function hintsFor(
     const action = copyLinks ? 'enter copy link' : 'enter open';
 
     if (scope !== null && repos.length > 0) {
-      return scope.repo === null
+      return spansRepos(scope.repo)
         ? `↑/↓ select · ${action} · ${queueKeys}${toggle}g group by repo · esc back · o options · S settings · r reload · q quit`
         : `↑/↓ select · ${action} · ${queueKeys}${toggle}esc back · ${TAB_DIGITS} tabs · o options · S settings · r reload · R refetch · q quit`;
     }

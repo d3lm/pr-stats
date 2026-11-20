@@ -177,6 +177,41 @@ test('the open picker lists every repo with an analyzed PR and skips the picker 
   ).toEqual([]);
 });
 
+test('data across several owners adds an all-repos row for each owner with several repos', () => {
+  const raw = rawData({
+    sizes: [
+      sizeEntry('stackblitz/bolt', 1, 'open'),
+      sizeEntry('stackblitz/bolt', 2, 'open'),
+      sizeEntry('acme/web', 3, 'open'),
+      sizeEntry('stackblitz/webcontainer', 4, 'open'),
+      sizeEntry('acme/api', 5, 'closed'),
+      sizeEntry('globex/tools', 6, 'open'),
+    ],
+  });
+
+  expect(buildOpenRepoOptions(raw)).toEqual([
+    { repo: null, label: 'All repos', detail: '5 open PRs' },
+    { repo: 'stackblitz/*', label: 'All repos in stackblitz', detail: '3 open PRs' },
+    { repo: 'acme/*', label: 'All repos in acme', detail: '1 open PR' },
+    { repo: 'stackblitz/bolt', label: 'stackblitz/bolt', detail: '2 open PRs' },
+    { repo: 'acme/web', label: 'acme/web', detail: '1 open PR' },
+    { repo: 'globex/tools', label: 'globex/tools', detail: '1 open PR' },
+    { repo: 'stackblitz/webcontainer', label: 'stackblitz/webcontainer', detail: '1 open PR' },
+    { repo: 'acme/api', label: 'acme/api', detail: '0 open PRs' },
+  ]);
+
+  const owner = buildOpenAuthoredView(raw, 'stackblitz/*', true);
+
+  expect(owner.sections[0].title).toBe('Your open authored PRs (n=3)');
+
+  expect(owner.sections[0].lists.map((list) => list.title)).toEqual([
+    'stackblitz/bolt (n=2)',
+    'stackblitz/webcontainer (n=1)',
+  ]);
+
+  expect(buildOpenAuthoredView(raw, 'stackblitz/bolt', true).sections[0].lists).toEqual([]);
+});
+
 test('the pending view narrows to a repo and groups the aggregate by repo', () => {
   const raw = rawData({
     reviewResults: [
