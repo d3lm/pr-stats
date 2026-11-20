@@ -44,6 +44,7 @@ let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'pr-stats-settings-'));
   process.env.PR_STATS_CACHE_DIR = dir;
+
   configureCache(true);
 });
 
@@ -83,7 +84,6 @@ test('saveNoCache persists the toggle and keeps hand-written keys', () => {
 
   expect(loadSettings().noCache).toBe(true);
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveNoCache(false)).toBe(false);
@@ -104,7 +104,6 @@ test('saveCopyLinks persists the toggle and keeps hand-written keys', () => {
 
   expect(loadSettings().copyLinks).toBe(true);
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveCopyLinks(false)).toBe(false);
@@ -126,7 +125,6 @@ test('saveOpenIn persists the target and keeps hand-written keys', () => {
 
   expect(loadSettings().openIn).toBe('linear');
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveOpenIn('github')).toBe(false);
@@ -140,7 +138,6 @@ test('linkUrl swaps the origin for Linear and leaves every other link alone', ()
   expect(linkUrl(pr, 'github')).toBe(pr);
   expect(linkUrl(pr, 'linear')).toBe('https://linear.review/acme/api/pull/7');
 
-  // a link that is not a github.com link has no Linear counterpart
   expect(linkUrl('https://example.com/acme/api/pull/7', 'linear')).toBe('https://example.com/acme/api/pull/7');
   expect(linkUrl('http://github.com/acme/api/pull/7', 'linear')).toBe('http://github.com/acme/api/pull/7');
 });
@@ -159,7 +156,6 @@ test('saveAutoReload and saveReloadInterval persist next to each other and keep 
     reloadInterval: '10m',
   });
 
-  // turning the reload off keeps the interval, so turning it back on resumes the cadence
   expect(saveAutoReload(false)).toBe(true);
 
   expect(loadSettings()).toEqual({
@@ -169,7 +165,6 @@ test('saveAutoReload and saveReloadInterval persist next to each other and keep 
     reloadInterval: '10m',
   });
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveAutoReload(true)).toBe(false);
@@ -198,7 +193,6 @@ test('saveNotifications persists the toggle and keeps hand-written keys', () => 
 
   expect(loadSettings().notifications).toBe(true);
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveNotifications(false)).toBe(false);
@@ -222,7 +216,6 @@ test('saveNotifyMentions persists the toggle and keeps hand-written keys', () =>
 
   expect(loadSettings().notifyMentions).toBe(true);
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveNotifyMentions(false)).toBe(false);
@@ -246,7 +239,6 @@ test('saveTrackMentions persists the toggle and keeps hand-written keys', () => 
 
   expect(loadSettings().trackMentions).toBe(false);
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveTrackMentions(true)).toBe(false);
@@ -274,7 +266,6 @@ test('the team review toggles persist next to each other and keep hand-written k
 
   expect(loadSettings()).toMatchObject({ teamReviews: false, notifyTeamReviews: true, teamReviewStats: true });
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveTeamReviews(true)).toBe(false);
@@ -302,7 +293,6 @@ test('saveNotifyChannel persists the channel and keeps hand-written keys', () =>
 
   expect(loadSettings().notifyChannel).toBe('terminal');
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveNotifyChannel('command')).toBe(false);
@@ -326,7 +316,6 @@ test('saveSnoozeDuration persists the default snooze and keeps hand-written keys
 
   expect(loadSettings().snoozeDuration).toBe('4h');
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveSnoozeDuration('1d')).toBe(false);
@@ -344,7 +333,6 @@ test('parses reload intervals in seconds, minutes, and hours within a day', () =
   expect(reloadIntervalMs('24h')).toBe(86_400_000);
   expect(reloadIntervalMs('1440m')).toBe(86_400_000);
 
-  // anything outside 1s to 24h or not in the amount-unit form is refused
   for (const input of ['', '0s', '0m', '25h', '1441m', '86401s', '10', 'm', '1d', '1.5h', ' 1s', '1s ', '1S', '-1s']) {
     expect(reloadIntervalMs(input)).toBeNull();
   }
@@ -375,7 +363,6 @@ test('resetSettings deletes the file only while the cache is enabled', () => {
   expect(existsSync(join(dir, 'settings.json'))).toBe(false);
   expect(loadSettings()).toEqual({});
 
-  // a save after the reset writes a fresh file without the old keys
   expect(saveNoCache(true)).toBe(true);
   expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ noCache: true });
 });
@@ -388,10 +375,6 @@ test('the saved noCache setting fills in only where no flag was given', () => {
   expect(applySettings(plain.values, plain.explicit).noCache).toBe(true);
   expect(plain.values['no-cache']).toBe(true);
 
-  /**
-   * A saved false never downgrades the explicit flag, and without the
-   * flag it leaves the default alone.
-   */
   writeSettingsFile({ noCache: false });
 
   const flagged = parseCliArgs(['--no-cache']);
@@ -460,7 +443,6 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
 
   expect(() => loadSettings()).toThrow('"teamReviewStats"');
 
-  // only the four known channel names pass, anything else is a typo
   writeSettingsFile({ notifyChannel: 'osascript' });
 
   expect(() => loadSettings()).toThrow('"notifyChannel"');
@@ -473,7 +455,6 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
 
   expect(() => loadSettings()).toThrow('"reloadInterval"');
 
-  // a hand-written interval goes through the same parser as an edit in the dialog
   writeSettingsFile({ reloadInterval: '1d' });
 
   expect(() => loadSettings()).toThrow('"reloadInterval"');
@@ -482,7 +463,6 @@ test('rejects a settings file that is malformed or holds the wrong types', () =>
 
   expect(loadSettings()).toEqual({ autoReload: true, reloadInterval: '2h' });
 
-  // a hand-written snooze duration goes through the same parser as an edit in the dialog
   writeSettingsFile({ snoozeDuration: 60 });
 
   expect(() => loadSettings()).toThrow('"snoozeDuration"');
@@ -500,13 +480,11 @@ test('applies hand-written colors as the active custom theme', () => {
   const original = { ...theme, heat: [...theme.heat] };
 
   try {
-    // absent theme settings leave the theme alone
     applyTheme(undefined);
     applyTheme(null);
 
     expect(theme).toEqual(original);
 
-    // colors without a preset activate the custom theme they define
     const state = applyTheme({ accent: '#89b4f0', heat: ['#111', '#2222', '#333333', '#44444480'] });
 
     expect(state.preset).toBe('custom');
@@ -523,14 +501,12 @@ test('renders built-in presets pure and the custom theme from its base', () => {
   const original = { ...theme, heat: [...theme.heat] };
 
   try {
-    // an active built-in keeps the custom colors saved without applying them
     const state = applyTheme({ preset: 'green', accent: '#89b4f0' });
 
     expect(state).toEqual({ preset: 'green', base: 'default', overrides: { accent: '#89b4f0' } });
     expect(theme.accent).toBe(PRESETS.green.accent);
     expect(theme.chartBar).toBe(PRESETS.green.chartBar);
 
-    // the custom theme starts from its base and applies the overrides on top
     const custom = applyTheme({ preset: 'custom', base: 'green', accent: '#89b4f0' });
 
     expect(custom).toEqual({ preset: 'custom', base: 'green', overrides: { accent: '#89b4f0' } });
@@ -539,7 +515,6 @@ test('renders built-in presets pure and the custom theme from its base', () => {
     expect(theme.heat).toEqual(PRESETS.green.heat);
     expect(theme.bg).toBe(original.bg);
 
-    // a custom preset without custom colors falls back to its base
     expect(applyTheme({ preset: 'custom' })).toEqual(defaultThemeState());
 
     expect(applyTheme({ preset: 'custom', base: 'green' })).toEqual({
@@ -550,7 +525,6 @@ test('renders built-in presets pure and the custom theme from its base', () => {
 
     expect(theme.accent).toBe(PRESETS.green.accent);
 
-    // switching back to the default restores the base palette
     applyThemeState(defaultThemeState());
 
     expect(theme).toEqual(original);
@@ -569,7 +543,6 @@ test('cycleTheme walks the built-ins and includes an existing custom theme', () 
   expect(cycleTheme(custom, -1).preset).toBe('yellow');
   expect(cycleTheme({ ...custom, preset: 'yellow' }, 1).preset).toBe('custom');
 
-  // the custom colors ride along, so cycling away and back loses nothing
   expect(cycleTheme(custom, 1).overrides).toEqual({ accent: '#89b4f0' });
   expect(cycleTheme(custom, 1).base).toBe('green');
 });
@@ -587,7 +560,6 @@ test('rejects unknown theme keys, presets, and colors that are not hex', () => {
     applyTheme({ preset: 'neon' });
   }).toThrow('"preset"');
 
-  // base needs the custom theme its colors would form
   expect(() => {
     applyTheme({ base: 'green' });
   }).toThrow('"base"');
@@ -612,29 +584,24 @@ test('rejects unknown theme keys, presets, and colors that are not hex', () => {
 test('withColorOverride creates, updates, and dissolves the custom theme', () => {
   const green: ThemeState = { preset: 'green', base: 'default', overrides: {} };
 
-  // an edit on a built-in seeds the custom theme from it and activates it
   const set = withColorOverride(green, 'accent', '#89B4F0');
 
   expect(set).toEqual({ preset: 'custom', base: 'green', overrides: { accent: '#89b4f0' } });
 
-  // the heat colors split on spaces and commas
   const heat = withColorOverride(set, 'heat', '#111, #222 #333 #444');
 
   expect(heat.preset).toBe('custom');
   expect(heat.overrides.heat).toEqual(['#111', '#222', '#333', '#444']);
   expect(heat.overrides.accent).toBe('#89b4f0');
 
-  // empty input and the base's own color both drop the override
   expect(withColorOverride(heat, 'heat', '').overrides).toEqual({ accent: '#89b4f0' });
 
   expect(withColorOverride(heat, 'accent', PRESETS.green.accent).overrides).toEqual({
     heat: ['#111', '#222', '#333', '#444'],
   });
 
-  // dropping the last override dissolves the custom theme into its base
   expect(withColorOverride(set, 'accent', '')).toEqual({ preset: 'green', base: 'green', overrides: {} });
 
-  // a no-op edit on a built-in keeps a saved custom theme untouched
   const inactive: ThemeState = { preset: 'blue', base: 'green', overrides: { accent: '#89b4f0' } };
 
   expect(withColorOverride(inactive, 'accent', PRESETS.blue.accent)).toBe(inactive);
@@ -653,7 +620,6 @@ test('themeSettingsOf serializes the state and drops the plain default', () => {
 
   expect(themeSettingsOf({ preset: 'blue', base: 'default', overrides: {} })).toEqual({ preset: 'blue' });
 
-  // the preset lands next to custom colors, so saved colors never change the active theme
   expect(themeSettingsOf({ preset: 'default', base: 'default', overrides: { accent: '#89b4f0' } })).toEqual({
     preset: 'default',
     accent: '#89b4f0',
@@ -678,12 +644,10 @@ test('saveTheme persists the theme and keeps the other keys', () => {
     theme: { preset: 'green' },
   });
 
-  // an undefined value removes the theme key again
   expect(saveTheme(undefined)).toBe(true);
 
   expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ noCache: true, custom: 1 });
 
-  // a disabled cache stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(saveTheme({ preset: 'blue' })).toBe(false);

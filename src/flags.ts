@@ -42,12 +42,6 @@ export interface SizeTarget {
   files?: number;
 }
 
-/**
- * Declares every flag once. Each entry feeds both the parseArgs config and
- * the rendered help page, so adding a flag only takes a new entry here. The
- * help text is plain prose with a light markup that colorizeHelp expands,
- * and renderHelp handles the column alignment and line wrapping.
- */
 const OPTIONS: OptionSpec[] = [
   {
     name: 'since',
@@ -164,19 +158,8 @@ const OPTIONS: OptionSpec[] = [
   },
 ];
 
-/**
- * Keeps every rendered help line within the terminal width. The fallback of
- * 80 columns applies when stdout is not a terminal, for example when the
- * output is piped, and the cap of 120 keeps lines readable on very wide
- * terminals.
- */
 const HELP_WIDTH = Math.min(process.stdout.isTTY ? process.stdout.columns : 80, 120);
 
-/**
- * Expands the help markup into colors. Backtick spans print cyan because
- * they are literal values you can type, double-quoted spans print yellow,
- * and flag references like --work-hours print green.
- */
 function colorizeHelp(text: string): string {
   return text
     .replaceAll(/`([^`]+)`/g, (match, span: string) => value(span))
@@ -184,11 +167,6 @@ function colorizeHelp(text: string): string {
     .replaceAll(/--[a-z][a-z-]*/g, (span) => flag(span));
 }
 
-/**
- * Wraps marked-up help text on spaces so each rendered line stays within
- * the given width. Backtick markers vanish when the text renders, so they
- * do not count toward the width.
- */
 function wrapMarkup(text: string, width: number): string[] {
   const lines: string[] = [];
 
@@ -199,6 +177,7 @@ function wrapMarkup(text: string, width: number): string[] {
 
     if (line !== '' && candidate.replaceAll('`', '').length > width) {
       lines.push(line);
+
       line = word;
     } else {
       line = candidate;
@@ -212,10 +191,6 @@ function wrapMarkup(text: string, width: number): string[] {
   return lines;
 }
 
-/**
- * Renders the full help page from OPTIONS. The description column sits two
- * spaces past the widest flag label, so alignment never needs hand-tuning.
- */
 function renderHelp(): string {
   const labels = OPTIONS.map((option) => {
     const short = option.short ? `-${option.short}, ` : '';
@@ -251,19 +226,11 @@ export const HELP = renderHelp();
 
 export interface ParsedArgs {
   values: CliValues;
-  /**
-   * Holds the names of the flags that were actually given on the command
-   * line, as opposed to filled in from the defaults. Saved options only
-   * replace defaulted values, so the merge needs the distinction.
-   */
   explicit: Set<string>;
 }
 
 /**
- * Parses the command line into CliValues plus the set of flags that were
- * explicitly given. The parse runs without the defaults so a present key
- * means the flag was on the command line, and the defaults get filled in
- * afterwards. The args parameter overrides process.argv for tests.
+ * Applies defaults after parsing, so explicit holds only the flags given on the command line.
  */
 export function parseCliArgs(args?: string[]): ParsedArgs {
   const options: Record<string, { type: 'string' | 'boolean'; short?: string; multiple?: boolean }> = {};
@@ -290,11 +257,6 @@ export function parseCliArgs(args?: string[]): ParsedArgs {
     }
   }
 
-  /**
-   * The config is built dynamically, so parseArgs cannot infer the value
-   * types and returns a loose index signature. CliValues restates what the
-   * OPTIONS table guarantees.
-   */
   return { values: values as unknown as CliValues, explicit };
 }
 
@@ -334,8 +296,7 @@ export function parseSince(input: string): Date {
 }
 
 /**
- * Parses a --target value into counted hours. A day suffix scales with the
- * working-day length, so call this only after the time mode is configured.
+ * A day suffix scales with the working-day length, so the time mode has to be configured first.
  */
 export function parseTarget(input: string): number {
   const match = /^(\d+(?:\.\d+)?)([hdm]?)$/.exec(input);
@@ -357,16 +318,8 @@ export function parseTarget(input: string): number {
   return amount;
 }
 
-/**
- * The percentile the review target checks while --target-percentile is
- * not given.
- */
 export const DEFAULT_TARGET_PERCENTILE = 90;
 
-/**
- * Parses a --target-percentile value like "90" or "p99" into the
- * percentile of the review times the review target checks.
- */
 export function parseTargetPercentile(input: string): number {
   const match = /^p?(\d{1,3})$/i.exec(input);
   const value = match === null ? Number.NaN : Number(match[1]);
@@ -378,11 +331,6 @@ export function parseTargetPercentile(input: string): number {
   return value;
 }
 
-/**
- * Parses a --size-target value like "400", "400l", "20f", or "400l,20f".
- * A bare number or an l suffix sets the line budget, which counts additions
- * plus deletions. An f suffix sets the file budget.
- */
 export function parseSizeTarget(input: string): SizeTarget {
   const target: SizeTarget = {};
 
@@ -405,20 +353,12 @@ export function parseSizeTarget(input: string): SizeTarget {
   return target;
 }
 
-/**
- * Maps the --review-types tokens onto the GitHub review states the
- * classification compares against.
- */
 const REVIEW_TYPES = new Map([
   ['approve', 'APPROVED'],
   ['comment', 'COMMENTED'],
   ['request-changes', 'CHANGES_REQUESTED'],
 ]);
 
-/**
- * Parses a --review-types value like "approve,request-changes" into
- * the set of GitHub review states that count as a review.
- */
 export function parseReviewTypes(input: string): Set<string> {
   const states = new Set<string>();
 
@@ -435,12 +375,6 @@ export function parseReviewTypes(input: string): Set<string> {
   return states;
 }
 
-/**
- * Converts one side of a --work-hours range into minutes since midnight.
- * Hours with an am or pm suffix follow the 12-hour clock, so 12am maps to
- * midnight and 12pm maps to noon. Returns null when the hour or minute is
- * out of range.
- */
 function toMinutesOfDay(hourText: string, minuteText: string | undefined, meridiem: string | undefined): number | null {
   const minute = Number(minuteText ?? 0);
 
@@ -465,24 +399,10 @@ function toMinutesOfDay(hourText: string, minuteText: string | undefined, meridi
   return hour * 60 + minute;
 }
 
-/**
- * The weekday names a --work-days value uses, indexed by the weekday
- * numbers Date#getUTCDay returns.
- */
 const WEEKDAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
-/**
- * The display capitalization of the weekday names, indexed the same way.
- */
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-/**
- * Parses a --work-days value like "mon-fri" or "mon,wed,fri" into the set
- * of weekday numbers that count as working days. Each comma-separated
- * part is a weekday name or an inclusive range of two, and a range may
- * wrap around the end of the week, so "sat-wed" covers Saturday through
- * Wednesday.
- */
 export function parseWorkDays(input: string): Set<number> {
   const days = new Set<number>();
 
@@ -514,24 +434,14 @@ function workDayRunLabel(start: number, end: number): string {
   return start === end ? WEEKDAY_LABELS[start] : `${WEEKDAY_LABELS[start]}-${WEEKDAY_LABELS[end]}`;
 }
 
-/**
- * Formats a set of working days into the compact form the header and the
- * options dialog display. Contiguous days collapse into ranges that may
- * wrap around the end of the week, single days list out, and the full
- * week formats as Mon-Sun, so a set like Monday through Wednesday plus
- * Friday comes out as "Mon-Wed,Fri".
- */
 export function formatWorkDays(days: Set<number>): string {
   if (days.size === 7) {
     return 'Mon-Sun';
   }
 
   /**
-   * Scanning Monday first finds a day whose predecessor is off, which
-   * anchors the walk at a run start, so a week that wraps around its
-   * end formats from the natural start, like Sun-Thu. A non-full set
-   * always has such a day, and the walk then ends on the off day right
-   * before the anchor, which closes the last run inside the loop.
+   * Starting at a day whose predecessor is off keeps a run that wraps the week, like Sun-Thu,
+   * in one piece.
    */
   const monFirst = [1, 2, 3, 4, 5, 6, 0];
   const anchor = monFirst.find((day) => days.has(day) && !days.has((day + 6) % 7)) ?? 1;
@@ -549,6 +459,7 @@ export function formatWorkDays(days: Set<number>): string {
       runEnd = day;
     } else if (runStart !== -1) {
       runs.push(workDayRunLabel(runStart, runEnd));
+
       runStart = -1;
     }
   }
@@ -556,19 +467,10 @@ export function formatWorkDays(days: Set<number>): string {
   return runs.join(',');
 }
 
-/**
- * Validates a --work-days value and normalizes it into the compact
- * capitalized form the header and the options dialog display.
- */
 export function canonicalWorkDays(input: string): string {
   return formatWorkDays(parseWorkDays(input));
 }
 
-/**
- * Parses one or more comma-separated working windows, for example "9-17",
- * "9am-6pm", or "9-18,19:30-20:30". Returns the windows sorted by start
- * time.
- */
 export function parseWorkHours(input: string): WorkWindow[] {
   const windows = input.split(',').map((range) => {
     const match = /^(\d{1,2})(?::(\d{2}))?(am|pm)?-(\d{1,2})(?::(\d{2}))?(am|pm)?$/i.exec(range.trim());
@@ -582,7 +484,6 @@ export function parseWorkHours(input: string): WorkWindow[] {
     const startMin = toMinutesOfDay(match[1], match[2], match[3]);
     const end = toMinutesOfDay(match[4], match[5], match[6]);
 
-    // midnight as an end means the end of the day, so 9pm-12am works
     const endMin = end === 0 ? 24 * 60 : end;
 
     if (startMin === null || endMin === null || endMin <= startMin || endMin > 24 * 60) {
@@ -603,10 +504,6 @@ export function parseWorkHours(input: string): WorkWindow[] {
   return windows;
 }
 
-/**
- * Resolves the --tz value, falling back to the system timezone, and rejects
- * zones that Intl does not recognize.
- */
 export function resolveTimezone(input?: string): string {
   const tz = input ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 

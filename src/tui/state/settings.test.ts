@@ -3,11 +3,6 @@ import { firstSettingOn, SETTING_PAGES, settingPageOf, SETTINGS } from './settin
 import { initialUiState, uiReducer, type UiState } from './ui';
 
 test('the settings sit page by page in the order of the tab strip', () => {
-  /**
-   * The flat selection index walks the pages in strip order, so the
-   * page of every setting must be the same as or come after the page of
-   * the setting before it.
-   */
   const pages = SETTINGS.map((_, index) => settingPageOf(index));
 
   expect(pages).toEqual(pages.toSorted((a, b) => a - b));
@@ -25,13 +20,11 @@ test('a page switch lands on the first row of the page', () => {
     expect(SETTINGS[next.selectedSetting].page).toBe(SETTING_PAGES[page].key);
   }
 
-  // the switch drops the feedback of the row it leaves
   const switched = uiReducer(state, { type: 'settingPageSelected', page: 1 });
 
   expect(switched.settingError).toBeNull();
   expect(switched.cacheAction).toBeNull();
 
-  // the digit of the shown page keeps the selected row as it is
   const onLastRow = { ...state, selectedSetting: SETTINGS.length - 1 };
 
   expect(uiReducer(onLastRow, { type: 'settingPageSelected', page: SETTING_PAGES.length - 1 })).toBe(onLastRow);

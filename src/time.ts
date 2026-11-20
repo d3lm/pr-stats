@@ -7,18 +7,13 @@ export interface TimeMode {
   business: boolean;
   workWindows: WorkWindow[];
   /**
-   * Holds the weekday numbers that count as working days, matching what
-   * Date#getUTCDay returns. Every other day counts as weekend.
+   * Holds the working weekdays as Date#getUTCDay numbers.
    */
   workDays: Set<number>;
   dayHours: number;
   formatter: Intl.DateTimeFormat;
 }
 
-/**
- * Builds the formatter that wallParts() uses to read wall-clock parts of an
- * instant in the given timezone.
- */
 function wallFormatter(tz: string): Intl.DateTimeFormat {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
@@ -32,11 +27,6 @@ function wallFormatter(tz: string): Intl.DateTimeFormat {
   });
 }
 
-/**
- * Holds how durations are measured. configureTimeMode() fills this in from
- * the flags before any duration is computed. The defaults measure wall-clock
- * weekday hours in UTC.
- */
 export const timeMode: TimeMode = {
   business: true,
   workWindows: [{ startMin: 0, endMin: 24 * 60 }],
@@ -45,10 +35,6 @@ export const timeMode: TimeMode = {
   formatter: wallFormatter('UTC'),
 };
 
-/**
- * Applies the flag values to the time mode. Working hours only matter in
- * business mode, so wall-clock mode keeps the 24-hour day.
- */
 export function configureTimeMode({
   business,
   workWindows,
@@ -70,10 +56,6 @@ export function configureTimeMode({
   timeMode.formatter = wallFormatter(tz);
 }
 
-/**
- * Reports whether every hour of a working day counts, which is the
- * default. When the user sets --work-hours, only the given windows count.
- */
 export function isFullDayMode(): boolean {
   return timeMode.business && timeMode.dayHours === 24;
 }
@@ -87,10 +69,6 @@ interface WallParts {
   second: number;
 }
 
-/**
- * Returns the wall-clock date and time parts of an instant in the
- * configured timezone.
- */
 function wallParts(instantMs: number): WallParts {
   const parts = Object.fromEntries(timeMode.formatter.formatToParts(instantMs).map((part) => [part.type, part.value]));
 
@@ -105,10 +83,7 @@ function wallParts(instantMs: number): WallParts {
 }
 
 /**
- * Returns the local calendar day of an instant in the configured timezone,
- * encoded as a UTC timestamp, together with the local weekday, hour, and
- * minute. The encoded day's UTC weekday matches the local weekday, so day
- * and week arithmetic on it stays exact across DST changes.
+ * Encodes the local day as a UTC midnight so day and week arithmetic stays exact across DST changes.
  */
 export function zonedStamp(date: Date): { dayUtcMs: number; weekday: number; hour: number; minute: number } {
   const parts = wallParts(date.getTime());
@@ -118,24 +93,12 @@ export function zonedStamp(date: Date): { dayUtcMs: number; weekday: number; hou
   return { dayUtcMs, weekday: new Date(dayUtcMs).getUTCDay(), hour: parts.hour, minute: parts.minute };
 }
 
-/**
- * Reports whether the configured working windows leave gaps in the day,
- * which is the case once the user sets --work-hours. Only then can an
- * instant classify as after hours.
- */
 export function hasWorkWindows(): boolean {
   const covered = timeMode.workWindows.reduce((sum, window) => sum + (window.endMin - window.startMin), 0);
 
   return covered < 24 * 60;
 }
 
-/**
- * Classifies an instant by the configured working calendar into the
- * weekend, inside the working windows, or after hours. Days outside the
- * configured working days count as weekend. With full-day windows every
- * working-day instant counts as work time, so after hours can only
- * appear once the user sets --work-hours.
- */
 export function classifyInstant(date: Date): 'work' | 'after' | 'weekend' {
   const { weekday, hour, minute } = zonedStamp(date);
 
@@ -151,10 +114,8 @@ export function classifyInstant(date: Date): 'work' | 'after' | 'weekend' {
 }
 
 /**
- * Finds the UTC instant whose wall-clock time in the configured timezone
- * equals the given target. The target encodes a wall-clock time as a Date.UTC
- * value. Two refinement rounds are enough to converge, including across DST
- * changes.
+ * Two refinement rounds converge on the instant for a Date.UTC-encoded wall time,
+ * even across DST changes.
  */
 function utcFromWall(wallTargetMs: number): number {
   let guess = wallTargetMs;
@@ -170,12 +131,6 @@ function utcFromWall(wallTargetMs: number): number {
   return guess;
 }
 
-/**
- * Sums the milliseconds between two instants that fall inside working hours
- * on working days in the configured timezone. Walks the interval one local
- * calendar day at a time and adds the overlap with each of that day's
- * working windows.
- */
 function businessMsBetween(start: Date, end: Date): number {
   const startMs = start.getTime();
   const endMs = end.getTime();
@@ -191,10 +146,6 @@ function businessMsBetween(start: Date, end: Date): number {
   let localDay = Date.UTC(parts.year, parts.month - 1, parts.day);
 
   while (utcFromWall(localDay) <= endMs) {
-    /**
-     * LocalDay encodes the local calendar date as a UTC timestamp,
-     * so its UTC weekday matches the local weekday.
-     */
     const weekday = new Date(localDay).getUTCDay();
 
     if (timeMode.workDays.has(weekday)) {

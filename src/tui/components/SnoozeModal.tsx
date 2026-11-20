@@ -4,14 +4,6 @@ import { ModalFrame, ModalInput, ModalRow } from './ModalFrame';
 
 const HINT = 'how long to park the PR, like 30m, 2h, or 1d · enter snoozes · esc cancels';
 
-/**
- * Small centered modal that asks how long to snooze the highlighted PR
- * of the awaiting-review queue. It names the PR, opens straight into the
- * duration input seeded with the default snooze, and the bottom line
- * carries the hint or the validation error of a rejected duration. The
- * App's commit handler reads the final draft on enter, and escape closes
- * the dialog through the shared edit-cancel path.
- */
 export function SnoozeModal({
   target,
   snoozeDuration,
@@ -20,9 +12,6 @@ export function SnoozeModal({
   onSubmit,
 }: {
   target: SnoozeTarget;
-  /**
-   * Holds the default snooze duration the input starts with.
-   */
   snoozeDuration: string;
   error: string | null;
   onDraft: (value: string) => void;

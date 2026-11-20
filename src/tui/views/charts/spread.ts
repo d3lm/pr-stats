@@ -5,13 +5,6 @@ import type { Card, Line } from './model';
 
 const SPREAD_STRIP_WIDTH = 32;
 
-/**
- * Builds a spread card, one quantile strip per metric. Each strip spans
- * that metric's min to max on a log scale, the shaded box covers p25 to
- * p75, and the accent block marks the median. Values map into the strip
- * interior so the end caps stay visible even when a quantile sits on the
- * min or the max. Log1p handles metrics whose minimum is zero.
- */
 export function buildSpreadCard(
   title: string,
   metrics: { label: string; values: number[] }[],

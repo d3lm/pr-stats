@@ -9,20 +9,6 @@ import type { StatsView } from '../views/stats';
 
 const COLUMN_GAP = 4;
 
-/**
- * Stats panel shared by the review and size tabs. A pinned strip
- * summarizes how the PRs classified, a pinned scope row names the opened
- * repo with its headline percentiles, and rules above and below the pinned
- * rows frame the header. The scroll area opens one blank line under the
- * header with the full-width distribution strip, pushed down further when
- * a warning or a PR list renders above it, and the chart cards follow in
- * a two-column grid when they fit side by side, paired row by row so each
- * pair top aligns.
- *
- * The pinned rows and the scroll area share the same two-column right
- * padding, so their right-aligned stats land on one edge. The scrollbar
- * overlays the outer padding column and never moves the content.
- */
 export function ChartsPanel({
   scrollRef,
   heading,
@@ -34,9 +20,6 @@ export function ChartsPanel({
   heading: string | null;
   warning: string | null;
   view: StatsView;
-  /**
-   * Names the site the PR hyperlinks in the lists point at.
-   */
   openIn: LinkTarget;
 }) {
   useScrollbarSettle(scrollRef, view.empty === null);
@@ -51,14 +34,6 @@ export function ChartsPanel({
     );
   }
 
-  /**
-   * The grid deals the cards into rows in order, left cell first, so a
-   * conditional card shifts everything after it instead of leaving a
-   * hole. Both cards of a row share their top edge and the next row
-   * starts below the taller of the two. The final row can hold a single
-   * card, whose right slot keeps its fixed width so the columns stay in
-   * place.
-   */
   const left = view.cards.filter((_, i) => i % 2 === 0);
   const right = view.cards.filter((_, i) => i % 2 === 1);
   const leftWidth = Math.max(0, ...left.map((card) => cardWidth(card)));
@@ -186,11 +161,6 @@ export function ChartsPanel({
   );
 }
 
-/**
- * Pairs each item with a render key derived from its content. Duplicate
- * content, like blank spacer lines, gets an occurrence suffix so the keys
- * stay unique.
- */
 function keyed<T>(items: T[], contentOf: (item: T) => string): { key: string; item: T }[] {
   const seen = new Map<string, number>();
 
@@ -212,10 +182,6 @@ function lineKey(line: Line): string {
   return line.map((span) => spanKey(span)).join('&');
 }
 
-/**
- * Renders one preformatted chart line. Spans without a color fall back to
- * the default text color.
- */
 function ChartLine({ line }: { line: Line }) {
   return (
     <text wrapMode="none">

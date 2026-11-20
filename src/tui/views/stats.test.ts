@@ -4,9 +4,6 @@ import type { Line } from './charts/model';
 import { buildReviewRepoOptions } from './repos';
 import { buildReviewView } from './stats';
 
-/**
- * Builds the PR descriptor shared by the review results.
- */
 function pr(repo: string, number: number) {
   return {
     repo,
@@ -18,10 +15,6 @@ function pr(repo: string, number: number) {
   };
 }
 
-/**
- * Builds a reviewed result, a completed request-review cycle
- * answered at the given time.
- */
 function reviewedResult(repo: string, number: number, reviewedAt: string): ReviewResult {
   return {
     kind: 'reviewed',
@@ -33,17 +26,10 @@ function reviewedResult(repo: string, number: number, reviewedAt: string): Revie
   };
 }
 
-/**
- * Builds an unrequested result, a review you gave at the given
- * time without a personal request.
- */
 function unrequestedResult(repo: string, number: number, reviewedAt: string): ReviewResult {
   return { kind: 'unrequested', pr: pr(repo, number), reviewedAt: new Date(reviewedAt) };
 }
 
-/**
- * Builds raw data around the given results.
- */
 function rawData(reviewResults: ReviewResult[]): RawData {
   return {
     user: 'testuser',
@@ -58,21 +44,16 @@ function rawData(reviewResults: ReviewResult[]): RawData {
   };
 }
 
-/**
- * Flattens one strip cell into its plain text.
- */
 function cellText(line: Line): string {
   return line.map((span) => span.text).join('');
 }
 
 test('the review strip counts the distinct PRs apart from the review rounds they took', () => {
   const raw = rawData([
-    // a PR that came back to you for a second round counts once as a PR and twice as a round
     reviewedResult('acme/api', 1, '2026-07-02T00:00:00Z'),
     reviewedResult('acme/api', 1, '2026-07-06T00:00:00Z'),
     reviewedResult('acme/api', 2, '2026-07-03T00:00:00Z'),
     reviewedResult('acme/web', 3, '2026-07-03T00:00:00Z'),
-    // a review without a personal request stays out of both counts
     unrequestedResult('acme/web', 4, '2026-07-04T00:00:00Z'),
   ]);
 
@@ -84,7 +65,6 @@ test('the review strip counts the distinct PRs apart from the review rounds they
     '1 reviewed unasked (excluded)',
   ]);
 
-  // narrowing to a repo keeps the two counts apart
   expect(
     buildReviewView(raw, undefined, 'acme/api')
       .strip.slice(0, 2)
@@ -113,11 +93,6 @@ test('the review tab leaves the team cycles out until the team stats setting fol
     },
   ]);
 
-  /**
-   * By default the strip reports the team reviews as excluded next to
-   * the unasked ones, the open team request stays out of the awaiting
-   * count, and the headline counts the direct cycles alone.
-   */
   const excluded = buildReviewView(raw, undefined);
 
   expect(excluded.strip.map((line) => cellText(line))).toEqual([
@@ -131,16 +106,10 @@ test('the review tab leaves the team cycles out until the team stats setting fol
 
   expect(excluded.headline?.map((span) => span.text).join('')).toContain('2 of 2 reviews');
 
-  // the team cell only shows while there is something to leave out
   expect(
     buildReviewView(rawData([reviewedResult('acme/api', 1, '2026-07-02T00:00:00Z')]), undefined).strip,
   ).toHaveLength(5);
 
-  /**
-   * With the setting on the team cycles join every count and the
-   * headline denominator, so a scope never reads as more reviews than
-   * the whole, and the excluded cell goes away.
-   */
   const included = buildReviewView(raw, undefined, null, 100, false, true);
 
   expect(included.strip.map((line) => cellText(line))).toEqual([
@@ -159,7 +128,6 @@ test('the review tab leaves the team cycles out until the team stats setting fol
       .join(''),
   ).toContain('2 of 3 reviews');
 
-  // the picker follows the setting the same way
   expect(buildReviewRepoOptions(raw).map((option) => option.detail)).toEqual([
     '2 reviewed',
     '1 reviewed',

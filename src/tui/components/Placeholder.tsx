@@ -5,17 +5,8 @@ import { Spinner } from './Spinner';
 
 const BAR_WIDTH = 40;
 
-/**
- * Eighth-width block characters that fill the bar's last cell in sub-cell
- * steps.
- */
 const PARTIAL_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
 
-/**
- * Fills a tab's content area while there is no data to render, with the
- * load progress during a load, the error after a failed one, and an idle
- * hint otherwise.
- */
 export function Placeholder({
   error,
   loading,
@@ -39,18 +30,7 @@ export function Placeholder({
 }
 
 /**
- * Renders the load phase as a label with a progress bar underneath. Phases
- * without a measurable total, like the PR search, show the label with a
- * spinner on its right instead. The done count is padded to the total's
- * width so the centered line keeps a stable width while the numbers tick
- * up. A rate-limit wait replaces the spinner with a countdown, and sits
- * under the label above the bar, so the load never looks stalled.
- *
- * The bar is painted with cell backgrounds instead of block glyphs, so it
- * stays continuous no matter how the font renders block characters. Only
- * the boundary cell draws a glyph, an eighth-width block in the fill color
- * on the track background, so sub-cell progress still shows without ever
- * exposing the terminal background as a gap.
+ * Paints the bar with cell backgrounds so it stays continuous however the font renders block glyphs.
  */
 function LoadProgress({ load }: { load: LoadPhase }) {
   const wait = load.wait ?? null;

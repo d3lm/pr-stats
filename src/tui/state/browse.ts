@@ -2,77 +2,33 @@ import type { RepoOption } from '../views/repos';
 
 export const TABS = ['1 Awaiting you', '2 Your PRs', '3 Stats'];
 
-/**
- * The queue tabs, which render a selectable PR list with an optional
- * repo grouping. The first three are the sub-tabs of the Awaiting you
- * tab, the awaiting-review queue, the PRs you reviewed, and the mention
- * inbox, and the open key is the first sub-tab of the Your PRs tab.
- */
 export type QueueTabKey = 'pending' | 'reviewed' | 'mentions' | 'open';
 
-/**
- * The three sub-tabs of the Stats tab, the review times, the PR sizes,
- * and the comments, in the order the t key cycles them forward and
- * shift+t cycles them backward.
- */
 export type StatsSubTab = 'review' | 'size' | 'comment';
 
-/**
- * The stats tabs, which render scrollable chart panels. The first three
- * are the sub-tabs of the Stats tab, and the merged key belongs to the
- * second sub-tab of the Your PRs tab, but it scopes and scrolls like the
- * other three.
- */
 export type StatsTabKey = StatsSubTab | 'merged';
 
-/**
- * The three sub-tabs of the Awaiting you tab, keyed like the queue tabs
- * they render, in the order the t key cycles them forward and shift+t
- * cycles them backward.
- */
 export type PendingSubTab = 'pending' | 'reviewed' | 'mentions';
 
-/**
- * The sub-tabs of the Awaiting you tab with their labels, in the order
- * the t key cycles them and the sub-tab bar lists them.
- */
 export const PENDING_SUB_TABS: { key: PendingSubTab; label: string }[] = [
   { key: 'pending', label: 'Awaiting review' },
   { key: 'reviewed', label: 'Reviewed' },
   { key: 'mentions', label: 'Mentions' },
 ];
 
-/**
- * The two sub-tabs of the Your PRs tab, the queue of your open PRs and
- * the merged-and-closed stats.
- */
 export type AuthoredSubTab = 'open' | 'merged';
 
-/**
- * The sub-tabs of the Your PRs tab with their labels, in the order the
- * t key toggles them and the sub-tab bar lists them.
- */
 export const AUTHORED_SUB_TABS: { key: AuthoredSubTab; label: string }[] = [
   { key: 'open', label: 'Open' },
   { key: 'merged', label: 'Merged & closed' },
 ];
 
-/**
- * The sub-tabs of the Stats tab with their labels, in the order the t
- * key cycles them and the sub-tab bar lists them.
- */
 export const STATS_SUB_TABS: { key: StatsSubTab; label: string }[] = [
   { key: 'review', label: 'Review time' },
   { key: 'size', label: 'PR size' },
   { key: 'comment', label: 'Comments' },
 ];
 
-/**
- * Resolves the sub-tab of the given strip that sits the given number of
- * steps from the given one in the cycle, wrapping around at both ends,
- * so a delta of 1 names the next sub-tab and a delta of -1 names the
- * previous one.
- */
 export function cycledSubTab<K extends string>(
   tabs: readonly { key: K; label: string }[],
   current: K,
@@ -85,61 +41,21 @@ export function cycledSubTab<K extends string>(
 
 export type BrowseTabKey = QueueTabKey | StatsTabKey;
 
-/**
- * Tracks what a tab shows when the data spans multiple repos. The list
- * view is the repo picker, and the detail view holds the opened repo,
- * where null means the aggregate across every repo.
- */
 export type PanelScope = { view: 'list' } | { view: 'detail'; repo: string | null };
 
-/**
- * Holds the scope of every tab that has a repo picker, keyed by tab.
- */
 export type TabScopes = Record<BrowseTabKey, PanelScope>;
 
-/**
- * Holds whether the aggregate view of each queue tab groups its rows by
- * repo.
- */
 export type QueueGrouping = Record<QueueTabKey, boolean>;
 
-/**
- * Everything that tracks where the user is in the UI, the active tab, the
- * per-tab scopes, the picker and row cursors, and the queue grouping. One
- * reducer owns it all because these values move together, most visibly
- * when fresh data reconciles every scope in a single transition.
- */
 export interface BrowseState {
   tab: number;
-  /**
-   * Selects which sub-tab the Awaiting you tab shows, the awaiting-review
-   * queue, the PRs you reviewed, or the mention inbox.
-   */
   pendingTab: PendingSubTab;
-  /**
-   * Selects which sub-tab the Your PRs tab shows, the open queue or the
-   * merged-and-closed stats.
-   */
   authoredTab: AuthoredSubTab;
-  /**
-   * Selects which sub-tab the Stats tab shows, the review times, the PR
-   * sizes, or the comments.
-   */
   statsTab: StatsSubTab;
   scopes: TabScopes;
-  /**
-   * Holds the repo-picker cursor of every tab that has a picker.
-   */
   repoCursors: Record<BrowseTabKey, number>;
-  /**
-   * Holds the PR-row cursor of every queue tab.
-   */
   rowCursors: Record<QueueTabKey, number>;
   grouped: QueueGrouping;
-  /**
-   * Holds whether each stats tab renders its capped comparison cards,
-   * like the reviewer leaderboard, with the row cap lifted.
-   */
   expanded: Record<StatsTabKey, boolean>;
 }
 
@@ -164,12 +80,6 @@ export const initialBrowseState: BrowseState = {
   expanded: { review: false, size: false, comment: false, merged: false },
 };
 
-/**
- * Names the queue tab the Awaiting you tab or the Your PRs tab currently
- * renders, or null while the Your PRs tab shows its merged stats or
- * another tab is active, so the key handler and the footer can treat
- * every queue the same way.
- */
 export function activeQueueTab(state: BrowseState): QueueTabKey | null {
   if (state.tab === 0) {
     return state.pendingTab;
@@ -183,10 +93,7 @@ export function activeQueueTab(state: BrowseState): QueueTabKey | null {
 }
 
 /**
- * Names the stats tab the active tab renders, the merged sub-tab of the
- * Your PRs tab or the active sub-tab of the Stats tab. The caller checks
- * that no queue tab is active first, so the Awaiting you tab and the
- * open sub-tab of the Your PRs tab never reach this.
+ * Assumes no queue tab is active.
  */
 export function activeStatsTab(state: BrowseState): StatsTabKey {
   if (state.tab === 1) {
@@ -208,13 +115,6 @@ export type BrowseAction =
   | { type: 'expandToggled'; tab: StatsTabKey }
   | { type: 'dataLoaded'; repos: Record<BrowseTabKey, RepoOption[]> };
 
-/**
- * Returns the picker scope when the given scope opens a repo that the
- * repo options no longer contain, and returns the scope unchanged
- * otherwise. Freshly loaded data runs through this to clear vanished
- * repos out of the scope state, so they do not silently reopen if a
- * later reload brings them back.
- */
 export function dropVanishedRepo(scope: PanelScope, repos: RepoOption[]): PanelScope {
   if (scope.view === 'detail' && scope.repo !== null && !repos.some((option) => option.repo === scope.repo)) {
     return { view: 'list' };
@@ -223,10 +123,6 @@ export function dropVanishedRepo(scope: PanelScope, repos: RepoOption[]): PanelS
   return scope;
 }
 
-/**
- * Steps a cursor by one row with wrap-around. The clamp keeps a cursor
- * that outlived a shrinking list inside the new bounds before it moves.
- */
 function cycled(previous: number, delta: 1 | -1, count: number): number {
   return (Math.min(previous, count - 1) + count + delta) % count;
 }
@@ -240,12 +136,6 @@ export function browseReducer(state: BrowseState, action: BrowseAction): BrowseS
       return { ...state, tab: (state.tab + TABS.length + action.delta) % TABS.length };
     }
     case 'subTabCycled': {
-      /**
-       * The cycle acts on the sub-tabs of the active tab, stepping the
-       * three of the Awaiting you tab and the three of the Stats tab in
-       * the given direction and flipping the two of the Your PRs tab,
-       * where both directions land on the same sub-tab.
-       */
       if (state.tab === 0) {
         return { ...state, pendingTab: cycledSubTab(PENDING_SUB_TABS, state.pendingTab, action.delta).key };
       }
@@ -305,7 +195,8 @@ export function browseReducer(state: BrowseState, action: BrowseAction): BrowseS
         },
       };
     }
+    default: {
+      return state;
+    }
   }
-
-  return state;
 }

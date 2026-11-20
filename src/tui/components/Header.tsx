@@ -5,12 +5,6 @@ import { theme } from '../theme';
 import { RateLimitWaitStatus } from './RateLimitWait';
 import { Spinner } from './Spinner';
 
-/**
- * Renders the header row, the app name with the data context on the left
- * and the load spinner or the textual status on the right. A load that
- * waits out a GitHub rate limit shows the countdown in place of the
- * spinner, so a reload behind data on screen tells why it takes long.
- */
 export function Header({
   options,
   raw,
@@ -23,23 +17,9 @@ export function Header({
   options: OptionsState;
   raw: RawData | null;
   error: string | null;
-  /**
-   * Marks the error as a rate limit GitHub kept enforcing through the
-   * retries, so the status slot asks for patience instead of an
-   * immediate retry.
-   */
   rateLimited: boolean;
   spinning: boolean;
-  /**
-   * Holds the rate-limit pause the running load sits in, or null while
-   * its requests flow.
-   */
   wait: RateLimitWait | null;
-  /**
-   * Holds the auto-reload interval while the setting is on, which the
-   * status slot shows next to the refresh time so a running TUI tells
-   * that it keeps refreshing on its own, or null while it is off.
-   */
   reloadEvery: string | null;
 }) {
   const context = [
@@ -49,18 +29,6 @@ export function Header({
     timeModeLabel(options),
   ].join(' · ');
 
-  /**
-   * Covers the status slot whenever the spinner does not, which is the
-   * idle state plus the deferred window at the start of a reload, where
-   * the previous status keeps showing until the spinner earns its slot.
-   * A failed reload keeps the old data on screen, where the full error
-   * placeholder never renders, so the status slot flags the failure
-   * instead of showing a stale refresh time. A reload that GitHub's rate
-   * limit defeated keeps the data too and says so, because pressing r
-   * right away would only run into the same limit. The startup snapshot
-   * never reaches the refreshed branch, because the spinner covers it
-   * until fresh data or an error takes over.
-   */
   const rightStatus = raw
     ? error !== null
       ? rateLimited
@@ -69,13 +37,6 @@ export function Header({
       : `refreshed ${raw.fetchedAt.toLocaleTimeString()}${reloadEvery === null ? '' : ` · every ${reloadEvery}`}`
     : '';
 
-  /**
-   * The context gives way before the status slot does, so on a terminal
-   * too narrow for both the context gets cut and the slot keeps its full
-   * width, because during a reload behind data on screen the countdown
-   * in the slot is the only sign that the load waits out a limit, and a
-   * countdown without its remaining time says nothing.
-   */
   return (
     <box flexDirection="row" height={1} paddingLeft={1} paddingRight={1} justifyContent="space-between">
       <text wrapMode="none" flexShrink={1}>
@@ -113,10 +74,6 @@ function timeModeLabel(options: OptionsState): string {
   return `${options.workDays} ${options.workHours} (${dailyHoursLabel(options.workHours)}) ${tz}`;
 }
 
-/**
- * Sums an already validated work-hours value into the counted hours per
- * working day, like "8 hours" or "7.5 hours".
- */
 function dailyHoursLabel(workHours: string): string {
   const minutes = parseWorkHours(workHours).reduce((sum, window) => sum + (window.endMin - window.startMin), 0);
   const hours = Math.round((minutes / 60) * 100) / 100;

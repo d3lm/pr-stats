@@ -2,16 +2,6 @@ import { CACHE_MESSAGES, THEME_COLORS, type CacheAction, type ThemeColorSpec } f
 import { theme, themeColorText, type Palette } from '../theme';
 import { ModalFrame, ModalInput, ModalRow } from './ModalFrame';
 
-/**
- * Centered modal listing every theme color with a swatch and its current
- * hex value, opened from the settings dialog. Enter edits the selected
- * color in place. A committed value applies to the live theme right away
- * and becomes part of the custom theme, which starts from the built-in
- * theme on screen and persists to settings.json, and an empty value
- * returns the color to that built-in. The bottom line describes where the
- * selected color shows up, or reports a validation error or the save
- * feedback.
- */
 export function ThemeModal({
   selected,
   editing,
@@ -55,11 +45,6 @@ export function ThemeModal({
   );
 }
 
-/**
- * Renders one color row. The value slot shows a swatch in the color
- * itself next to the hex value, marks overridden colors in the primary
- * text color, and turns into an input while editing.
- */
 function ColorRow({
   color,
   isSelected,

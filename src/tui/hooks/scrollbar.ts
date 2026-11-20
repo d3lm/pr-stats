@@ -10,28 +10,7 @@ type ScrollbarOptions = NonNullable<ScrollBoxOptions['verticalScrollbarOptions']
 let cachedOverlay: { key: string; options: ScrollbarOptions } | null = null;
 
 /**
- * Returns the options that take a scrollbox's vertical scrollbar out of
- * the layout flow by pinning it over the right edge. An in-flow scrollbar
- * claims a column of viewport width whenever it appears, which shifts
- * every right-aligned row in the scroll area the moment the overflow
- * check turns the bar on. The overlaid bar leaves the viewport width
- * alone, so content renders at its final position from the first frame
- * and the bar simply fades in over the gutter when the content overflows.
- *
- * The track paints in the theme background and only the thumb shows, in
- * the muted text color. OpenTUI's default track is a lighter gray, which
- * fills the whole last column of the terminal while the bar is up, and
- * iTerm2 extends the background of a row's last cell into the window
- * margin, so the default track appeared as a wide bright band along the
- * right edge next to a thumb that stayed one cell wide.
- *
- * The options are cached until the theme colors change, because a fresh
- * object on every render would make the reconciler re-apply them on each
- * commit. Call this at render time, so a theme change reaches the bar.
- *
- * Every scrollbox that uses this must reserve the gutter itself with
- * paddingRight={2}, one column that the bar covers and one blank column
- * that keeps a gap between the content and the bar.
+ * The overlay claims no column, so the scrollbox reserves the gutter with paddingRight={2}.
  */
 export function overlayScrollbar(): ScrollbarOptions {
   const key = `${theme.bg}|${theme.muted}`;
@@ -47,6 +26,7 @@ export function overlayScrollbar(): ScrollbarOptions {
       top: 0,
       right: 0,
       bottom: 0,
+      // iTerm2 extends a row's last-cell background into the window margin, so a colored track shows as a wide band
       trackOptions: { backgroundColor: theme.bg, foregroundColor: theme.muted },
     },
   };
@@ -54,24 +34,8 @@ export function overlayScrollbar(): ScrollbarOptions {
   return cachedOverlay.options;
 }
 
-/**
- * Counts the rows one scroll step moves, for a mouse wheel notch as well
- * as for a j, k, or arrow key press. The keymap and the wheel step below
- * read it so the two inputs stay in lockstep.
- */
 export const SCROLL_STEP_ROWS = 4;
 
-/**
- * Scrolls a fixed number of rows per mouse wheel notch. OpenTUI's default
- * acceleration moves one row per notch, which crawls through a long list
- * or chart pane. The scrollbox multiplies the wheel delta by whatever
- * tick() returns, so a constant multiplier turns every notch into the same
- * jump.
- *
- * The scrollbox keeps the instance it was given and only calls tick() and
- * reset() on it, so one shared instance per step size is safe to reuse
- * across scrollboxes and renders.
- */
 class FixedWheelStep implements ScrollAcceleration {
   readonly #rows: number;
 
@@ -86,46 +50,12 @@ class FixedWheelStep implements ScrollAcceleration {
   reset(): void {}
 }
 
-/**
- * Holds the wheel step every scrollbox in the app shares, SCROLL_STEP_ROWS
- * per notch. The object is created once, so passing it as a prop never
- * makes the reconciler re-apply it on every commit. Every scrollbox should
- * pass this as scrollAcceleration alongside overlayScrollbar().
- */
 export const wheelStep: ScrollAcceleration = new FixedWheelStep(SCROLL_STEP_ROWS);
 
 /**
- * Keeps a scrollbox's vertical scrollbar hidden through the mount frame.
- * The first layout pass after a scrollbox mounts measures the content at
- * twice the viewport height, so the mount frame would paint a scrollbar
- * even when the content fits, and the corrected pass right after would
- * take it away again as a visible flicker.
- *
- * The bar is manually hidden at commit, before the renderer paints the
- * mount frame, and control returns to the automatic overflow check on the
- * first frame event after that paint. Handing control back may briefly
- * recompute from the mismeasured sizes, but that only schedules another
- * render, and the corrective layout in that render fixes the sizes before
- * anything paints, so a wrong bar never reaches the screen. Overflowing
- * content therefore shows its bar one frame after mount, and fitting
- * content never shows one. Keying the release off the frame event rather
- * than a timer keeps the bar from lagging behind the content.
- *
- * Pass mounted=false while the scrollbox is not rendered. The gate
- * re-arms when the flag flips back to true, which covers scrollboxes
- * that appear after their parent component mounted.
- *
- * The hook also keeps the scrollbar's thumb sized to the real viewport,
- * working around an OpenTUI bug in the slider inside the bar. The slider's
- * viewPortSize setter clamps against its own max, which is still zero when
- * a layout pass sizes the viewport while the content measures zero rows,
- * so the viewport size collapses to the setter's 0.01 floor. The bar only
- * re-pushes the value when the viewport height changes, which it never does
- * again, so the thumb sticks at its minimum size no matter how little the
- * content overflows. The repair in resyncThumb runs on every rendered frame
- * and re-pushes the value once the slider disagrees with the bar, so it also
- * heals the related clamp bug where a resize leaves less scroll range than
- * viewport and the setter truncates the value.
+ * OpenTUI's first layout measures content at twice the viewport height, which flashes a bar on
+ * the mount frame, and its slider keeps a minimum-size thumb when the viewport is sized while
+ * the content measures zero rows.
  */
 export function useScrollbarSettle(scrollRef: RefObject<ScrollBoxRenderable | null>, mounted = true): void {
   const renderer = useRenderer();
@@ -146,15 +76,6 @@ export function useScrollbarSettle(scrollRef: RefObject<ScrollBoxRenderable | nu
       scrollRef.current?.verticalScrollBar.resetVisibilityControl();
     };
 
-    /**
-     * Detects a slider whose viewport size diverged from the bar's and
-     * re-pushes it through the bar's setter pair. Writing zero first
-     * raises the slider's max to the full scroll size, so the restore
-     * write passes the buggy clamp unharmed and lands the exact
-     * viewport height. Both writes happen between frames, so no
-     * intermediate state ever paints, and the guard keeps steady
-     * frames free of writes and render requests.
-     */
     const resyncThumb = () => {
       const bar = scrollRef.current?.verticalScrollBar;
 
@@ -169,6 +90,7 @@ export function useScrollbarSettle(scrollRef: RefObject<ScrollBoxRenderable | nu
         return;
       }
 
+      // writing zero first raises the slider's max to the full scroll size, so the real height passes its clamp
       bar.viewportSize = 0;
       bar.viewportSize = height;
     };

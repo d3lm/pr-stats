@@ -24,6 +24,7 @@ let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'pr-stats-snooze-'));
   process.env.PR_STATS_CACHE_DIR = dir;
+
   configureCache(true);
 });
 
@@ -63,7 +64,6 @@ test('parses snooze durations in minutes, hours, days, and weeks up to four week
   expect(snoozeDurationMs('4w')).toBe(2_419_200_000);
   expect(snoozeDurationMs('28d')).toBe(2_419_200_000);
 
-  // anything outside 1m to 4w or not in the amount-unit form is refused
   for (const input of ['', '0m', '5w', '29d', '673h', '10', 'h', '30s', '1.5h', ' 1h', '1h ', '1H', '-1h']) {
     expect(snoozeDurationMs(input)).toBeNull();
   }
@@ -98,7 +98,6 @@ test('writes and reads the snoozes as a file keyed by kind and PR ref, soonest w
   const snoozes = [
     snooze('acme/web#3', '2026-08-02T09:00:00Z', '2026-07-25T09:00:00Z'),
     snooze('acme/api#7', '2026-08-01T15:00:00Z'),
-    // a mention snooze on the same PR lives next to the review snooze and names its texts
     { ...snooze('acme/api#7', '2026-08-01T18:00:00Z', '2026-07-30T09:00:00Z', 'mention'), ids: ['api7-c1', 'api7-r2'] },
   ];
 
@@ -116,11 +115,9 @@ test('writes and reads the snoozes as a file keyed by kind and PR ref, soonest w
 
   expect(readSnoozes()).toEqual([snoozes[1], snoozes[2], snoozes[0]]);
 
-  // an empty list leaves an empty object behind, so a later read finds nothing
   expect(writeSnoozes([])).toBe(true);
   expect(readSnoozes()).toEqual([]);
 
-  // a disabled cache reads nothing and stores nothing, the way debug runs stay isolated
   configureCache(false);
 
   expect(writeSnoozes(snoozes)).toBe(false);
@@ -139,17 +136,11 @@ test('reads nothing from a missing or damaged file and drops damaged entries', (
 
   expect(readSnoozes()).toEqual([]);
 
-  /**
-   * A file from before mention snoozes existed keys its entries by the
-   * PR ref alone and calls the ask time requestedAt, and still reads as
-   * review snoozes.
-   */
   writeFileSync(
     join(dir, 'snoozes.json'),
     JSON.stringify({
       'acme/api#7': { until: '2026-08-01T15:00:00Z', requestedAt: '2026-07-20T09:00:00Z' },
       'mention:acme/api#9': { until: '2026-08-01T16:00:00Z', at: '2026-07-21T09:00:00Z' },
-      // damaged ids drop out one by one rather than taking the snooze with them
       'mention:acme/api#10': { until: '2026-08-01T17:00:00Z', at: '2026-07-21T09:00:00Z', ids: ['api10-c1', 7] },
       'acme/web#3': { until: 'soon', requestedAt: '2026-07-20T09:00:00Z' },
       'acme/web#4': { until: '2026-08-01T15:00:00Z' },
@@ -171,16 +162,13 @@ test('a snooze covers an ask until it wakes up and only while the ask is not new
 
   expect(activeSnooze(snoozes, target, requestedAt, NOW)).toEqual(snoozes[0]);
 
-  // the wake-up time itself counts as woken
   expect(activeSnooze(snoozes, target, requestedAt, Date.parse('2026-08-01T15:00:00Z'))).toBeUndefined();
 
-  // a re-request after the snooze voids it, an older request time still matches
   expect(activeSnooze(snoozes, target, Date.parse('2026-07-30T09:00:00Z'), NOW)).toBeUndefined();
   expect(activeSnooze(snoozes, target, Date.parse('2026-07-10T09:00:00Z'), NOW)).toEqual(snoozes[0]);
 
   expect(activeSnooze(snoozes, { kind: 'review', ref: 'acme/api#8' }, requestedAt, NOW)).toBeUndefined();
 
-  // a review snooze never covers a mention on the same PR
   expect(activeSnooze(snoozes, { kind: 'mention', ref: 'acme/api#7' }, requestedAt, NOW)).toBeUndefined();
 });
 
@@ -195,7 +183,6 @@ test('splitSnoozed keeps the awaiting order and sorts the snoozed entries by wak
   const snoozes = [
     snooze('acme/api#1', '2026-08-03T09:00:00Z', '2026-07-10T09:00:00Z'),
     snooze('acme/api#3', '2026-08-02T09:00:00Z', '2026-07-12T09:00:00Z'),
-    // this snooze already woke up, so web#4 stays in the awaiting list
     snooze('acme/web#4', '2026-08-01T09:00:00Z', '2026-07-13T09:00:00Z'),
   ];
 
@@ -235,17 +222,9 @@ test('wokenPrs lists the PRs that still await the snoozed request', () => {
   ];
 
   const results: ReviewResult[] = [
-    // still pending on the same request, so it comes back
     pendingResult('acme/api', 1, '2026-07-10T09:00:00Z'),
-    // closed with the request still open, so nothing comes back
     pendingResult('acme/api', 2, '2026-07-10T09:00:00Z', 'closed'),
-    // re-requested while snoozed, which the queue already shows on its own
     pendingResult('acme/api', 3, '2026-07-20T09:00:00Z'),
-    /**
-     * The PR api#4 got reviewed and left the pending results altogether,
-     * and a request of your team that still waits comes back like a
-     * direct one.
-     */
     {
       kind: 'team-pending',
       pr: { ...pendingResult('acme/api', 5, '2026-07-10T09:00:00Z').pr },
@@ -257,7 +236,6 @@ test('wokenPrs lists the PRs that still await the snoozed request', () => {
   expect(wokenPrs(due, results).map((woken) => woken.number)).toEqual([1, 5]);
   expect(wokenPrs([], results)).toEqual([]);
 
-  // a mention snooze on a pending PR is not the review snooze module's to wake
   const mentionDue = [snooze('acme/api#1', '2026-08-01T09:00:00Z', '2026-07-10T09:00:00Z', 'mention')];
 
   expect(wokenPrs(mentionDue, results)).toEqual([]);

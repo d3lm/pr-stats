@@ -3,42 +3,23 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 /**
- * Version of the on-disk format. A file written with a different version
- * is discarded, so schema changes only need a bump here. Version 2 added
- * the merge and close timestamps to the size entries. Version 3 added the
- * review authors to the size entries. Version 4 added the PR size to the
- * review details. Version 5 added the review submission times to the
- * size entries.
+ * Files with another version read as missing, so a change to any cached shape needs a bump here.
  */
 const VERSION = 5;
 
+/**
+ * Starts disabled so tests never touch the real cache directory.
+ */
 let enabled = false;
 
-/**
- * Turns the on-disk PR cache on or off for the whole process. The cache
- * starts disabled so tests and other direct consumers never touch the real
- * cache directory. The TUI entry point enables it unless --debug is set,
- * because canned debug data must not pollute the cache.
- */
 export function configureCache(on: boolean): void {
   enabled = on;
 }
 
-/**
- * Reports whether the on-disk cache is enabled for this process. The
- * settings module checks it before touching settings.json, which lives in
- * the cache directory next to the cached data.
- */
 export function cacheEnabled(): boolean {
   return enabled;
 }
 
-/**
- * Resolves the directory the cache files live in. The PR_STATS_CACHE_DIR
- * environment variable overrides the platform default, which is
- * ~/Library/Caches/pr-stats on macOS and $XDG_CACHE_HOME/pr-stats or
- * ~/.cache/pr-stats elsewhere.
- */
 export function cacheDir(): string {
   if (process.env.PR_STATS_CACHE_DIR) {
     return process.env.PR_STATS_CACHE_DIR;
@@ -51,15 +32,6 @@ export function cacheDir(): string {
   return join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'pr-stats');
 }
 
-/**
- * Sums the sizes in bytes of the files in the cache directory, which
- * the settings dialog shows next to the clear-cache action. The cache
- * directory is flat, so the sum only covers its direct files, including
- * the saved options and settings that a clear leaves behind. A missing
- * or unreadable directory counts as zero. The size reflects the disk
- * regardless of whether the cache is enabled, because it describes what
- * is there, not what this process wrote.
- */
 export function cacheSize(): number {
   const dir = cacheDir();
 
@@ -76,40 +48,26 @@ export function cacheSize(): number {
       try {
         total += statSync(join(dir, entry.name)).size;
       } catch {
-        // a file removed between the listing and the stat adds nothing
+        // the file vanished after the listing
       }
     }
   } catch {
-    // a missing directory holds nothing
+    // the directory does not exist yet
   }
 
   return total;
 }
 
-/**
- * Builds the cache key for one PR.
- */
 export function prKey(repo: string, number: number): string {
   return `${repo}#${number}`;
 }
 
 /**
- * Names of the data cache files, the three PR stores, the cached login,
- * the cached team memberships, the TUI startup snapshot, and the mention
- * notification baseline. This doubles as the list of files clearCache
- * deletes. The saved options live in options.json next to them, the
- * settings in settings.json, the snoozes in snoozes.json, and the read
- * state of the mention inbox in mention-reads.json. All of them stay out
- * of this list, because clearing the cached data should not drop the
- * saved preferences.
+ * Leaves out options, settings, snoozes, and mention read state, which share the directory,
+ * so clearing keeps saved preferences.
  */
 const CACHE_FILES = ['details', 'sizes', 'mentions', 'user', 'teams', 'snapshot', 'mention-baseline'] as const;
 
-/**
- * Deletes the cache files from disk, so the next load refetches every PR.
- * Returns false without touching anything while the cache is disabled,
- * which keeps debug runs and tests away from the real cache directory.
- */
 export function clearCache(): boolean {
   if (!enabled) {
     return false;
@@ -122,11 +80,6 @@ export function clearCache(): boolean {
   return true;
 }
 
-/**
- * Writes a file through a temp file and a rename, so a crash mid-write
- * never leaves a truncated file behind. The settings module shares it for
- * settings.json.
- */
 export function writeFileAtomic(file: string, contents: string): void {
   mkdirSync(dirname(file), { recursive: true });
 
@@ -136,20 +89,11 @@ export function writeFileAtomic(file: string, contents: string): void {
   renameSync(temporary, file);
 }
 
-/**
- * Shape of the single-value cache files, which the login and snapshot
- * caches use. The PR stores keep their own entries shape.
- */
 interface ValueFile<T> {
   version: number;
   value: T;
 }
 
-/**
- * Reads one single-value cache file. Returns null while the cache is
- * disabled and for missing, unreadable, or outdated files. The caller
- * knows the stored shape and casts the result.
- */
 export function readCacheFile(name: string): unknown {
   if (!enabled) {
     return null;
@@ -162,16 +106,12 @@ export function readCacheFile(name: string): unknown {
       return parsed.value;
     }
   } catch {
-    // a missing or unreadable file reads as null
+    // the file is missing or unreadable
   }
 
   return null;
 }
 
-/**
- * Writes one single-value cache file. Returns false without writing while
- * the cache is disabled, so callers can report that nothing was stored.
- */
 export function writeCacheFile(name: string, value: unknown): boolean {
   if (!enabled) {
     return false;
@@ -184,29 +124,14 @@ export function writeCacheFile(name: string, value: unknown): boolean {
   return true;
 }
 
-/**
- * How long a cached login stays trusted. The login almost never changes,
- * but the expiry bounds how long a stale login lingers after an account
- * switch. A hard reload refreshes it immediately.
- */
 const LOGIN_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface CachedLogin {
   login: string;
-  /**
-   * Holds the fingerprint of the credentials the login was resolved
-   * with. Entries written before the field existed read as undefined and
-   * never match, so they fall out like an account switch would.
-   */
   auth?: string;
   cachedAt: string;
 }
 
-/**
- * Returns the cached login of the authenticated user, or null when the
- * cache is disabled, the entry is missing or expired, or it was written
- * under different credentials than the given fingerprint.
- */
 export function readCachedLogin(auth: string): string | null {
   const cached = readCacheFile('user') as CachedLogin | null;
 
@@ -219,46 +144,19 @@ export function readCachedLogin(auth: string): string | null {
   return age >= 0 && age < LOGIN_TTL_MS ? cached.login : null;
 }
 
-/**
- * Stores the login of the authenticated user with a fresh timestamp,
- * keyed by the fingerprint of the credentials that resolved it.
- */
 export function writeCachedLogin(login: string, auth: string): void {
   writeCacheFile('user', { login, auth, cachedAt: new Date().toISOString() } satisfies CachedLogin);
 }
 
-/**
- * How long the cached team memberships stay fresh. Memberships change
- * more often than a login does, so the expiry is shorter than the login's,
- * and a hard reload refreshes them immediately. An expired entry still
- * serves as the fallback when the lookup fails.
- */
 const TEAMS_TTL_MS = 6 * 60 * 60 * 1000;
 
 interface CachedTeams {
-  /**
-   * Holds the login the teams were looked up for, which is the resolved
-   * user rather than the authenticated one, because a configured user
-   * belongs to other teams than the viewer.
-   */
   login: string;
-  /**
-   * Holds the fingerprint of the credentials the lookup ran with, because
-   * the teams the viewer can see depend on the account.
-   */
   auth: string;
   teams: string[];
   cachedAt: string;
 }
 
-/**
- * Returns the cached team memberships of the given login under the given
- * credentials, together with whether the entry is still within its
- * expiry, or null when the cache is disabled, the entry is missing, or it
- * was written for another login or under other credentials. The caller
- * decides whether an expired entry still serves, which it does as the
- * fallback when a fresh lookup fails.
- */
 export function readCachedTeams(auth: string, login: string): { teams: string[]; fresh: boolean } | null {
   const cached = readCacheFile('teams') as CachedTeams | null;
 
@@ -271,10 +169,6 @@ export function readCachedTeams(auth: string, login: string): { teams: string[];
   return { teams: cached.teams, fresh: age >= 0 && age < TEAMS_TTL_MS };
 }
 
-/**
- * Stores the team memberships of the given login with a fresh timestamp,
- * keyed by the fingerprint of the credentials that looked them up.
- */
 export function writeCachedTeams(teams: string[], login: string, auth: string): void {
   writeCacheFile('teams', { login, auth, teams, cachedAt: new Date().toISOString() } satisfies CachedTeams);
 }
@@ -284,12 +178,6 @@ interface CacheFile<T> {
   entries: Record<string, T>;
 }
 
-/**
- * One on-disk store of per-PR entries keyed by "repo#number". The store
- * loads its file eagerly, collects changes in memory, and writes them back
- * once through save. While the cache is disabled, reads find nothing and
- * writes go nowhere.
- */
 export class PrCache<T> {
   #entries = new Map<string, T>();
   #dirty = false;
@@ -309,7 +197,7 @@ export class PrCache<T> {
         this.#entries = new Map(Object.entries(parsed.entries));
       }
     } catch {
-      // a missing or unreadable file starts the store empty
+      // the file is missing or unreadable
     }
   }
 
@@ -327,6 +215,7 @@ export class PrCache<T> {
     }
 
     this.#entries.set(key, value);
+
     this.#dirty = true;
   }
 
@@ -336,9 +225,6 @@ export class PrCache<T> {
     }
   }
 
-  /**
-   * Writes the store back to disk when anything changed.
-   */
   save(): void {
     if (this.#file === null || !this.#dirty) {
       return;

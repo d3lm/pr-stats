@@ -18,16 +18,10 @@ import {
 } from './testing/harness';
 
 test('reloads in the background on the configured interval while auto reload is on', async () => {
-  /**
-   * Persisting the reload settings needs an enabled cache, so this test
-   * points the cache at a temp directory like the save-state test above
-   * and loads the empty settings the way bootstrap would. The wider
-   * terminal keeps the header status, which grows by the cadence, clear
-   * of the data context on its left.
-   */
   const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
 
   process.env.PR_STATS_CACHE_DIR = dir;
+
   configureCache(true);
   loadSettings();
 
@@ -36,20 +30,10 @@ test('reloads in the background on the configured interval while auto reload is 
   try {
     await waitForText(setup, '2 PRs awaiting your review');
 
-    /**
-     * Nothing reloads on its own while the setting is off, so the
-     * refresh time of the first load stays put until the toggle flips,
-     * and the header names no cadence.
-     */
     const firstRefresh = await waitForRefresh(setup);
 
     expect(setup.captureCharFrame()).not.toContain('· every');
 
-    /**
-     * The dialog opens on the auto-reload toggle, which persists right
-     * away, and the interval row below it keeps showing the default
-     * cadence the toggle starts on.
-     */
     setup.mockInput.pressKey('S');
 
     await waitForText(setup, 'reloads the data in the background');
@@ -61,12 +45,6 @@ test('reloads in the background on the configured interval while auto reload is 
     expect(setup.captureCharFrame()).toContain('‹ yes ›');
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ autoReload: true });
 
-    /**
-     * Enter edits the interval in place. A value the parser refuses
-     * keeps the edit open and shows the error in the hint slot, and a
-     * valid one applies, persists, and restarts the timer on the new
-     * cadence.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'time between the background reloads');
@@ -103,11 +81,6 @@ test('reloads in the background on the configured interval while auto reload is 
       reloadInterval: '1s',
     });
 
-    /**
-     * Back on the queue, the one-second cadence brings fresh refresh
-     * times without any keypress, and the header names the cadence next
-     * to the time.
-     */
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'r reload');
@@ -118,14 +91,6 @@ test('reloads in the background on the configured interval while auto reload is 
 
     await waitForRefreshAfter(setup, secondRefresh);
 
-    /**
-     * Turning the reload off stops the timer and keeps the interval in
-     * the file, so turning it back on later resumes the same cadence. A
-     * load that was in flight at the toggle still finishes, so the check
-     * waits that out before it pins the refresh time and confirms that
-     * no later load moves it. The dialog reopens on the interval row it
-     * closed on, so one move up lands on the toggle.
-     */
     setup.mockInput.pressKey('S');
 
     await waitForText(setup, 'time between the background reloads');

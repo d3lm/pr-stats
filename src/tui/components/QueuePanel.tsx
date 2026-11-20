@@ -7,22 +7,6 @@ import { theme } from '../theme';
 import type { QueueSection } from '../views/queue';
 import type { PrRow } from '../views/rows';
 
-/**
- * Selectable PR list for the two queue tabs, the awaiting-review
- * queue and the open authored PRs. The App owns the cursor and opens
- * the highlighted PR in the browser on Enter, so this only renders the
- * sections and keeps the cursor row visible while scrolling. Each section
- * renders its rows right under its title, or one indented sub-list per
- * repo when the view is grouped. The cursor counts across every row in
- * render order, matching the rows the App navigates. The PR references
- * stay clickable terminal hyperlinks as well, unless the copy-links
- * setting routes clicks to the clipboard instead. A row whose PR carries
- * a mention of you that still awaits attention shows an at-sign badge in
- * front of its title, and a row that stands for a request of a team of
- * yours names the team after its title. The heading names the opened repo
- * scope when the data spans multiple repos, framed by rules like the stats
- * header, and stays away otherwise.
- */
 export function QueuePanel({
   heading,
   warning,
@@ -37,28 +21,13 @@ export function QueuePanel({
   empty: string | null;
   sections: QueueSection[];
   cursor: number;
-  /**
-   * Names the site the reference hyperlinks point at, so a click
-   * through the terminal lands where enter would.
-   */
   openIn: LinkTarget;
-  /**
-   * Receives the row whose PR reference was clicked while the copy-links
-   * setting is on, and is null while links open through the terminal.
-   * A handler also drops the terminal hyperlink from the references, so
-   * the terminal no longer opens them on its own modifier-click.
-   */
   onRefClick: ((row: PrRow) => void) | null;
 }) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const { width } = useTerminalDimensions();
 
-  /**
-   * Holds the cell of the last left-button press, which makes a click
-   * detectable as a release on the same cell. The release alone cannot
-   * tell a click from the end of a text-selection drag, because the
-   * renderer marks both as dragging.
-   */
+  // the renderer reports a click and the end of a selection drag alike, so a click is a release on the press cell
   const lastDown = useRef<{ x: number; y: number } | null>(null);
 
   useScrollbarSettle(scrollRef, empty === null);
@@ -100,10 +69,6 @@ export function QueuePanel({
     );
   }
 
-  /**
-   * Offsets translate a row's position inside its section or sub-list
-   * into the flat cursor index across the whole view.
-   */
   const offsets: { rows: number; lists: number[] }[] = [];
 
   let total = 0;
@@ -115,6 +80,7 @@ export function QueuePanel({
 
     for (const list of section.lists) {
       entry.lists.push(total);
+
       total += list.rows.length;
     }
 
@@ -125,18 +91,9 @@ export function QueuePanel({
     const isSelected = index === cursor;
     const bg = isSelected ? theme.selectedBg : undefined;
 
-    /**
-     * A snoozed PR is parked and a read mention is handled, so their
-     * lead and title step back to the secondary color.
-     */
     const parked = row.pending?.snoozed === true || row.mention?.state === 'snoozed' || row.mention?.state === 'read';
     const fg = parked ? theme.muted : theme.text;
 
-    /**
-     * The reference starts after the indent, the two-cell cursor marker,
-     * the lead, and the two-space gap, all single-cell ASCII, so the
-     * columns map one to one onto the characters.
-     */
     const refStart = indent.length + 2 + row.lead.length + 2;
 
     return (

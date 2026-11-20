@@ -14,11 +14,6 @@ function dateLabel(ms: number): string {
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-/**
- * Builds the x-axis row for a chart whose columns map to week Mondays.
- * Labels go under evenly spaced points and drop out when they would
- * overlap.
- */
 export function weekAxisRow(
   width: number,
   prefix: number,
@@ -37,6 +32,7 @@ export function weekAxisRow(
 
     if (at >= lastEnd + 2 && at + label.length <= width) {
       placeText(cells, at, label, theme.dim);
+
       lastEnd = at + label.length;
     }
   }

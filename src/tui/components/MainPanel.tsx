@@ -21,11 +21,6 @@ import { QueuePanel } from './QueuePanel';
 import { RepoList } from './RepoList';
 import { SubTabBar } from './TabBar';
 
-/**
- * One queue tab, either the repo picker or the selectable PR list of the
- * opened scope. The scope comes resolved from the view model, so a
- * single-repo dataset skips the picker.
- */
 function QueueTab({
   prompt,
   repos,
@@ -70,10 +65,6 @@ function QueueTab({
   );
 }
 
-/**
- * One stats tab, either the repo picker or the chart panel of the opened
- * scope.
- */
 function StatsTab({
   repos,
   scope,
@@ -110,12 +101,6 @@ function StatsTab({
   );
 }
 
-/**
- * The content area between the tab bar and the footer. Renders the active
- * tab from the derived views and the browse state, and falls back to the
- * placeholder with the load progress or the load error while there is no
- * data yet.
- */
 export function MainPanel({
   views,
   browse,
@@ -129,25 +114,12 @@ export function MainPanel({
 }: {
   views: AppViews | null;
   browse: BrowseState;
-  /**
-   * Holds the search-cap warning that the opened panels render above
-   * their content, or null when no search hit the cap.
-   */
   warning: string | null;
   scrollRefs: Record<StatsTabKey, RefObject<ScrollBoxRenderable | null>>;
   error: string | null;
   loading: boolean;
   load: LoadPhase | null;
-  /**
-   * Names the site the PR hyperlinks point at, so a click through the
-   * terminal lands on the same site as enter.
-   */
   openIn: LinkTarget;
-  /**
-   * Receives the queue row whose PR reference was clicked while the
-   * copy-links setting is on, and is null while links open through the
-   * terminal.
-   */
   onRefClick: ((row: PrRow) => void) | null;
 }) {
   return (

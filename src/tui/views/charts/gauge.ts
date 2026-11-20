@@ -7,17 +7,9 @@ const GAUGE_BAR_WIDTH = 24;
 export interface GaugeSpec {
   title: string;
   subtitle: string;
-  /**
-   * Holds the rows the gauge splits the total into, like inside versus
-   * over a target. The bars scale against the summed counts.
-   */
   rows: { label: string; count: number; color: string }[];
 }
 
-/**
- * Builds a split gauge card. Each row gets a bar sized by its share of the
- * summed counts, with the percentage and the count alongside.
- */
 export function buildGaugeCard({ title, subtitle, rows }: GaugeSpec): Card {
   const total = rows.reduce((sum, row) => sum + row.count, 0);
   const labelWidth = Math.max(...rows.map((row) => row.label.length));

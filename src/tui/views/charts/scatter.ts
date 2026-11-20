@@ -6,9 +6,7 @@ const SCATTER_WIDTH = 36;
 const SCATTER_HEIGHT = 8;
 
 /**
- * Braille dot bits by dot row and dot column inside one character cell.
- * A braille cell holds a two-by-four dot grid, which quadruples the
- * vertical and doubles the horizontal resolution of the plot.
+ * Maps a dot row and column to its Unicode braille bit, which is not in reading order.
  */
 const DOT_BITS = [
   [0x01, 0x08],
@@ -21,30 +19,14 @@ export interface ScatterSpec {
   title: string;
   subtitle: string;
   points: { x: number; y: number }[];
-  /**
-   * Formats an x value for the axis labels under the plot.
-   */
   formatX: (value: number) => string;
-  /**
-   * Formats a y value for the axis labels left of the plot.
-   */
   formatY: (value: number) => string;
 }
 
-/**
- * Maps a value onto its dot index along one log-scaled axis. A flat axis
- * has no range, so every point lands on the middle dot instead.
- */
 function dotPos(value: number, min: number, span: number, dots: number): number {
   return span === 0 ? Math.floor(dots / 2) : Math.round(((Math.log1p(value) - Math.log1p(min)) / span) * (dots - 1));
 }
 
-/**
- * Builds a scatter card that plots the points as braille dots, with both
- * axes on a log scale because the plotted quantities are heavy-tailed.
- * Log1p handles values of zero. The extreme labels mark the data range,
- * and points that land on the same dot merge into one.
- */
 export function buildScatterCard({ title, subtitle, points, formatX, formatY }: ScatterSpec): Card {
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);

@@ -10,123 +10,31 @@ import { applyTheme, type ThemeState } from './theme';
 
 export interface BootstrapResult {
   initial: OptionsState;
-  /**
-   * Holds the options saved in the cache directory, or null when nothing
-   * valid is saved. The options modal compares the live options against
-   * them to label its save state.
-   */
   saved: OptionsState | null;
-  /**
-   * Mirrors the --no-cache flag, filled in from settings.json when the
-   * flag was not given. Loads bypass the cache while it is set, which
-   * refetches everything and rewrites the cached entries.
-   */
   noCache: boolean;
-  /**
-   * Mirrors the auto-reload setting from settings.json. While it is set,
-   * the TUI reloads its data in the background every reload interval.
-   */
   autoReload: boolean;
-  /**
-   * Holds the reload interval from settings.json, already validated
-   * by loadSettings, or the default while the file names none.
-   */
   reloadInterval: string;
-  /**
-   * Mirrors the notifications setting from settings.json. While it is
-   * set, fresh loads send desktop notifications for new and re-requested
-   * reviews, the first one measured against the startup snapshot.
-   */
   notifications: boolean;
-  /**
-   * Mirrors the mention tracking setting from settings.json, on unless
-   * the file turns it off. While it is set, loads also look for PRs that
-   * mention the user and the awaiting-you tab lists them in the mention
-   * inbox.
-   */
   trackMentions: boolean;
-  /**
-   * Mirrors the mention notifications setting from settings.json. While
-   * it is set together with notifications and mention tracking, loads
-   * notify about PRs that newly mention the user.
-   */
   notifyMentions: boolean;
-  /**
-   * Mirrors the team review requests setting from settings.json, on
-   * unless the file turns it off. While it is set, the awaiting-you tab
-   * lists the open PRs where only a team the user belongs to was asked.
-   */
   teamReviews: boolean;
-  /**
-   * Mirrors the team request notifications setting from settings.json.
-   * While it is set together with notifications and the team requests,
-   * loads notify about PRs newly requested of a team the user belongs to.
-   */
   notifyTeamReviews: boolean;
-  /**
-   * Mirrors the team review stats setting from settings.json. While it
-   * is set, the review stats and the JSON export count the cycles a team
-   * the user belongs to was asked for.
-   */
   teamReviewStats: boolean;
-  /**
-   * Holds the notification channel from settings.json, already
-   * validated by loadSettings, or auto while the file names none.
-   */
   notifyChannel: NotifyChannel;
-  /**
-   * Holds the open-in target from settings.json, already validated by
-   * loadSettings, or github while the file names none.
-   */
   openIn: LinkTarget;
-  /**
-   * Mirrors the copy-links setting from settings.json. While it is set,
-   * enter and a click on a PR reference copy the PR's link to the
-   * clipboard instead of opening it in the browser.
-   */
   copyLinks: boolean;
-  /**
-   * Holds the default snooze duration from settings.json, already
-   * validated by loadSettings, or the default while the file names none.
-   */
   snoozeDuration: string;
   /**
-   * Holds the snoozes read from the snooze file in the cache directory,
-   * expired ones included, so the TUI can wake them up and report the
-   * PRs that came back while it was closed.
+   * Includes expired snoozes so the TUI can report PRs that came back while it was closed.
    */
   snoozes: Snooze[];
-  /**
-   * Holds the read state of the mention inbox of every login, read from
-   * its file in the cache directory, so the inbox continues where the
-   * previous session of the same account left it.
-   */
   mentionReads: MentionReadsByUser;
-  /**
-   * Holds the theme parsed from settings.json and already applied, so
-   * the settings dialog starts from the saved active theme and the saved
-   * custom colors.
-   */
   theme: ThemeState;
-  /**
-   * Mirrors the --json flag. While it is set, the entry point prints the
-   * stats report to stdout instead of starting the TUI.
-   */
   json: boolean;
 }
 
 /**
- * Parses the command-line flags and seeds the option state that every TUI
- * entry point starts from. The flag defaults double as the TUI defaults,
- * so the dev entry accepts the same flags as the published binary,
- * including --debug. The settings and the options saved from the options
- * modal fill in the flags that were not given, and explicit flags always
- * win. The theme overrides from the settings apply here as well, before
- * anything renders.
- *
- * Validates the seeded flags and resolves the debug binary before the
- * screen flips to the alternate buffer, so a bad flag fails with a plain
- * printed error instead of inside the UI.
+ * Runs before the renderer takes the alternate screen, so a bad flag prints a plain error.
  */
 export function bootstrap(): BootstrapResult {
   const { values, explicit } = parseCliArgs();
@@ -140,7 +48,7 @@ export function bootstrap(): BootstrapResult {
     configureAuth(values.token, values.debug);
     configureCache(values.debug === undefined);
 
-    // both merges need the configured cache, so they run after configureCache
+    // both merges read from the cache configured above
     const settings = applySettings(values, explicit);
     const saved = applySavedOptions(values, explicit);
 

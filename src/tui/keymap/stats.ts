@@ -4,11 +4,6 @@ import { activeStatsTab, type StatsTabKey } from '../state/browse';
 import type { KeymapContext } from './context';
 import { handleRepoPickerKey } from './helpers';
 
-/**
- * Resolves the derived views and the state key of the active stats view,
- * so the key handler below works the same on the three sub-tabs of the
- * Stats tab and on the merged sub-tab of the Your PRs tab.
- */
 function statsTabOf(context: KeymapContext) {
   const { views } = context;
   const key = activeStatsTab(context.browse);
@@ -48,11 +43,6 @@ function statsTabOf(context: KeymapContext) {
   };
 }
 
-/**
- * Scrolls the charts pane of the given stats tab. The step keys move
- * SCROLL_STEP_ROWS like the mouse wheel, the page keys move half a
- * viewport, and home and end jump to either end of the content.
- */
 function handleStatsScrollKey(key: KeyEvent, tab: StatsTabKey, context: KeymapContext): void {
   switch (key.name) {
     case 'j':
@@ -87,17 +77,12 @@ function handleStatsScrollKey(key: KeyEvent, tab: StatsTabKey, context: KeymapCo
 
       break;
     }
-
-    // no default
+    default: {
+      break;
+    }
   }
 }
 
-/**
- * The stats tabs open on a repo picker when the data spans multiple
- * repos, like the queue tabs, and otherwise render a scrollable charts
- * pane. On the panes with a capped comparison card, x lifts the row cap
- * and restores it, and every other key scrolls.
- */
 export function handleStatsKey(key: KeyEvent, context: KeymapContext): void {
   const { key: tab, repos, scope, view } = statsTabOf(context);
 

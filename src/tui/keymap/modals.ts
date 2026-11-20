@@ -4,11 +4,6 @@ import { handleOptionsModalKey } from './optionsModal';
 import { handleSettingsModalKey } from './settingsModal';
 import { handleThemeModalKey } from './themeModal';
 
-/**
- * Routes a keypress to the open dialog and reports whether one took it.
- * The snooze dialog is not here, because it edits and the editing branch
- * of handleAppKey covers it first.
- */
 export function handleModalKey(key: KeyEvent, context: KeymapContext): boolean {
   switch (context.ui.modal) {
     case 'options': {

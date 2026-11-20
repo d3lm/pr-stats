@@ -27,13 +27,6 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-/**
- * What the throwaway gh answers. The counts name how many PRs each search
- * mode has in total, which the fake pages out a hundred at a time. The
- * failing calls make the first so many search calls exit with the given
- * stderr text instead of an answer, and the failing search makes every
- * call of that search mode do the same.
- */
 interface FakeSpec {
   counts: { review: number; requested?: number; authored: number; mentioned: number };
   failCalls?: number;
@@ -41,13 +34,6 @@ interface FakeSpec {
   failMessage?: string;
 }
 
-/**
- * Installs a gh in the temp directory that logs every call and answers
- * the search endpoint from the spec, and points the GitHub module at it.
- * The token lookup gets a canned token, so a load can run its team
- * lookup against the fake, and every other command fails the way the
- * real gh fails an unknown one.
- */
 function installFakeGh(spec: FakeSpec): void {
   writeFileSync(join(dir, 'spec.json'), JSON.stringify(spec));
 
@@ -108,11 +94,6 @@ process.stdout.write(JSON.stringify({ total_count: total, items }));
   configureAuth(undefined, dir);
 }
 
-/**
- * Returns the field parameters of every gh call the fake logged, in call
- * order. A call without field parameters, like the token lookup, logs as
- * an empty record.
- */
 function loggedCalls(): Record<string, string>[] {
   const log = join(dir, 'calls.log');
 
@@ -139,10 +120,6 @@ function loggedCalls(): Record<string, string>[] {
     });
 }
 
-/**
- * Collects every wait the GitHub module reports until the returned
- * function removes the listener.
- */
 function recordWaits(): { waits: (RateLimitWait | null)[]; stop: () => void } {
   const waits: (RateLimitWait | null)[] = [];
 
@@ -184,17 +161,6 @@ test('each mode is one advanced search query with the alternatives grouped by OR
 
   expect(calls).toHaveLength(4);
 
-  /**
-   * The review query ORs the two review qualifiers and excludes the
-   * user's own PRs, the repos group with OR because the advanced syntax
-   * reads a bare space between them as AND, and the drafts filter
-   * applies unless drafts are included. The requested query carries the
-   * request qualifier alone and bounds itself to open PRs instead of a
-   * creation date, so a request on a PR older than the window still
-   * comes back. The mentioned query ORs the mentions index with the
-   * quoted login bounded by involves, filters on the update time, keeps
-   * drafts, and sorts by the update time so its pages stay stable.
-   */
   expect(calls[0]).toEqual({
     q: 'type:pr (review-requested:testuser OR reviewed-by:testuser) -author:testuser created:>=2026-06-01 draft:false (repo:acme/web OR repo:acme/api)',
     advanced_search: 'true',
@@ -240,10 +206,6 @@ test('pages until the total is reached and reports the cap at a thousand', async
   expect(authored.items).toHaveLength(1000);
   expect(authored.capped).toBe(true);
 
-  /**
-   * The search endpoint stops at a thousand results, so the paging stops
-   * at the tenth page even when the total reports more.
-   */
   const mentioned = await searchPrs({ ...searchArgs, mode: 'mentioned' });
 
   expect(mentioned.items).toHaveLength(1000);
@@ -272,12 +234,6 @@ test('concurrent searches run one at a time and pace their pages under the searc
     stop();
   }
 
-  /**
-   * The gate keeps the searches in call order, so the pages of one
-   * search never interleave with another's. Five pages against a bound
-   * of three per window means the fourth page waits out the window, and
-   * the wait reports as a pace wait that clears once the page goes out.
-   */
   const calls = loggedCalls();
 
   expect(
@@ -307,13 +263,6 @@ test('a search that fails the load keeps the later searches from starting', asyn
 
   expect(failure).toBeInstanceOf(RateLimitError);
 
-  /**
-   * The searches used to queue up behind the gate together, so the
-   * authored and the mentioned search ran on after the review search had
-   * already failed the load. The pause gives such a leftover search the
-   * time to reach the fake before the log is read, so a regression shows
-   * up as extra search calls.
-   */
   await sleep(300);
 
   const searches = loggedCalls().filter((call) => 'q' in call);
@@ -343,12 +292,6 @@ test('the retries of a refused search page pass the pacing like the first attemp
     stop();
   }
 
-  /**
-   * Two refused attempts and the two pages after them make four search
-   * requests, and each counts against the bound of two per window, so
-   * the third request waits out the window although the retry pause
-   * alone would have sent it after a few milliseconds.
-   */
   expect(loggedCalls().map((call) => call.page)).toEqual(['1', '1', '1', '2']);
   expect(Date.now() - started).toBeGreaterThanOrEqual(350);
 
@@ -405,10 +348,6 @@ test('gives up with a RateLimitError once the retries run out and backs off betw
     stop();
   }
 
-  /**
-   * The base wait doubles with every retry, twenty then forty
-   * milliseconds, so the two retries take at least sixty together.
-   */
   expect(loggedCalls()).toHaveLength(3);
   expect(Date.now() - started).toBeGreaterThanOrEqual(55);
   expect(waits.filter((wait) => wait !== null)).toHaveLength(2);
@@ -431,10 +370,6 @@ test('a failure that is not a rate limit is not retried', async () => {
   expect(loggedCalls()).toHaveLength(1);
 });
 
-/**
- * Builds a fetch stand-in that answers each call with the next response
- * of the list and records the requested URLs.
- */
 function fakeFetch(responses: Response[]): { fetch: typeof fetch; urls: string[] } {
   const urls: string[] = [];
   const queue = [...responses];
@@ -483,6 +418,7 @@ test('the token path honors the retry-after header and encodes the query for the
   const { fetch, urls } = fakeFetch([refused, searchPage([1, 2], 2)]);
 
   globalThis.fetch = fetch;
+
   configureAuth('test-token');
   configureRateLimits({ baseWaitMs: 60_000 });
 
@@ -495,14 +431,10 @@ test('the token path honors the retry-after header and encodes the query for the
     expect(review.items.map((item) => item.number)).toEqual([1, 2]);
   } finally {
     stop();
+
     globalThis.fetch = realFetch;
   }
 
-  /**
-   * The header names one second, which beats the minute-long base wait,
-   * and the query goes out form-encoded, so the parentheses and the
-   * quotes never reach GitHub raw.
-   */
   expect(Date.now() - started).toBeGreaterThanOrEqual(900);
   expect(waits.map((wait) => wait?.reason ?? null)).toEqual(['retry', null]);
   expect(urls).toHaveLength(2);
@@ -524,6 +456,7 @@ test('the token path gives up right away when the limit lifts too far in the fut
   const { fetch, urls } = fakeFetch([refused]);
 
   globalThis.fetch = fetch;
+
   configureAuth('test-token');
 
   try {
@@ -548,6 +481,7 @@ test('a GraphQL answer that carries a RATE_LIMITED error counts as a rate limit'
   ]);
 
   globalThis.fetch = fetch;
+
   configureAuth('test-token');
   configureRateLimits({ baseWaitMs: 20 });
 
@@ -559,6 +493,7 @@ test('a GraphQL answer that carries a RATE_LIMITED error counts as a rate limit'
     expect(sizes).toEqual([null]);
   } finally {
     stop();
+
     globalThis.fetch = realFetch;
   }
 

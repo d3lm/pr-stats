@@ -27,11 +27,6 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
   );
 
   try {
-    /**
-     * The canned pending queue spans two repos, so the awaiting-review
-     * tab opens on its repo picker, whose details count the waiting PRs
-     * per repo.
-     */
     await waitForText(setup, '2 PRs awaiting your review');
 
     const pickerFrame = setup.captureCharFrame();
@@ -42,18 +37,8 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(pickerFrame).toContain('1 PR awaiting your review');
     expect(pickerFrame).not.toContain('Awaiting your review (n=');
 
-    /**
-     * The sub-tab bar dots the awaiting queue, because two PRs wait for
-     * a review, and leaves the inbox plain, because every canned mention
-     * predates the seed.
-     */
     expect(pickerFrame).toContain('* Awaiting review   Reviewed   Mentions  t/T switches');
 
-    /**
-     * Enter on All repos opens the aggregate view, the awaiting queue
-     * longest wait first, with the scope header naming it. The PRs you
-     * reviewed and the mentions live on their own sub-tabs.
-     */
     setup.mockInput.pressEnter();
 
     await waitForText(setup, 'Awaiting your review (n=2)');
@@ -70,12 +55,6 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(pendingFrame).not.toContain('Review time distribution');
     expect(pendingFrame).toContain('t reviewed');
 
-    /**
-     * Shift+t cycles the sub-tabs backward, so from the awaiting queue
-     * it wraps around to the mentions sub-tab, and a second press steps
-     * back to the reviewed sub-tab. Both open on their own pickers,
-     * because neither has an opened scope yet.
-     */
     setup.mockInput.pressKey('T');
 
     await waitForText(setup, 'open its mention inbox');
@@ -84,15 +63,6 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
 
     await waitForText(setup, 'list the open PRs you reviewed');
 
-    /**
-     * Another shift+t returns to the awaiting queue, which kept its
-     * opened scope, and from there the t key cycles the sub-tabs
-     * forward. The reviewed sub-tab opens on its own picker, whose
-     * details count the open PRs you reviewed per repo, and enter lists
-     * them. The mentions sub-tab follows with the inbox, where every
-     * canned mention predates the seed and reads as read, and a third
-     * press returns to the awaiting queue again.
-     */
     setup.mockInput.pressKey('T');
 
     await waitForText(setup, 'Awaiting your review (n=2)');
@@ -131,12 +101,6 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
 
     await waitForText(setup, 'Awaiting your review (n=2)');
 
-    /**
-     * The g key splits each section into indented per-repo sub-lists
-     * under its title and marks the grouped state in the header. A
-     * second press restores the flat lists, which only the vanished
-     * sub-list headers tell apart, because the section titles stay.
-     */
     setup.mockInput.pressKey('g');
 
     await waitForText(setup, 'All repos · grouped by repo');
@@ -151,17 +115,8 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
 
     await waitForTextGone(setup, 'acme/api (n=1)');
 
-    /**
-     * Enter opens the highlighted PR through the injected opener instead
-     * of a real browser. The cursor sits on the longest-waiting PR, the
-     * request on acme/api#7.
-     */
     expect(await pressEnterToOpen(setup, opened)).toBe('https://github.com/acme/api/pull/7');
 
-    /**
-     * Escape returns to the picker, and the last row drills into the
-     * acme/web queue alone.
-     */
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'Select a repository');
@@ -185,11 +140,6 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(webFrame).not.toContain('acme/api#7');
     expect(webFrame).not.toContain('acme/api#8');
 
-    /**
-     * The open-PRs tab lists every repo with an analyzed authored PR,
-     * like the size tab, and its details count the still-open PRs per
-     * repo, which can be zero.
-     */
     setup.mockInput.pressKey('2');
 
     await waitForText(setup, 'list its open PRs');
@@ -199,10 +149,6 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(openPickerFrame).toContain('1 open PR');
     expect(openPickerFrame).toContain('0 open PRs');
 
-    /**
-     * Enter on All repos opens the aggregate list, which holds
-     * acme/web#13 alone, with its age and size in the lead column.
-     */
     setup.mockInput.pressEnter();
 
     await waitForText(setup, 'Your open authored PRs (n=1)');
@@ -215,16 +161,8 @@ test('drives the queue tabs through the repo picker, the grouping toggle, and th
     expect(openFrame).toContain('+2500/-400, 48 files');
     expect(openFrame).not.toContain('acme/api#10');
 
-    /**
-     * The open-PRs tab keeps its own cursor, and enter opens its
-     * highlighted PR the same way.
-     */
     expect(await pressEnterToOpen(setup, opened)).toBe('https://github.com/acme/web/pull/13');
 
-    /**
-     * A repo without open PRs can still be opened from the picker and
-     * shows the empty message under its scope header.
-     */
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'list its open PRs');
@@ -251,21 +189,11 @@ test('lists the requests of your teams below the awaiting queue and hides them w
   const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
 
   try {
-    /**
-     * The fake resolves testuser onto the backend team, whose request on
-     * api#9 is still open, so the picker counts it apart from the two
-     * direct requests. A teammate already answered the team's request on
-     * web#16, which shows up nowhere.
-     */
     await waitForText(setup, '2 PRs awaiting your review, 1 requested of your team');
 
     expect(setup.captureCharFrame()).toContain('1 PR awaiting your review, 1 requested of your team');
     expect(setup.captureCharFrame()).not.toContain('acme/web#16');
 
-    /**
-     * The aggregate queue lists the team request in its own section
-     * under the awaiting one, naming the team after the title.
-     */
     setup.mockInput.pressEnter();
 
     await waitForText(setup, 'Requested of your team (n=1)');
@@ -276,12 +204,6 @@ test('lists the requests of your teams below the awaiting queue and hides them w
     expect(lineWith(queueFrame, 'acme/api#9')).toContain('Migrate the queue consumers · acme/backend');
     expect(queueFrame).not.toContain('acme/web#16');
 
-    /**
-     * The cursor moves onto the team row behind the two direct ones, and
-     * the s key snoozes it like a direct request. The dialog names the
-     * PR without the team, and the parked row keeps its team in the
-     * shared snoozed section, where s ends the snooze again.
-     */
     setup.mockInput.pressArrow('down');
     setup.mockInput.pressArrow('down');
 
@@ -296,7 +218,6 @@ test('lists the requests of your teams below the awaiting queue and hides them w
 
     await waitForText(setup, 'Snooze for');
 
-    // the dialog joins the reference and the title with one space, unlike the queue row behind it
     expect(lineWith(setup.captureCharFrame(), 'acme/api#9 Migrate the queue consumers')).not.toContain('acme/backend');
 
     setup.mockInput.pressEnter();
@@ -315,12 +236,6 @@ test('lists the requests of your teams below the awaiting queue and hides them w
 
     expect(setup.captureCharFrame()).not.toContain('Snoozed (n=');
 
-    /**
-     * The team requests row in the settings dialog starts on, and the
-     * debug run cannot persist the toggle, which the message slot says.
-     * Turning it off hides the section and the picker count right away,
-     * because the queue reads the setting at render time.
-     */
     setup.mockInput.pressKey('S');
 
     await waitForText(setup, 'reloads the data in the background');
@@ -366,11 +281,6 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
   try {
     await waitForText(setup, '2 PRs awaiting your review');
 
-    /**
-     * The Your PRs tab opens on the open sub-tab with its repo picker,
-     * and the sub-tab bar names both sub-tabs with the key that switches
-     * them.
-     */
     setup.mockInput.pressKey('2');
 
     await waitForText(setup, 'list its open PRs');
@@ -381,13 +291,6 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
     expect(openFrame).toContain('t/T switches');
     expect(openFrame).toContain('t merged stats');
 
-    /**
-     * The t key switches to the merged sub-tab, which opens on its own
-     * repo picker. The details split the closed PRs into merged and
-     * closed unmerged, and the repo with the most merges sorts first.
-     * With only two sub-tabs, shift+t flips back to the open sub-tab
-     * and plain t flips to the merged one again.
-     */
     setup.mockInput.pressKey('t');
 
     await waitForText(setup, 'open its charts');
@@ -406,11 +309,6 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
 
     await waitForText(setup, 'open its charts');
 
-    /**
-     * Enter on All repos opens the merged stats, with the outcome counts
-     * in the pinned strip, the time-to-merge percentiles in the headline,
-     * and the merged and closed lists above the distribution strip.
-     */
     setup.mockInput.pressEnter();
 
     await waitForText(setup, 'Time to merge distribution');
@@ -431,14 +329,6 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
     expect(mergedFrame).toContain('to close');
     expect(mergedFrame).toContain('acme/web#12');
 
-    /**
-     * The remaining charts sit below the fold, so scroll the pane down
-     * card by card in the grid's fill order. The first-review pair
-     * covers the three canned PRs that got a review from someone else,
-     * where api#14's author-only replies never count, and no open PR is
-     * still waiting, so the awaiting histogram stays away. The scatter
-     * plots merge time against lines changed over the three merged PRs.
-     */
     await scrollToText(setup, 'Time to merge trend');
     await scrollToText(setup, 'Time to first review');
 
@@ -460,12 +350,6 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
     await scrollToText(setup, 'PRs created per week');
     await scrollToText(setup, 'PRs merged per week');
 
-    /**
-     * The end of the pane holds the merged volume, the outcome and
-     * review-coverage gauges, and the reviewer leaderboard. The canned
-     * data has alice on three PRs and bob on one, and api#14 merged with
-     * only the author's own replies, so it counts as merged unreviewed.
-     */
     setup.mockInput.pressKey(KeyCodes.END);
 
     await waitForText(setup, 'where your authored PRs ended up');
@@ -480,12 +364,6 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
     expect(endFrame).toContain('bob');
     expect(endFrame).toContain('1 review');
 
-    /**
-     * The nine canned reviewers overflow the leaderboard's eight-row cap
-     * by one, so ivan hides behind the overflow line and the x key lifts
-     * the cap in place and restores it. The footer hint flips between
-     * expand and collapse along the way.
-     */
     expect(endFrame).toContain('x expand');
     expect(endFrame).toContain('+ 1 more · x expands');
     expect(endFrame).not.toContain('ivan');
@@ -503,10 +381,6 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
 
     await waitForText(setup, '+ 1 more');
 
-    /**
-     * Escape returns to the picker, and the row below All repos drills
-     * into acme/api, where every authored PR got merged.
-     */
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'open its charts');
@@ -522,10 +396,6 @@ test('toggles the Your PRs tab between the open queue and the merged stats', asy
     expect(setup.captureCharFrame()).toContain('▸ acme/api');
     expect(setup.captureCharFrame()).toContain('3 PRs created');
 
-    /**
-     * The t key switches back to the open queue, which kept its own
-     * picker scope.
-     */
     setup.mockInput.pressKey('t');
 
     await waitForText(setup, 'list its open PRs');
@@ -560,17 +430,8 @@ test('opens the PR on Linear while the open-in setting names it, and copies the 
 
     await waitForText(setup, 'Awaiting your review (n=2)');
 
-    /**
-     * Enter passes the highlighted PR's GitHub link through the Linear
-     * rewrite, so the opener receives the linear.review counterpart at
-     * the same path.
-     */
     expect(await pressEnterToOpen(setup, opened)).toBe('https://linear.review/acme/api/pull/7');
 
-    /**
-     * The settings row shows the saved target and cycles back to github,
-     * after which the next enter opens the GitHub page again.
-     */
     setup.mockInput.pressKey('S');
 
     await waitForText(setup, 'reloads the data in the background');
@@ -595,12 +456,6 @@ test('opens the PR on Linear while the open-in setting names it, and copies the 
 
     expect(await pressEnterToOpen(setup, opened)).toBe('https://github.com/acme/api/pull/7');
 
-    /**
-     * With the target back on linear and copy-links on, enter copies the
-     * GitHub link, because a copied link is for sharing and GitHub is
-     * the canonical address. The dialog reopens on the open-in row it
-     * was closed on, so the cycle needs no walk this time.
-     */
     setup.mockInput.pressKey('S');
 
     await waitForText(setup, '‹ github ›');
@@ -647,12 +502,6 @@ test('copies the PR link instead of opening it while the copy-links setting is o
   );
 
   try {
-    /**
-     * The awaiting-review tab opens on its repo picker, and enter on All
-     * repos opens the aggregate queue, whose hint names the open action
-     * while the setting is off. The frame is just wide enough for the
-     * full queue hint, so only a footer notice makes it truncate.
-     */
     await waitForText(setup, '2 PRs awaiting your review');
 
     setup.mockInput.pressEnter();
@@ -661,10 +510,6 @@ test('copies the PR link instead of opening it while the copy-links setting is o
 
     expect(setup.captureCharFrame()).toContain('enter open');
 
-    /**
-     * While the setting is off, a click on a PR reference stays with the
-     * terminal hyperlink and never reaches the app.
-     */
     const offFrame = setup.captureCharFrame();
     const offLines = offFrame.split('\n');
     const offRow = offLines.findIndex((line) => line.includes('acme/api#7'));
@@ -674,12 +519,6 @@ test('copies the PR link instead of opening it while the copy-links setting is o
 
     expect(copied).toEqual([]);
 
-    /**
-     * The copy-links toggle closes the General page of the settings
-     * dialog, below the reload rows and the open-in row. Toggling it
-     * flips the value right away, and the debug run cannot persist it,
-     * which the message slot reports.
-     */
     setup.mockInput.pressKey('S');
 
     await waitForText(setup, 'reloads the data in the background');
@@ -705,17 +544,10 @@ test('copies the PR link instead of opening it while the copy-links setting is o
 
     expect(setup.captureCharFrame()).toContain('‹ yes ›');
 
-    // closing the dialog brings back the queue hint, now naming the copy
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'enter copy link');
 
-    /**
-     * Enter copies the highlighted PR's link through the injected copier
-     * instead of opening anything, and the footer reports the copy with
-     * the checkmark. The notice keeps its full width next to the long
-     * queue hint, which truncates with an ellipsis instead of colliding.
-     */
     expect(await pressEnterToOpen(setup, copied)).toBe('https://github.com/acme/api/pull/7');
 
     await waitForText(setup, '✔ copied acme/api#7 to the clipboard');
@@ -723,11 +555,6 @@ test('copies the PR link instead of opening it while the copy-links setting is o
     expect(setup.captureCharFrame()).toContain('…');
     expect(opened).toEqual([]);
 
-    /**
-     * The next keypress dismisses the notice. Grouping the list commits
-     * a visible frame change, so the check waits on that instead of a
-     * frame that looks the same either way.
-     */
     setup.mockInput.pressKey('g');
 
     await waitForText(setup, 'All repos · grouped by repo');
@@ -738,10 +565,6 @@ test('copies the PR link instead of opening it while the copy-links setting is o
 
     await waitForTextGone(setup, 'acme/api (n=1)');
 
-    /**
-     * A click on a PR reference copies that PR's link, without moving
-     * the cursor onto its row first.
-     */
     const frame = setup.captureCharFrame();
     const lines = frame.split('\n');
     const rowIndex = lines.findIndex((line) => line.includes('acme/web#3'));
@@ -753,10 +576,6 @@ test('copies the PR link instead of opening it while the copy-links setting is o
     expect(copied).toEqual(['https://github.com/acme/api/pull/7', 'https://github.com/acme/web/pull/3']);
     expect(opened).toEqual([]);
 
-    /**
-     * The notice expires on its own after a short dwell, so it clears
-     * without any keypress and the full hints come back.
-     */
     const expiry = Date.now();
 
     while (Date.now() - expiry < 10_000 && setup.captureCharFrame().includes('copied acme/web#3')) {
@@ -784,29 +603,16 @@ test('surfaces a failed browser open in the footer and clears it on the next key
   );
 
   try {
-    /**
-     * The awaiting-review tab opens on its repo picker, and enter on All
-     * repos opens the aggregate queue.
-     */
     await waitForText(setup, '2 PRs awaiting your review');
 
     setup.mockInput.pressEnter();
 
     await waitForText(setup, 'Awaiting your review (n=2)');
 
-    /**
-     * Enter runs the injected opener, which reports a failure instead of
-     * opening anything, and the footer shows the message.
-     */
     setup.mockInput.pressEnter();
 
     await waitForText(setup, 'could not open the browser');
 
-    /**
-     * The next keypress dismisses the notice. The tab switch commits in
-     * the same render as the clear, so the new frame is already free of
-     * the message.
-     */
     setup.mockInput.pressKey('2');
 
     await waitForText(setup, 'list its open PRs');

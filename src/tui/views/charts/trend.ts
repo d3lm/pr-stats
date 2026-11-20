@@ -8,11 +8,6 @@ import { mondayOf, WEEK_MS, weekAxisRow } from './weeks';
 const TREND_POINTS = 40;
 const TREND_HEIGHT = 6;
 
-/**
- * Finds where the y-axis ends in an asciichart line, so the label and axis
- * get colored differently from the plotted series. Every line carries
- * exactly one axis character.
- */
 function axisSplit(line: string): number {
   const positions = [line.indexOf('┤'), line.indexOf('┼')].filter((at) => at >= 0);
 
@@ -21,39 +16,13 @@ function axisSplit(line: string): number {
 
 export interface TrendSpec {
   title: string;
-  /**
-   * Holds the dated values the weekly medians are computed from, like
-   * review durations or PR sizes.
-   */
   entries: { date: Date; value: number }[];
-  /**
-   * Formats a value for the y-axis labels and the end-of-line annotation.
-   */
   format: (value: number) => string;
-  /**
-   * Clamps values from below before taking the logarithm, so zero values
-   * cannot blow up the scale. The linear scale ignores it.
-   */
   floor?: number;
-  /**
-   * Chooses the y scale. The default log scale suits heavy-tailed
-   * quantities like durations and sizes, and the linear scale handles
-   * values that can be zero or negative, like net lines or rates.
-   */
   scale?: 'log' | 'linear';
-  /**
-   * Names the plotted value in the subtitle, like "median" or "net
-   * lines". The subtitle reads "weekly <label>" or "<label> per N weeks".
-   */
   valueLabel?: string;
 }
 
-/**
- * Builds a trend card as an asciichart line chart of weekly medians, on a
- * log scale by default. Weeks without data carry the previous median
- * forward so the line stays continuous. Long ranges average several weeks
- * per point, and the final value is annotated at the line's end.
- */
 export function buildTrendCard({
   title,
   entries,
@@ -103,13 +72,6 @@ export function buildTrendCard({
     }
   }
 
-  /**
-   * On the log scale, weeks before the first entry carry nothing forward,
-   * so they backfill from the first known median. The first week always
-   * has data, which makes this a no-op, but it keeps the series total
-   * when that changes. The linear scale skips this, because zero is a
-   * legitimate value there rather than a placeholder.
-   */
   if (scale === 'log') {
     const firstKnown = medians.find((value) => value > 0) ?? 0;
 
@@ -134,11 +96,7 @@ export function buildTrendCard({
   let lo = Math.min(...plotted);
   let hi = Math.max(...plotted);
 
-  /**
-   * A flat series has no range, which asciichart cannot scale, so the
-   * bounds widen by one step in both directions (an octave on the log
-   * scale) and the line renders in the middle.
-   */
+  // asciichart cannot scale a series with zero range
   if (hi - lo < 1e-9) {
     lo -= 1;
     hi += 1;
@@ -151,10 +109,7 @@ export function buildTrendCard({
     format: (x) => format(scale === 'log' ? 2 ** x : x).padStart(6),
   });
 
-  /**
-   * The annotation row mirrors asciichart's own row math, so the final
-   * value lands exactly at the end of the plotted line.
-   */
+  // mirrors asciichart's row math so the annotation lands at the end of the line
   const ratio = TREND_HEIGHT / (hi - lo);
   const min2 = Math.round(lo * ratio);
   const rows = Math.abs(Math.round(hi * ratio) - min2);
@@ -177,10 +132,7 @@ export function buildTrendCard({
     return spans;
   });
 
-  /**
-   * The y labels are padded to six characters and asciichart puts the axis
-   * two cells later, so the plot begins at column eight.
-   */
+  // asciichart draws the axis two cells after the six-wide y labels
   const prefix = 8;
 
   lines.push(

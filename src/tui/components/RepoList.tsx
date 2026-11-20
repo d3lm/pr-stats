@@ -4,13 +4,6 @@ import { overlayScrollbar, useScrollbarSettle, wheelStep } from '../hooks/scroll
 import { theme } from '../theme';
 import type { RepoOption } from '../views/repos';
 
-/**
- * Repo picker shown when the fetched data spans multiple repos. The App
- * owns the cursor and opens the highlighted entry on Enter, so this only
- * renders the rows and keeps the cursor row visible while scrolling. The
- * prompt names what enter opens, because the picker serves the chart tabs
- * and the queue tabs alike.
- */
 export function RepoList({
   options,
   cursor,

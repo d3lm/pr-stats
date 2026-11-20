@@ -1,10 +1,5 @@
 import type { ColorKey } from '../theme';
 
-/**
- * Names the pages of the settings dialog, in the order the tab strip
- * lists them. The dialog shows one page at a time, which keeps its
- * height bounded by the longest page instead of the whole list.
- */
 export type SettingPageKey = 'general' | 'awaiting' | 'notifications' | 'appearance' | 'data';
 
 export const SETTING_PAGES: { key: SettingPageKey; label: string }[] = [
@@ -15,17 +10,10 @@ export const SETTING_PAGES: { key: SettingPageKey; label: string }[] = [
   { key: 'data', label: 'Data' },
 ];
 
-/**
- * Describes one row of the settings dialog. New settings get an entry in
- * SETTINGS, a value renderer in the SettingsModal, and their activation
- * behavior in the App keyboard handler, all dispatching on the key.
- */
 export interface SettingSpec {
   key: string;
   /**
-   * Names the page the setting renders on. The settings of one page
-   * sit next to each other in SETTINGS, in the order of SETTING_PAGES,
-   * so that the flat selection index walks page by page.
+   * Page navigation assumes SETTINGS is grouped by page in SETTING_PAGES order.
    */
   page: SettingPageKey;
   label: string;
@@ -149,26 +137,14 @@ export const SETTINGS: SettingSpec[] = [
   },
 ];
 
-/**
- * Returns the index into SETTING_PAGES of the page that holds the
- * setting at the given SETTINGS index.
- */
 export function settingPageOf(setting: number): number {
   return SETTING_PAGES.findIndex((page) => page.key === SETTINGS[setting].page);
 }
 
-/**
- * Returns the SETTINGS index of the first setting on the page at the
- * given SETTING_PAGES index, where a page switch lands the selection.
- */
 export function firstSettingOn(page: number): number {
   return SETTINGS.findIndex((setting) => setting.page === SETTING_PAGES[page].key);
 }
 
-/**
- * Describes one row of the theme colors dialog, in the order the dialog
- * lists them. The hint names where the color shows up in the UI.
- */
 export interface ThemeColorSpec {
   key: ColorKey;
   hint: string;
@@ -193,15 +169,6 @@ export const THEME_COLORS: ThemeColorSpec[] = [
   { key: 'heat', hint: 'the four heatmap colors from cool to hot, separated by spaces' },
 ];
 
-/**
- * Feedback state of the settings dialog actions. Confirm means the first
- * enter on clear cache landed and the next one clears, with cleared and
- * disabled reporting how the clear went. Saved and notSaved report
- * whether a toggled setting reached settings.json. The reset states
- * mirror the clear-cache flow for the reset-settings action, the
- * export states report how the JSON export went, and notified reports
- * that the test notification went out.
- */
 export type CacheAction =
   | 'confirm'
   | 'cleared'
@@ -216,11 +183,6 @@ export type CacheAction =
   | 'exportNoData'
   | 'notified';
 
-/**
- * Bottom-line message for each action state, shown in place of the
- * setting hint while the action is in flight or just finished. The
- * settings dialog and the theme dialog both render them.
- */
 export const CACHE_MESSAGES: Record<CacheAction, { text: string; warn?: boolean }> = {
   confirm: { text: 'press enter again to clear the cache · esc cancels', warn: true },
   cleared: { text: 'cache cleared · the next reload refetches everything' },

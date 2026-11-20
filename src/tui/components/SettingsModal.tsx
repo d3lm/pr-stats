@@ -17,29 +17,12 @@ import { notificationBoundary, notificationCaveat, notificationChannel, notifica
 import { ModalFrame, ModalInput, ModalRow } from './ModalFrame';
 import { SubTabBar } from './TabBar';
 
-/**
- * Holds the settings of each page, in the order of SETTING_PAGES.
- */
 const PAGE_SETTINGS: SettingSpec[][] = SETTING_PAGES.map((page) =>
   SETTINGS.filter((setting) => setting.page === page.key),
 );
 
-/**
- * Sizes the row area to the longest page, so the dialog keeps one height
- * while the pages switch instead of growing and shrinking under the
- * cursor.
- */
 const ROW_AREA_HEIGHT = Math.max(...PAGE_SETTINGS.map((settings) => settings.length));
 
-/**
- * Centered modal with the app-level settings, separate from the data and
- * analysis options. The settings spread over the pages of a tab strip,
- * of which the dialog shows the one holding the selected row, so the
- * dialog stays a dozen rows tall however many settings there are. The
- * bottom line describes the selected row, shows the validation error of
- * a rejected interval edit or the failure of a notification sent while
- * the dialog is open, or reports a pending or finished action.
- */
 export function SettingsModal({
   selected,
   editing,
@@ -85,25 +68,12 @@ export function SettingsModal({
 }) {
   const message = cacheAction === null ? null : CACHE_MESSAGES[cacheAction];
 
-  /**
-   * Resolves the display values of the notification rows. The channel
-   * row shows the setting, with the command value named by its platform
-   * command, and the test row names the channel a send would take right
-   * now. The dialog re-renders on every keypress, so the auto value
-   * catches up once the terminal detection finishes after startup. On a
-   * terminal known to swallow the notification sequence, the test row
-   * trades its hint for the caveat naming what the terminal needs,
-   * because the send itself reports no failure there.
-   */
+  // terminal detection finishes asynchronously, and the per-keypress re-render picks up its result
   const renderer = notificationBoundary(useRenderer());
   const channelValue = notifyChannel === 'command' ? (notificationTool() ?? 'unsupported') : notifyChannel;
   const deliveryValue = notificationChannel(renderer, notifyChannel) ?? 'unsupported';
   const caveat = SETTINGS[selected].key === 'testNotification' ? notificationCaveat(renderer, notifyChannel) : null;
 
-  /**
-   * Picks the bottom line, where an error beats a pending or finished
-   * action, which beats the caveat, which beats the plain hint.
-   */
   const bottomLine =
     error !== null
       ? { text: error, fg: theme.error }
@@ -158,32 +128,6 @@ export function SettingsModal({
   );
 }
 
-/**
- * Renders the value slot of one setting row. The disable-cache, auto-reload,
- * notifications, copy-links, and theme rows show a toggle value with arrows
- * on the selected row, like the toggles in the options modal. The open-in
- * row cycles github and linear the same way. The mention-
- * notifications row is such a toggle too, dimmed while the notifications
- * above it or the mention tracking on the Awaiting you page are off,
- * because it only applies with both, and the team-request-notifications row dims the same way
- * while the notifications or the team requests are off. The
- * track-mentions, team-requests, and count-team-reviews rows are plain
- * toggles. The reload-interval
- * row shows the interval, dimmed while auto reload is off, and turns into
- * an input while editing. The notification-channel row cycles auto, terminal,
- * the platform command, and bell, and the test-notification row names the
- * channel the next send takes, or unsupported where none exists.
- * The default-snooze row shows the duration and turns into an input while
- * editing, like the interval. The edit-colors row previews the current accent
- * family as a swatch strip. The clear-cache and reset-settings rows show
- * the path they delete with the home directory abbreviated, and flip to
- * a confirm prompt after the first enter. The clear-cache row also shows
- * the size of the cache directory after the path, sized on every render
- * so a clear or a background reload shows up right away. The directory
- * holds a handful of files, so the listing costs nothing noticeable. The
- * export row shows the path it writes the same way, without a confirm
- * because an export only overwrites its own file.
- */
 function SettingValue({
   setting,
   isSelected,
@@ -332,13 +276,6 @@ function SettingValue({
   }
 }
 
-/**
- * Value slot of a row that left and right cycle through. The selected
- * row gets arrows around the value to show that. A row whose setting
- * only applies while another one is on passes active false while that
- * one is off, which dims the value to the placeholder colors the way
- * the reload interval dims without auto reload.
- */
 function ToggleValue({ value, isSelected, active = true }: { value: string; isSelected: boolean; active?: boolean }) {
   if (isSelected) {
     return (
@@ -357,13 +294,6 @@ function ToggleValue({ value, isSelected, active = true }: { value: string; isSe
   );
 }
 
-/**
- * Value slot of an editable duration row, the reload interval and the
- * default snooze. The interval only drives a timer while auto reload is
- * on, so it dims to the placeholder colors while the toggle above it is
- * off, and shows like an editable value otherwise. The default snooze
- * always applies, so it always shows the active way.
- */
 function IntervalValue({ value, active, isSelected }: { value: string; active: boolean; isSelected: boolean }) {
   if (!active) {
     return (
@@ -388,12 +318,6 @@ function IntervalValue({ value, active, isSelected }: { value: string; active: b
   );
 }
 
-/**
- * Value slot of an action row that targets a file. It shows the path with
- * the home directory abbreviated, followed by a dimmed detail like the
- * size of the target when the row passes one, and the destructive rows
- * flip it to a confirm prompt after the first enter.
- */
 function PathValue({
   path,
   detail,

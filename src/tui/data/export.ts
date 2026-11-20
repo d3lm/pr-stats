@@ -24,9 +24,6 @@ import { targetLabelOf, type OptionsState } from '../state/options';
 import { describeWait } from '../utils/wait';
 import { loadData, type LoadPhase, type RawData, type SizeEntry } from './load';
 
-/**
- * Identifies one PR wherever the report lists PRs.
- */
 export interface PrRef {
   repo: string;
   number: number;
@@ -35,11 +32,6 @@ export interface PrRef {
   state: string;
 }
 
-/**
- * Five-number summary of one series. The unit rides on the field name
- * that holds the summary, hours on the durations, lines on the sizes,
- * and plain counts on the cycles and comments.
- */
 export interface Summary {
   count: number;
   mean: number;
@@ -49,12 +41,6 @@ export interface Summary {
   max: number;
 }
 
-/**
- * The full report the --json flag prints and the settings dialog writes
- * to a file, everything the tabs derive from one load in a serializable
- * shape. Durations respect the configured time mode, so a working-hours
- * setup reports counted hours instead of wall-clock hours.
- */
 export interface StatsReport {
   generatedAt: string;
   user: string;
@@ -78,17 +64,7 @@ export interface StatsReport {
       reviewing: number;
       closedUnreviewed: number;
       reviewedUnrequested: number;
-      /**
-       * Counts the completed cycles a team you belong to was asked for,
-       * whether or not the team stats setting folded them into the
-       * reviewed count and the summaries.
-       */
       reviewedTeam: number;
-      /**
-       * Counts the open PRs where only a team you belong to was asked and
-       * the request still waits, whether or not the team stats setting
-       * folded them into the pending count.
-       */
       pendingTeam: number;
     };
     reviewTimeHours: Summary | null;
@@ -144,18 +120,10 @@ export interface StatsReport {
   };
 }
 
-/**
- * Rounds to two decimals, which keeps the JSON readable while an hour
- * still resolves to 36 seconds.
- */
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-/**
- * Summarizes one series into count, mean, and the percentiles. Returns
- * null for an empty series, so consumers can tell no data from zeros.
- */
 function summarize(values: number[]): Summary | null {
   if (values.length === 0) {
     return null;
@@ -178,11 +146,6 @@ function prRef(pr: PrRef): PrRef {
   return { repo: pr.repo, number: pr.number, title: pr.title, url: pr.url, state: pr.state };
 }
 
-/**
- * Returns the hours from creation to merge, following the same outcome
- * rules as the merge stats. A merged PR reports its merge time even
- * though GitHub also marks it closed.
- */
 function hoursToMerge(entry: SizeEntry): number | null {
   if (entry.mergedAt === null) {
     return null;
@@ -192,9 +155,7 @@ function hoursToMerge(entry: SizeEntry): number | null {
 }
 
 /**
- * Returns the hours from creation to a close without a merge. A reopened
- * PR counts as open and reports null even though it still carries its
- * old close time, like in the merge stats.
+ * A reopened PR still carries its old close time.
  */
 function hoursToClose(entry: SizeEntry): number | null {
   if (entry.mergedAt !== null || entry.pr.state === 'open' || entry.closedAt === null) {
@@ -204,15 +165,6 @@ function hoursToClose(entry: SizeEntry): number | null {
   return round(durationHours(entry.pr.createdAt, entry.closedAt));
 }
 
-/**
- * Builds the serializable stats report from one load and the analysis
- * options. Configures the shared time-mode singleton from the options
- * before anything computes, like the view model does, so the durations
- * come out the same as on screen. The team flag mirrors the team stats
- * setting, which lives outside the options, and folds the cycles a team
- * of yours was asked for into the review counts and summaries the way
- * the review tab does.
- */
 export function buildStatsReport(raw: RawData, options: OptionsState, teamReviewStats = false): StatsReport {
   const timezone = resolveTimezone(options.tz === '' ? undefined : options.tz);
 
@@ -378,28 +330,14 @@ export function buildStatsReport(raw: RawData, options: OptionsState, teamReview
   };
 }
 
-/**
- * Resolves the file the settings dialog exports to, pr-stats.json in the
- * directory pr-stats was started from. The dialog shows the path on the
- * export row.
- */
 export function exportFile(): string {
   return join(process.cwd(), 'pr-stats.json');
 }
 
-/**
- * Writes the stats report for the loaded data to the export file,
- * overwriting a previous export. The team flag passes through to the
- * report builder.
- */
 export function exportStatsFile(raw: RawData, options: OptionsState, teamReviewStats = false): void {
   writeFileAtomic(exportFile(), `${JSON.stringify(buildStatsReport(raw, options, teamReviewStats), null, 2)}\n`);
 }
 
-/**
- * Writes one progress line in place on stderr, so a piped stdout stays
- * pure JSON. Progress only renders when stderr is a terminal.
- */
 function reportPhase(phase: LoadPhase): void {
   if (!process.stderr.isTTY) {
     return;
@@ -417,13 +355,6 @@ function clearPhase(): void {
   }
 }
 
-/**
- * Runs the full fetch pipeline and prints the stats report to stdout as
- * JSON, the --json code path that replaces the TUI. The team flag comes
- * from the saved team stats setting, so the report matches what the TUI
- * would show. Never returns, the process exits once the report is printed
- * or the load failed.
- */
 export async function runJsonStats(
   options: OptionsState,
   bypassCache: boolean,
@@ -435,9 +366,7 @@ export async function runJsonStats(
     clearPhase();
 
     /**
-     * Exiting right after a large write can truncate a piped stdout, so
-     * the exit waits for the write callback, which fires once the data
-     * reached the OS.
+     * Exiting right after a large write can truncate a piped stdout.
      */
     await new Promise<void>((resolve) => {
       process.stdout.write(`${JSON.stringify(buildStatsReport(raw, options, teamReviewStats), null, 2)}\n`, () => {

@@ -26,27 +26,14 @@ const {
   json,
 } = bootstrap();
 
-/**
- * The --json flag replaces the TUI with one load that prints the stats
- * report to stdout, so the screen never flips to the alternate buffer
- * and the output pipes cleanly. runJsonStats exits the process either
- * way, so nothing below it runs.
- */
+// runJsonStats exits the process, so the renderer never takes over the screen
 if (json) {
   await runJsonStats(initial, noCache, teamReviewStats);
 }
 
 /**
- * OpenTUI's default exitSignals includes SIGPIPE and registers a process
- * listener that destroys the renderer when any of them fires. Node ignores
- * SIGPIPE by default, but attaching any JS listener makes Node deliver it.
- * The copy-links feature used to pipe the link into clipboard helpers
- * whose broken pipes would quit the whole TUI on a click. The copy now
- * goes through OpenTUI's clipboard service without any helper commands,
- * but a write can still hit a broken pipe when stdout is piped and the
- * reader goes away. This set mirrors OpenTUI's default minus SIGPIPE, so
- * a broken pipe falls back to Node's harmless default and surfaces as a
- * plain write error instead of killing the TUI.
+ * Leaves out SIGPIPE, because listening for it makes Node deliver it and a broken stdout pipe
+ * destroys the renderer.
  */
 const exitSignals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGQUIT', 'SIGABRT', 'SIGHUP', 'SIGBREAK', 'SIGBUS'];
 

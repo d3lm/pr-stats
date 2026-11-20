@@ -27,59 +27,19 @@ import { buildVolumeCard } from './charts/volume';
 import { mondayOf, WEEK_MS } from './charts/weeks';
 import { durationLead, toPrRows, type PrList } from './rows';
 
-/**
- * Everything a stats tab renders, shared between the review tab and the
- * size tab so both go through the same panel.
- */
 export interface StatsView {
   empty: string | null;
-  /**
-   * Holds the pinned summary cells above the charts, rendered as one row
-   * with the cells spread across the width.
-   */
   strip: Line[];
-  /**
-   * Holds the headline percentiles that render right-aligned in the scope
-   * row, or null when there is nothing to summarize.
-   */
   headline: Line | null;
-  /**
-   * Titles the full-width distribution strip at the top of the scroll
-   * area.
-   */
   distributionTitle: string;
-  /**
-   * The message shown in place of the card grid when there is nothing to
-   * chart.
-   */
   noCharts: string;
-  /**
-   * Holds the chart cards in display order. The panel deals them into
-   * the responsive grid row by row, left cell first, so consecutive
-   * cards share a row and a conditional card never leaves a hole. On
-   * narrow terminals the cards stack in this order.
-   */
   cards: Card[];
   distribution: Distribution | null;
   lists: PrList[];
-  /**
-   * Reports whether the tab has a capped card the x key can expand or an
-   * expanded one it can collapse, so the footer only hints the key when
-   * it does something.
-   */
   expandable: boolean;
-  /**
-   * Mirrors whether the capped cards render expanded, so the footer
-   * words the x hint as expand or collapse.
-   */
   expanded: boolean;
 }
 
-/**
- * Builds one strip cell, a bold count followed by its muted label. With
- * dimWhenZero set, a zero count renders fully dim so the quiet cells
- * recede.
- */
 function countCell(count: number, label: string, dimWhenZero = false): Line {
   const dim = dimWhenZero && count === 0;
 
@@ -90,21 +50,12 @@ function countCell(count: number, label: string, dimWhenZero = false): Line {
 }
 
 /**
- * Turns an encoded Monday back into an instant that zonedStamp maps into
- * the same week in every configured timezone. Noon UTC stays inside the
- * same local week for every offset the world uses, while midnight would
- * slip one week back in timezones behind UTC.
+ * Uses noon UTC because midnight would slip a week back in timezones west of UTC.
  */
 function mondayNoon(monday: number): Date {
   return new Date(monday + 12 * 3_600_000);
 }
 
-/**
- * Sums dated values into one entry per week for the linear trends, dated
- * on each week's Monday. Weeks without data get a zero entry, because a
- * quiet week really contributes nothing, unlike the median trends where
- * a gap carries the previous value forward.
- */
 function weeklySums(entries: { date: Date; value: number }[]): { date: Date; value: number }[] {
   const byWeek = new Map<number, number>();
 
@@ -126,13 +77,6 @@ function weeklySums(entries: { date: Date; value: number }[]): { date: Date; val
   return result;
 }
 
-/**
- * Builds one merge-rate entry per creation week, the merged share of that
- * week's concluded PRs as a percentage. Open PRs stay out of the rate
- * because their outcome is not known yet, so a week whose PRs are all
- * still open gets no entry and the trend carries the previous rate
- * forward.
- */
 function mergeRateEntries(stats: MergeStats): { date: Date; value: number }[] {
   const byWeek = new Map<number, { merged: number; concluded: number }>();
 
@@ -159,12 +103,6 @@ function mergeRateEntries(stats: MergeStats): { date: Date; value: number }[] {
   });
 }
 
-/**
- * Builds the off-hours gauge over the given instants, split by the
- * configured working calendar in the configured timezone. With working
- * windows set, the weekday rows split into work hours and after hours,
- * and without them weekdays form a single row against the weekend.
- */
 function buildOffHoursCard(subtitle: string, dates: Date[]): Card {
   const counts = { work: 0, after: 0, weekend: 0 };
 
@@ -186,14 +124,6 @@ function buildOffHoursCard(subtitle: string, dates: Date[]): Card {
   return buildGaugeCard({ title: 'Off-hours share', subtitle, rows });
 }
 
-/**
- * Builds the verdict gauge over the completed review cycles. The three
- * regular GitHub review states get one row each, and anything else, like
- * a dismissed review, folds into an other row that only shows when it
- * has entries. Every row renders in the chart bar color with the most
- * common verdict in the accent color, like the bars card, so the card
- * stays within the theme's hue instead of mixing the status colors.
- */
 function buildVerdictCard(reviewed: ReviewedEntry[]): Card {
   const countOf = (state: string) => reviewed.filter((entry) => entry.verdict === state).length;
   const approved = countOf('APPROVED');
@@ -219,24 +149,12 @@ function buildVerdictCard(reviewed: ReviewedEntry[]): Card {
   });
 }
 
-/**
- * The configured review target the review tab reports against. The hours
- * and label come from the review target option, and the percentile names
- * which percentile of the review times the headline checks against the
- * target.
- */
 export interface ReviewTarget {
   hours: number;
   label: string;
   percentile: number;
 }
 
-/**
- * Builds the headline segment that reports how far the target percentile
- * of the review times sits under or over the configured target. Meeting
- * the target exactly counts as within it, matching the service-level
- * gauge.
- */
 function targetStatus(sorted: number[], target: ReviewTarget): Span {
   const margin = target.hours - percentile(sorted, target.percentile);
 
@@ -250,15 +168,8 @@ function targetStatus(sorted: number[], target: ReviewTarget): Span {
 }
 
 /**
- * Builds everything the review tab renders. Call this after the time mode
- * is configured, because durations and buckets depend on it. The target
- * drives the miss list, the service-level gauge, and the headline's
- * target status. Passing a repo narrows every chart and list to that
- * repo. The width argument sizes the full-width distribution strip to the
- * visible pane, and the expanded flag lifts the row cap of the by-repo
- * comparison. The team flag mirrors the team stats setting and folds the
- * cycles a team of yours was asked for into every chart and count, and
- * without it the strip reports how many such reviews stay out.
+ * Reads durations and buckets from the global time mode, so the result depends on when
+ * configureTimeMode last ran.
  */
 export function buildReviewView(
   raw: RawData,
@@ -276,15 +187,6 @@ export function buildReviewView(
     includeTeam: teamReviewStats,
   });
 
-  /**
-   * The reviewed entries hold one per completed request-review cycle,
-   * so a PR that came back to you counts twice there. The strip leads
-   * with the distinct PRs, which the cycles list carries one count for,
-   * and puts the rounds next to it so the two never get mistaken for each
-   * other. The team cell only shows while the team stats setting leaves
-   * team reviews out and there are some to leave out, so the strip stays
-   * as wide as before for everyone without team requests.
-   */
   const strip = [
     countCell(stats.cycles.length, 'PRs reviewed'),
     countCell(stats.reviewed.length, 'review rounds'),
@@ -327,11 +229,6 @@ export function buildReviewView(
     });
   }
 
-  /**
-   * The pending-age histogram only needs open requests, so it renders
-   * even when no review has completed yet and the other charts stay
-   * away.
-   */
   const pendingCard =
     stats.pending.length === 0
       ? null
@@ -349,22 +246,10 @@ export function buildReviewView(
 
   const sorted = [...stats.allHours].toSorted((a, b) => a - b);
 
-  /**
-   * The headline denominator counts the same kinds the reviewed entries
-   * hold, so a team-heavy dataset with the team stats on never reads as
-   * more reviews in the scope than in the whole.
-   */
   const total = raw.reviewResults.filter((result) => {
     return result.kind === 'reviewed' || (teamReviewStats && result.kind === 'team-reviewed');
   }).length;
 
-  /**
-   * The headline pairs the median with the target percentile, which stays
-   * p90 without a target. With a target set, the percentile the target
-   * checks takes the status color and a segment spells out how far it
-   * sits under or over the target, so the pinned row answers the target
-   * question at a glance.
-   */
   const secondPercentile = target === undefined || target.percentile === 50 ? 90 : target.percentile;
 
   const percentileColor = (percent: number): string => {
@@ -387,22 +272,10 @@ export function buildReviewView(
   const requestDates = [...stats.reviewed, ...stats.pending].map((entry) => entry.requestedAt);
   const reviewDates = stats.reviewed.map((entry) => entry.reviewedAt);
 
-  /**
-   * The age at request measures how long a PR already existed before the
-   * review request reached you, over the same completed and pending
-   * cycles the other request charts cover.
-   */
   const requestAges = [...stats.reviewed, ...stats.pending].map((entry) =>
     durationHours(entry.pr.createdAt, entry.requestedAt),
   );
 
-  /**
-   * The service-level gauge only renders with a configured target, and it
-   * leads the card grid because target adherence is the tab's headline
-   * question once a target is set. Pending reviews that have already
-   * waited past the target are guaranteed misses no matter when the
-   * review lands, so they join the denominator.
-   */
   let serviceCard: Card | null = null;
 
   if (target !== undefined) {
@@ -420,11 +293,6 @@ export function buildReviewView(
     });
   }
 
-  /**
-   * The by-repo comparison only makes sense on the aggregate view with
-   * more than one repo, because a single repo compares against nothing
-   * and the drilled-in views already scope every chart.
-   */
   const byRepoCard =
     repo === null && stats.byRepo.length > 1
       ? buildBarsCard({
@@ -504,13 +372,7 @@ export function buildReviewView(
     ...(byRepoCard === null ? [] : [byRepoCard]),
   ];
 
-  /**
-   * The strip spans the scroll area's content width, which is the terminal
-   * width minus one column of left padding and the two-column right
-   * padding that holds the scrollbar gutter. That right-aligns its end
-   * with the stats row above it and keeps a one-column gap to the
-   * overlaid scrollbar.
-   */
+  // the scroll area takes one column of padding and two of scrollbar gutter
   const distribution = buildDistribution({
     values: stats.allHours,
     width: Math.max(width - 3, 40),
@@ -530,11 +392,6 @@ export function buildReviewView(
   };
 }
 
-/**
- * Builds everything the size tab renders. Passing a repo narrows every
- * chart and list to that repo. The width argument sizes the full-width
- * distribution strip to the visible pane.
- */
 export function buildSizeView(
   raw: RawData,
   sizeTarget: { lines?: number; files?: number } | undefined,
@@ -571,11 +428,6 @@ export function buildSizeView(
     countCell(sizes.length - open, 'merged or closed', true),
   ];
 
-  /**
-   * Inaccessible PRs never make it into the size entries, so their count
-   * is only known across all repos and the cell stays off the per-repo
-   * views.
-   */
   if (repo === null) {
     strip.push([{ text: `${raw.authoredTotal - raw.sizes.length} inaccessible (excluded)`, fg: theme.dim }]);
   }
@@ -593,9 +445,6 @@ export function buildSizeView(
     { text: `   ${sizes.length} of ${raw.sizes.length} PRs`, fg: theme.muted },
   ];
 
-  /**
-   * The target gauge only renders with a configured size target.
-   */
   const targetCard =
     stats.met !== undefined && stats.targetLabel !== undefined
       ? buildGaugeCard({
@@ -677,12 +526,6 @@ export function buildSizeView(
   return { empty: null, ...base, strip, headline, cards, distribution, lists };
 }
 
-/**
- * Builds everything the comments tab renders, from the comment counts
- * that ride along on the size entries. Passing a repo narrows every chart
- * and list to that repo. The width argument sizes the full-width
- * distribution strip to the visible pane.
- */
 export function buildCommentView(raw: RawData, repo: string | null = null, width = 100): StatsView {
   const base = {
     strip: [] as Line[],
@@ -715,11 +558,6 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
     countCell(stats.uncommented, 'without comments', true),
   ];
 
-  /**
-   * Inaccessible PRs never make it into the entries, so their count is
-   * only known across all repos and the cell stays off the per-repo
-   * views, like on the size tab.
-   */
   if (repo === null) {
     strip.push([{ text: `${raw.authoredTotal - raw.sizes.length} inaccessible (excluded)`, fg: theme.dim }]);
   }
@@ -799,16 +637,6 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
   return { empty: null, ...base, strip, headline, cards, distribution, lists };
 }
 
-/**
- * Builds everything the merged sub-tab of the Your PRs tab renders, the
- * outcome counts of your authored PRs, the merge-time charts over the
- * merged ones, and the first-review charts over the PRs that received a
- * review. Call this after the time mode is configured, because the
- * durations and buckets depend on it. Passing a repo narrows every
- * chart and list to that repo. The width argument sizes the full-width
- * distribution strip to the visible pane, and the expanded flag lifts
- * the row cap of the reviewer leaderboard.
- */
 export function buildMergedView(raw: RawData, repo: string | null = null, width = 100, expanded = false): StatsView {
   const base = {
     strip: [] as Line[],
@@ -843,11 +671,6 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     countCell(stats.open.length, 'still open', true),
   ];
 
-  /**
-   * Inaccessible PRs never make it into the size entries, so their count
-   * is only known across all repos and the cell stays off the per-repo
-   * views, like on the size tab.
-   */
   if (repo === null) {
     strip.push([{ text: `${raw.authoredTotal - raw.sizes.length} inaccessible (excluded)`, fg: theme.dim }]);
   }
@@ -878,11 +701,6 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     });
   }
 
-  /**
-   * The leaderboard counts reviews on every authored PR, merged or not,
-   * so it renders even when no PR has merged yet and the merge charts
-   * stay away.
-   */
   const reviewerCard =
     reviewers.leaderboard.length === 0
       ? null
@@ -902,14 +720,6 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
 
   const expandable = reviewers.leaderboard.length > MAX_BARS;
 
-  /**
-   * The first-review charts measure how long your authored PRs waited
-   * for their first review from someone else, the author-side counterpart
-   * of the review tab. They only need reviews, not merges, so they render
-   * even when no PR has merged yet and the merge charts stay away.
-   * The awaiting histogram covers the open PRs still without a review,
-   * mirroring the pending card on the review tab.
-   */
   const firstReviewCards = [
     ...(firstReview.received.length === 0
       ? []
@@ -1013,12 +823,7 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     buildCumulativeCard({
       title: 'Created vs merged',
       series: [
-        /**
-         * The created line stays a neutral gray because every theme preset
-         * keeps chartLine and accent in one hue family, which made the two
-         * lines indistinguishable. The gray also survives theme changes,
-         * since the presets only rotate the hue-carrying colors.
-         */
+        // theme presets put chartLine and accent in one hue, so only gray stays distinguishable
         { label: 'created', dates: created, color: theme.muted },
         { label: 'merged', dates: mergeDates, color: theme.accent },
       ],
@@ -1061,10 +866,6 @@ function count(value: number): string {
   return formatCount(Math.round(value));
 }
 
-/**
- * Formats a signed line count with an explicit sign, so the net-lines
- * trend tells growth from shrinkage at a glance.
- */
 function netCount(value: number): string {
   return value < 0 ? `-${count(-value)}` : `+${count(value)}`;
 }

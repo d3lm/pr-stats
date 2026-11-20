@@ -7,22 +7,10 @@ export interface ReviewedEntry {
   requestedAt: Date;
   reviewedAt: Date;
   hours: number;
-  /**
-   * Holds the GitHub state of the review that closed the cycle, like
-   * APPROVED or CHANGES_REQUESTED.
-   */
   verdict: string;
-  /**
-   * Holds the total lines the PR changed, additions plus deletions,
-   * measured at fetch time rather than at review time.
-   */
   lines: number;
 }
 
-/**
- * One open PR with an unanswered review request, as pendingRequests lists
- * them, before any duration is measured.
- */
 export interface PendingRequest {
   pr: ReviewPr;
   requestedAt: Date;
@@ -32,10 +20,6 @@ export interface PendingEntry extends PendingRequest {
   hours: number;
 }
 
-/**
- * One open PR where only a team you belong to was asked for a review, as
- * teamPendingRequests lists them, named by the team's combined org/slug.
- */
 export interface TeamPendingRequest extends PendingRequest {
   team: string;
 }
@@ -44,10 +28,6 @@ export interface TeamPendingEntry extends TeamPendingRequest {
   hours: number;
 }
 
-/**
- * One open PR you reviewed without an unanswered request, as
- * latestReviews lists them, before any duration is measured.
- */
 export interface LatestReview {
   pr: ReviewPr;
   reviewedAt: Date;
@@ -57,14 +37,6 @@ export interface ReviewingEntry extends LatestReview {
   hours: number;
 }
 
-/**
- * Lists the open PRs with an unanswered review request, oldest request
- * first, without measuring how long they waited. The queue views and the
- * pickers of the Awaiting you tab read this instead of the full
- * statistics, because they need no review durations and the durations
- * are what makes the full computation expensive, so the tab rebuilds
- * cheaply on every grouping, scope, or read-state change.
- */
 export function pendingRequests(results: ReviewResult[]): PendingRequest[] {
   const pending: PendingRequest[] = [];
 
@@ -77,13 +49,6 @@ export function pendingRequests(results: ReviewResult[]): PendingRequest[] {
   return pending.toSorted((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
 }
 
-/**
- * Lists the open PRs where only a team you belong to was asked for a
- * review and the request still waits, oldest request first, the team
- * counterpart of pendingRequests. The queue view lists them in their own
- * section while the team setting is on, and the stats fold them into the
- * pending requests while the team stats setting is on.
- */
 export function teamPendingRequests(results: ReviewResult[]): TeamPendingRequest[] {
   const pending: TeamPendingRequest[] = [];
 
@@ -96,16 +61,6 @@ export function teamPendingRequests(results: ReviewResult[]): TeamPendingRequest
   return pending.toSorted((a, b) => a.requestedAt.getTime() - b.requestedAt.getTime());
 }
 
-/**
- * Lists the open PRs you already reviewed that carry no unanswered
- * request, one entry per PR with your latest review time, longest since
- * that review first, without measuring the durations. The per-cycle
- * results collapse into one entry per PR, and unrequested results count
- * too, because a review without a personal request still puts the PR on
- * your plate until it closes, and so do the reviews you gave on a team
- * request. A PR with an unanswered request, direct or of your team, sits
- * in a pending list instead, so the lists never share a PR.
- */
 export function latestReviews(results: ReviewResult[]): LatestReview[] {
   const pendingKeys = new Set<string>();
 
@@ -144,51 +99,20 @@ export function latestReviews(results: ReviewResult[]): LatestReview[] {
 export interface ReviewStats {
   reviewed: ReviewedEntry[];
   pending: PendingEntry[];
-  /**
-   * Holds the open PRs you already reviewed that have no unanswered
-   * re-request, one entry per PR with your latest review time, longest
-   * since that review first. A re-requested PR sits in the pending queue
-   * instead, so the two queues never share a PR.
-   */
   reviewing: ReviewingEntry[];
   expired: ReviewResult[];
   unrequested: ReviewResult[];
   /**
-   * Holds the completed cycles that a team of yours was asked for, with
-   * the same durations as the reviewed entries. They also sit among the
-   * reviewed entries while the team flag is on, and stand apart here
-   * either way, so the strip can report what the flag leaves out and the
-   * export can count them whatever the flag says.
+   * Holds team cycles even when includeTeam is off, so the strip can report what the flag leaves out.
    */
   teamReviewed: ReviewedEntry[];
-  /**
-   * Holds the open PRs where only a team of yours was asked and the
-   * request still waits, with the wait so far. They also sit among the
-   * pending entries while the team flag is on.
-   */
   teamPending: TeamPendingEntry[];
   allHours: number[];
   byRepo: [string, number[]][];
   misses: ReviewedEntry[];
-  /**
-   * Holds the number of completed request-review cycles per PR, one
-   * count for every PR with at least one completed cycle. A count above
-   * one means the PR came back to you after a review.
-   */
   cycles: number[];
 }
 
-/**
- * Derives the review-time statistics from classified raw results. This is
- * pure computation over data already in memory, so the caller can rerun it
- * with a different time mode or target without refetching. Configure the
- * time mode before calling, because durations depend on it. The options
- * carry the target hours for the miss list, the clock for the pending
- * and reviewing durations, and the includeTeam flag, which folds the
- * cycles a team of yours was asked for into the reviewed and the pending
- * entries, and the team requests on closed PRs into the expired ones.
- * Without the flag those cycles only show up in the team fields.
- */
 export function computeReviewStats(
   results: ReviewResult[],
   {
@@ -298,12 +222,6 @@ export interface SizeStats {
   targetLabel: string | undefined;
 }
 
-/**
- * Derives the size statistics from fetched PR sizes. Like the review
- * computation, this is pure and can rerun against cached sizes when the
- * size target changes. The options carry the line and file budgets for the
- * target gauge.
- */
 export function computeSizeStats(sizes: SizeEntry[], { sizeTarget }: { sizeTarget?: SizeTarget } = {}): SizeStats {
   const metrics = [
     { label: 'files changed', values: sizes.map((size) => size.files) },
@@ -349,34 +267,14 @@ export interface ClosedEntry {
 }
 
 export interface MergeStats {
-  /**
-   * Holds the merged PRs, most recently merged first, each with the time
-   * from creation to merge.
-   */
   merged: MergedEntry[];
-  /**
-   * Holds the PRs that were closed without a merge, most recently closed
-   * first, each with the time from creation to close.
-   */
   closed: ClosedEntry[];
-  /**
-   * Holds the PRs that are still open.
-   */
   open: SizeEntry[];
-  /**
-   * Holds the time to merge of every merged PR, in merged order.
-   */
   allHours: number[];
 }
 
 /**
- * Splits the authored PRs by outcome and derives the merge durations.
- * Like the other compute functions, this is pure computation over data
- * already in memory, so configure the time mode before calling because
- * the durations depend on it. A merged PR counts as merged even though
- * GitHub also reports it closed, and a reopened PR counts as open even
- * though it still carries its old close time. A closed PR without a
- * close time cannot happen on GitHub and gets dropped.
+ * GitHub reports a merged PR as closed too, and a reopened PR keeps its old close time.
  */
 export function computeMergeStats(sizes: SizeEntry[]): MergeStats {
   const merged: MergedEntry[] = [];
@@ -401,42 +299,18 @@ export function computeMergeStats(sizes: SizeEntry[]): MergeStats {
 
 export interface ReviewerRow {
   login: string;
-  /**
-   * Counts the distinct PRs this reviewer reviewed.
-   */
   prs: number;
-  /**
-   * Counts the review rounds this reviewer submitted across those PRs.
-   */
   reviews: number;
 }
 
 export interface ReviewerStats {
-  /**
-   * Holds one row per person who reviewed an authored PR, most PRs
-   * first. Ties break on the review count and then on the login, so the
-   * order stays stable across runs.
-   */
   leaderboard: ReviewerRow[];
-  /**
-   * Counts the merged PRs that received at least one review from
-   * someone else.
-   */
   mergedReviewed: number;
-  /**
-   * Counts the merged PRs that merged without any review from someone
-   * else.
-   */
   mergedUnreviewed: number;
 }
 
 /**
- * Derives who reviews the authored PRs from the reviews that ride along
- * on the size entries. The author argument names the PR author, whose
- * own logins get excluded, because GitHub records the author's inline
- * replies as reviews too. Reviews from deleted accounts carry no login
- * and stay out as well. Like the other compute functions, this is pure
- * computation over data already in memory.
+ * GitHub records the author's inline replies as reviews too.
  */
 export function computeReviewerStats(sizes: SizeEntry[], author: string): ReviewerStats {
   const byLogin = new Map<string, { prs: number; reviews: number }>();
@@ -453,6 +327,7 @@ export function computeReviewerStats(sizes: SizeEntry[], author: string): Review
       const counts = byLogin.get(login) ?? { prs: 0, reviews: 0 };
 
       counts.reviews += 1;
+
       byLogin.set(login, counts);
     }
 
@@ -486,50 +361,21 @@ export function computeReviewerStats(sizes: SizeEntry[], author: string): Review
 
 export interface FirstReviewEntry {
   entry: SizeEntry;
-  /**
-   * Holds when the first counted review landed.
-   */
   reviewedAt: Date;
-  /**
-   * Holds the time from the PR's creation to that review.
-   */
   hours: number;
 }
 
 export interface AwaitingFirstReview {
   entry: SizeEntry;
-  /**
-   * Holds how long the PR has waited since its creation.
-   */
   hours: number;
 }
 
 export interface FirstReviewStats {
-  /**
-   * Holds the PRs that received a review from someone else, in input
-   * order, each with the time to that first review.
-   */
   received: FirstReviewEntry[];
-  /**
-   * Holds the open PRs still waiting for their first review, longest
-   * wait first. Closed and merged PRs without a review are no longer
-   * waiting, so they stay out.
-   */
   awaiting: AwaitingFirstReview[];
-  /**
-   * Holds the time to first review of every received entry, in the same
-   * order.
-   */
   allHours: number[];
 }
 
-/**
- * Finds the first review on an authored PR from someone other than the
- * author. A review counts when it names a reviewer other than the
- * author and carries a submission time, the same rule the reviewer
- * stats use, so the author's own inline replies and reviews from
- * deleted accounts never count. Returns null when no review counts.
- */
 export function firstReviewOf(entry: SizeEntry, author: string): { reviewedAt: Date; hours: number } | null {
   let earliest: Date | null = null;
 
@@ -550,14 +396,6 @@ export function firstReviewOf(entry: SizeEntry, author: string): { reviewedAt: D
   return { reviewedAt: earliest, hours: durationHours(entry.pr.createdAt, earliest) };
 }
 
-/**
- * Derives how long the authored PRs waited for their first review from
- * someone else, the author-side counterpart of the review-time stats.
- * Like the other compute functions, this is pure computation over data
- * already in memory, so configure the time mode before calling because
- * the durations depend on it. The options carry the clock for the
- * waiting durations.
- */
 export function computeFirstReviewStats(
   sizes: SizeEntry[],
   author: string,
@@ -582,31 +420,12 @@ export function computeFirstReviewStats(
 }
 
 export interface CommentStats {
-  /**
-   * Holds one labeled series per comment kind, discussion, review, and
-   * their total, in the shape the spread and summary formatters share
-   * with the size metrics.
-   */
   metrics: SizeMetric[];
-  /**
-   * Holds the total comment count of every PR, in input order.
-   */
   totals: number[];
-  /**
-   * Counts the PRs that received no comments at all.
-   */
   uncommented: number;
-  /**
-   * Holds the commented PRs sorted by total comments, most first.
-   */
   top: SizeEntry[];
 }
 
-/**
- * Derives the comment statistics from fetched PR entries. The comment
- * counts ride along on the size fetch, so this is pure computation over
- * data already in memory, like the other compute functions.
- */
 export function computeCommentStats(sizes: SizeEntry[]): CommentStats {
   const metrics = [
     { label: 'discussion comments', values: sizes.map((size) => size.comments.discussion) },

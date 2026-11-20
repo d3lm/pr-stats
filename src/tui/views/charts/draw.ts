@@ -1,9 +1,5 @@
 import type { Line } from './model';
 
-/**
- * Cell-level scratch buffer for lines that place text at computed columns.
- * mergeCells() folds runs with the same color into spans.
- */
 export interface Cell {
   ch: string;
   fg?: string;
@@ -43,17 +39,10 @@ export function mergeCells(cells: Cell[]): Line {
   return line;
 }
 
-/**
- * Eighth-width block characters for the tip of a horizontal bar, indexed by
- * how many eighths of the final cell are filled.
- */
 const H_PARTIALS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
 
 /**
- * Builds a horizontal bar as spans. Full cells are painted with the cell
- * background so the bar stays continuous, and the boundary cell draws an
- * eighth-width block. A nonzero fraction always shows at least a sliver.
- * The result is padded to the full width.
+ * Paints full cells with a background color so the bar has no gaps between cells.
  */
 export function hbar(fraction: number, width: number, color: string): Line {
   const cells = Math.min(fraction, 1) * width;
