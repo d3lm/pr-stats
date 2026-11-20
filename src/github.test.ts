@@ -27,8 +27,13 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * The fake spaces its PRs an hour apart unless sameSecond puts them all in one second, honors the
+ * date qualifier of a query, and refuses pages past the first thousand results like GitHub.
+ */
 interface FakeSpec {
   counts: { review: number; requested?: number; authored: number; mentioned: number };
+  sameSecond?: boolean;
   failCalls?: number;
   failSearch?: 'review' | 'requested' | 'authored' | 'mentioned';
   failMessage?: string;
@@ -70,23 +75,45 @@ if (state.calls <= (spec.failCalls ?? 0) || mode === spec.failSearch) {
   process.stderr.write(spec.failMessage + '\\n');
   process.exit(1);
 }
-const total = spec.counts[mode] ?? 0;
 const perPage = Number(fields.per_page);
 const page = Number(fields.page);
-const items = [];
-for (let n = (page - 1) * perPage + 1; n <= Math.min(total, page * perPage); n++) {
-  items.push({
-    number: n,
+if ((page - 1) * perPage >= 1000) {
+  process.stderr.write('gh: Cannot access beyond the first 1000 results. (HTTP 422)\\n');
+  process.exit(1);
+}
+const iso = (ms) => new Date(ms).toISOString().replace(/\\.\\d{3}Z$/, 'Z');
+const matching = [];
+for (let n = 1; n <= (spec.counts[mode] ?? 0); n++) {
+  const created = Date.parse('2026-07-01T10:00:00Z') + (spec.sameSecond ? 0 : (n - 1) * 3_600_000);
+  matching.push({ n, created_at: iso(created), updated_at: iso(created + 86_400_000) });
+}
+const bound = /(created|updated):(\\S+)/.exec(q);
+const inWindow = (item) => {
+  if (bound === null) {
+    return true;
+  }
+  const at = Date.parse(item[bound[1] + '_at']);
+  const [from, to] = bound[2].startsWith('>=')
+    ? [bound[2].slice(2), null]
+    : bound[2].startsWith('<=')
+      ? [null, bound[2].slice(2)]
+      : bound[2].split('..');
+  return (from === null || at >= Date.parse(from)) && (to === null || at <= Date.parse(to));
+};
+const found = matching.filter(inWindow);
+const items = found.slice((page - 1) * perPage, page * perPage).map((item) => {
+  return {
+    number: item.n,
     repository_url: 'https://api.github.com/repos/acme/web',
-    title: 'pr ' + n,
-    html_url: 'https://github.com/acme/web/pull/' + n,
-    created_at: '2026-07-01T10:00:00Z',
-    updated_at: '2026-07-02T10:00:00Z',
+    title: 'pr ' + item.n,
+    html_url: 'https://github.com/acme/web/pull/' + item.n,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
     draft: false,
     state: 'open',
-  });
-}
-process.stdout.write(JSON.stringify({ total_count: total, items }));
+  };
+});
+process.stdout.write(JSON.stringify({ total_count: found.length, items }));
 `,
   );
 
@@ -192,8 +219,8 @@ test('each mode is one advanced search query with the alternatives grouped by OR
   });
 });
 
-test('pages until the total is reached and reports the cap at a thousand', async () => {
-  installFakeGh({ counts: { review: 250, authored: 1000, mentioned: 1200 } });
+test('pages until the total is reached, and a total of exactly a thousand is complete', async () => {
+  installFakeGh({ counts: { review: 250, authored: 1000, mentioned: 1 } });
 
   const review = await searchPrs({ ...searchArgs, mode: 'review' });
 
@@ -204,14 +231,43 @@ test('pages until the total is reached and reports the cap at a thousand', async
   const authored = await searchPrs({ ...searchArgs, mode: 'authored' });
 
   expect(authored.items).toHaveLength(1000);
-  expect(authored.capped).toBe(true);
+  expect(authored.capped).toBe(false);
+  expect(loggedCalls()).toHaveLength(13);
+});
 
+test('a search past the thousand result cap splits its date range until every PR is found', async () => {
+  installFakeGh({ counts: { review: 2500, requested: 1500, authored: 1, mentioned: 2500 } });
+
+  const review = await searchPrs({ ...searchArgs, mode: 'review' });
+  const requested = await searchPrs({ ...searchArgs, mode: 'requested' });
   const mentioned = await searchPrs({ ...searchArgs, mode: 'mentioned' });
 
-  expect(mentioned.items).toHaveLength(1000);
-  expect(mentioned.capped).toBe(true);
-  expect(loggedCalls()).toHaveLength(23);
-});
+  for (const [result, total] of [
+    [review, 2500],
+    [requested, 1500],
+    [mentioned, 2500],
+  ] as const) {
+    expect(result.capped).toBe(false);
+    expect(new Set(result.items.map((item) => item.number)).size).toBe(total);
+    expect(result.items).toHaveLength(total);
+  }
+
+  const queries = loggedCalls().map((call) => call.q);
+
+  expect(queries[0]).toContain('created:>=2026-06-01 ');
+  expect(queries.some((q) => /created:2026-06-01\.\.\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ /.test(q))).toBe(true);
+  expect(queries.some((q) => /is:open created:<=\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ /.test(q))).toBe(true);
+  expect(queries.some((q) => /updated:>=\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(q))).toBe(true);
+}, 60_000);
+
+test('a single second with more than a thousand results reports the cap', async () => {
+  installFakeGh({ counts: { review: 1, authored: 1200, mentioned: 1 }, sameSecond: true });
+
+  const authored = await searchPrs({ ...searchArgs, mode: 'authored' });
+
+  expect(authored.items).toHaveLength(1000);
+  expect(authored.capped).toBe(true);
+}, 30_000);
 
 test('concurrent searches run one at a time and pace their pages under the search bound', async () => {
   installFakeGh({ counts: { review: 150, authored: 150, mentioned: 1 } });

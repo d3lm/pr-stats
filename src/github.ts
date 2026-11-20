@@ -471,31 +471,60 @@ function orGroup(terms: string[]): string {
   return terms.length === 1 ? terms[0] : `(${terms.join(' OR ')})`;
 }
 
-function buildSearchQuery({ user, sinceIso, repos, includeDrafts, mode }: SearchArgs): string {
+/**
+ * Holds the inclusive bounds of a date qualifier, where a null bound leaves that side open.
+ */
+interface SearchWindow {
+  from: string | null;
+  to: string | null;
+}
+
+function dateField(mode: SearchArgs['mode']): 'created' | 'updated' {
+  return mode === 'mentioned' ? 'updated' : 'created';
+}
+
+function initialWindow({ sinceIso, mode }: SearchArgs): SearchWindow {
+  return { from: mode === 'requested' ? null : sinceIso, to: null };
+}
+
+function dateTerm(field: 'created' | 'updated', { from, to }: SearchWindow): string[] {
+  if (from === null && to === null) {
+    return [];
+  }
+
+  if (to === null) {
+    return [`${field}:>=${from}`];
+  }
+
+  if (from === null) {
+    return [`${field}:<=${to}`];
+  }
+
+  return [`${field}:${from}..${to}`];
+}
+
+function buildSearchQuery({ user, repos, includeDrafts, mode }: SearchArgs, window: SearchWindow): string {
   const terms = ['type:pr'];
+  const date = dateTerm(dateField(mode), window);
 
   switch (mode) {
     case 'review': {
-      terms.push(
-        orGroup([`review-requested:${user}`, `reviewed-by:${user}`]),
-        `-author:${user}`,
-        `created:>=${sinceIso}`,
-      );
+      terms.push(orGroup([`review-requested:${user}`, `reviewed-by:${user}`]), `-author:${user}`, ...date);
 
       break;
     }
     case 'requested': {
-      terms.push(`review-requested:${user}`, `-author:${user}`, 'is:open');
+      terms.push(`review-requested:${user}`, `-author:${user}`, 'is:open', ...date);
 
       break;
     }
     case 'authored': {
-      terms.push(`author:${user}`, `created:>=${sinceIso}`);
+      terms.push(`author:${user}`, ...date);
 
       break;
     }
     default: {
-      terms.push(`(mentions:${user} OR ("@${user}" involves:${user}))`, `updated:>=${sinceIso}`);
+      terms.push(`(mentions:${user} OR ("@${user}" involves:${user}))`, ...date);
     }
   }
 
@@ -557,30 +586,104 @@ function fetchSearchPage(params: Record<string, string>): Promise<SearchPage> {
  */
 const searchGate = createLimiter(1);
 
+/**
+ * GitHub search holds no PRs from before its launch, so an open lower bound splits from here.
+ */
+const SEARCH_EPOCH = '2008-01-01T00:00:00Z';
+
+function searchTime(ms: number): string {
+  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * Splits at second precision because that is the finest unit the date qualifiers accept. The newer
+ * half keeps an open upper bound, so a PR that appears or updates during the load still matches.
+ */
+function splitWindow(window: SearchWindow, now: number): [SearchWindow, SearchWindow] | null {
+  const from = Date.parse(window.from ?? SEARCH_EPOCH);
+  const to = window.to === null ? now : Date.parse(window.to);
+  const middle = Math.floor((from + to) / 2000) * 1000;
+
+  if (middle + 1000 > to) {
+    return null;
+  }
+
+  return [
+    { from: window.from, to: searchTime(middle) },
+    { from: searchTime(middle + 1000), to: window.to },
+  ];
+}
+
+interface Collected {
+  items: Map<string, SearchApiItem>;
+  capped: boolean;
+}
+
+/**
+ * Collects the older half first, because an update during the load only moves a PR into a newer
+ * window, where the later collection finds it again instead of missing it.
+ */
+async function collectWindow(
+  args: SearchArgs,
+  params: Record<string, string>,
+  window: SearchWindow,
+  collected: Collected,
+): Promise<void> {
+  const query = { q: buildSearchQuery(args, window), ...params };
+  const first = await fetchSearchPage({ ...query, page: '1' });
+
+  if (first.total_count > SEARCH_LIMIT) {
+    const halves = splitWindow(window, Date.now());
+
+    if (halves !== null) {
+      await collectWindow(args, params, halves[0], collected);
+      await collectWindow(args, params, halves[1], collected);
+
+      return;
+    }
+
+    collected.capped = true;
+  }
+
+  let result = first;
+  let fetched = 0;
+
+  for (let page = 1; ; page++) {
+    if (page > 1) {
+      result = await fetchSearchPage({ ...query, page: String(page) });
+    }
+
+    for (const item of result.items) {
+      collected.items.set(item.html_url, item);
+    }
+
+    fetched += result.items.length;
+
+    if (result.items.length === 0 || fetched >= result.total_count || page >= SEARCH_LIMIT / SEARCH_PAGE_SIZE) {
+      break;
+    }
+  }
+}
+
+/**
+ * A search with more results than GitHub pages through runs again over halves of its date range
+ * until every part fits, and reports capped only when a single second holds too many.
+ */
 export function searchPrs(args: SearchArgs): Promise<SearchResult> {
   return searchGate(async () => {
     const params: Record<string, string> = {
-      q: buildSearchQuery(args),
       advanced_search: 'true',
       per_page: String(SEARCH_PAGE_SIZE),
       // relevance ranking of a text search shifts between pages, which drops and repeats items
       ...(args.mode === 'mentioned' ? { sort: 'updated', order: 'desc' } : {}),
     };
 
-    const items: SearchApiItem[] = [];
+    const collected: Collected = { items: new Map(), capped: false };
 
-    for (let page = 1; page <= SEARCH_LIMIT / SEARCH_PAGE_SIZE; page++) {
-      const result = await fetchSearchPage({ ...params, page: String(page) });
-
-      items.push(...result.items);
-
-      if (result.items.length === 0 || items.length >= result.total_count) {
-        break;
-      }
-    }
+    await collectWindow(args, params, initialWindow(args), collected);
 
     return {
-      items: items.map((item) => {
+      items: [...collected.items.values()].map((item) => {
         return {
           number: item.number,
           repository: { nameWithOwner: item.repository_url.replace(`${API_BASE}/repos/`, '') },
@@ -592,7 +695,7 @@ export function searchPrs(args: SearchArgs): Promise<SearchResult> {
           state: item.state,
         };
       }),
-      capped: items.length >= SEARCH_LIMIT,
+      capped: collected.capped,
     };
   });
 }
