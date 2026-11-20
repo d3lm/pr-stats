@@ -2,25 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.2.28](https://github.com/d3lm/pr-stats/releases/tag/v0.2.28) - 2026-11-20
+## Unreleased
 
 ### Features
 
-- feat: fold the three stats tabs into one Stats tab with sub-tabs ([f3a5b75](https://github.com/d3lm/pr-stats/commit/f3a5b754d83fa8534841bdc0732bf0dbc8d152a5))
-- feat: accept owner/* and * patterns in the repository filter ([3def256](https://github.com/d3lm/pr-stats/commit/3def25661787ad2b09d3a60b2fb2cc38ca5c0174))
-- feat: add an all-repos row for each owner to the repository list ([5c560a3](https://github.com/d3lm/pr-stats/commit/5c560a39f32e9ca4f92a93e17d45dde173538621))
+- feat: fold the three stats tabs into one Stats tab with sub-tabs ([dd1314f](https://github.com/d3lm/pr-stats/commit/dd1314fed7d6181f8f37816c8b3b591a4c64f89b))
+- feat: accept owner/* and * patterns in the repository filter ([c56c14a](https://github.com/d3lm/pr-stats/commit/c56c14a00760e5bdad253d3201cd6d463b4a69d7))
+- feat: add an all-repos row for each owner to the repository list ([6717455](https://github.com/d3lm/pr-stats/commit/6717455eb0beb35163fcea03e84809cba6f8fd9b))
 
 ### Bug Fixes
 
-- fix: keep review requests on PRs older than the window in the queue ([355508e](https://github.com/d3lm/pr-stats/commit/355508efd5b8a931828429a89c0d9b62a3afe388))
-- fix: ignore mentions inside code and HTML comments ([115c167](https://github.com/d3lm/pr-stats/commit/115c16714e0d35bf2ef19951e75eb930056d2e41))
-- fix: keep a zero-delay loading indicator up for its minimum duration ([127a316](https://github.com/d3lm/pr-stats/commit/127a316377aa81d4c37d818fa8189486a446f054))
-- fix: give every scroll input in the stats panes one owner and one step ([086f957](https://github.com/d3lm/pr-stats/commit/086f957b2474365509b442e08d33215d24a8c6fc))
-- fix: split searches past GitHub's 1000 result cap by date range ([c0c3cd8](https://github.com/d3lm/pr-stats/commit/c0c3cd8e0efcf77d8c4501976e97b71c9c89f3f5))
+- fix: keep review requests on PRs older than the window in the queue ([ad5c7b4](https://github.com/d3lm/pr-stats/commit/ad5c7b475e8a2650129d05f81fe36bc57273b6f2))
+- fix: ignore mentions inside code and HTML comments ([e7ffb85](https://github.com/d3lm/pr-stats/commit/e7ffb85d3b97f0a170c4117675966739f3a358d4))
+- fix: keep a zero-delay loading indicator up for its minimum duration ([bc1ed51](https://github.com/d3lm/pr-stats/commit/bc1ed51208d221e72ab672d1e3351c8375440517))
+- fix: give every scroll input in the stats panes one owner and one step ([b45417c](https://github.com/d3lm/pr-stats/commit/b45417c7cd43781b037b86d96b5fceabdb817b95))
+- fix: split searches past GitHub's 1000 result cap by date range ([2ff781a](https://github.com/d3lm/pr-stats/commit/2ff781a3fc6a7a9255af989d87fd2717e53b12bd))
 
 ### Documentation
 
-- docs: rewrite the README and split the details into docs/ ([5b9f1d0](https://github.com/d3lm/pr-stats/commit/5b9f1d0681ca13017d5d78dafe938a8fb22a2b2c))
+- docs: rewrite the README and split the details into docs/ ([67c3fa2](https://github.com/d3lm/pr-stats/commit/67c3fa2c4ecb22f10fc05e198e2560fe9920bdda))
 
 ## [0.2.27](https://github.com/d3lm/pr-stats/releases/tag/v0.2.27) - 2026-09-08
 
