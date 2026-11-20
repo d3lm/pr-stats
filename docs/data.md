@@ -6,6 +6,8 @@ The app searches for reviewed PRs, outstanding review requests, authored PRs, an
 
 GitHub search excludes repositories that your account or token cannot access. This can produce an empty view without an error. See the [token requirements](../README.md#use-a-github-token) and use `--repo owner/name` to expose access errors for a specific repository.
 
+GitHub returns at most 1000 results for one search. A search with more results runs again over halves of its date range until each part fits, so a long `since` window costs more requests but still finds every PR.
+
 Searches run sequentially, with paced requests for each page. The default policy allows 25 search requests per minute and retries rate-limited requests up to three times. The header shows a countdown during a wait. If requests still fail, the app keeps the previous data and asks you to reload later.
 
 Narrow the search with `--repo` or `--since` when loads take too long. See [GitHub access](../src/github.ts) for search queries, pagination, and retry behavior, and [data loading](../src/tui/data/load.ts) for load coordination.
