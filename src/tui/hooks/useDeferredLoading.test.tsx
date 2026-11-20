@@ -5,12 +5,6 @@ import { useDeferredLoading } from './useDeferredLoading';
 
 const MIN_DURATION = 400;
 
-/**
- * Starts loading on mount and finishes in a layout effect of the same
- * commit, so React re-renders synchronously, before any timer the hook
- * set up could fire. That is the shape of a load that resolves at once,
- * like the startup snapshot the App shows with a zero delay.
- */
 function InstantLoad({ showDelay }: { showDelay: number }) {
   const [loading, setLoading] = useState(true);
   const visible = useDeferredLoading(loading, { showDelay, minDuration: MIN_DURATION });
@@ -34,10 +28,7 @@ test('an indicator shown from the first render lingers for the minimum even when
   const setup = await renderApp(<InstantLoad showDelay={0} />, { width: 20, height: 1 });
 
   try {
-    // well inside the minimum, the indicator that showed on the first frame is still up
     expect(await frameAfter(MIN_DURATION / 4, setup)).toContain('shown');
-
-    // past the minimum, it goes
     expect(await frameAfter(MIN_DURATION, setup)).toContain('hidden');
   } finally {
     destroyApp(setup);

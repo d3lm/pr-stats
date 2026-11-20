@@ -3,26 +3,11 @@ import { theme } from '../theme';
 
 const MODAL_WIDTH = 64;
 
-/**
- * Centered modal overlay with the title in a small tab whose label row
- * doubles as the panel's top border. Both the options and the settings
- * dialog render inside this frame.
- */
 export function ModalFrame({ title, children }: { title: string; children: ReactNode }) {
-  /**
-   * Total tab width counting the label, one column of padding on each side,
-   * and the two border columns.
-   */
   const tabWidth = title.length + 4;
 
   const tabTopRow = `┌${'─'.repeat(tabWidth - 2)}┐`;
 
-  /**
-   * Border segment that follows the label on the title row. It turns the
-   * tab's right border into the panel's top border and ends at the panel's
-   * top-right corner, so the label sits on the same row as the panel's top
-   * border.
-   */
   const tabTitleSuffix = ` └${'─'.repeat(MODAL_WIDTH - tabWidth - 1)}┐`;
 
   return (
@@ -60,13 +45,6 @@ export function ModalFrame({ title, children }: { title: string; children: React
   );
 }
 
-/**
- * Full-width selectable row with the label on the left and the given value
- * content right-aligned. The selected row gets a warm background and an
- * accent bar that sits on the modal border itself, drawn one column left
- * of the row over the border character. Rows never clip children, so the
- * overlay renders outside the row's own bounds.
- */
 export function ModalRow({ label, isSelected, children }: { label: string; isSelected: boolean; children: ReactNode }) {
   return (
     <box
@@ -90,12 +68,6 @@ export function ModalRow({ label, isSelected, children }: { label: string; isSel
   );
 }
 
-/**
- * Focused text input that replaces the value slot of a row while it is
- * being edited. It reports every keystroke through onDraft and the enter
- * press through onSubmit, with the dialogs' commit handlers reading the
- * final draft.
- */
 export function ModalInput({
   width,
   value,

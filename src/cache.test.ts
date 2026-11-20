@@ -35,6 +35,7 @@ let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'pr-stats-cache-'));
   process.env.PR_STATS_CACHE_DIR = dir;
+
   configureCache(true);
 });
 
@@ -97,7 +98,6 @@ test('clearCache deletes the store files only while enabled', () => {
 });
 
 test('cacheSize sums the files in the cache directory and survives a missing one', () => {
-  // the temp directory starts empty
   expect(cacheSize()).toBe(0);
 
   writeFileSync(join(dir, 'details.json'), 'x'.repeat(1500));
@@ -105,15 +105,12 @@ test('cacheSize sums the files in the cache directory and survives a missing one
   mkdirSync(join(dir, 'nested'));
   writeFileSync(join(dir, 'nested', 'ignored.json'), 'z'.repeat(4096));
 
-  // only the direct files count, and the settings file counts like the data
   expect(cacheSize()).toBe(1548);
 
-  // a clear takes the data file out of the sum and leaves the settings in
   clearCache();
 
   expect(cacheSize()).toBe(48);
 
-  // the size reads the disk whether or not the cache is enabled
   configureCache(false);
 
   expect(cacheSize()).toBe(48);
@@ -147,7 +144,6 @@ test('the mention baseline persists with its key, clears on null, and goes with 
   expect(saveMentionBaseline('key', baseline)).toBe(true);
   expect(loadMentionBaseline('key')).toEqual(baseline);
 
-  // a baseline built for other options never seeds a session
   expect(loadMentionBaseline('other')).toBeNull();
 
   expect(saveMentionBaseline('key', null)).toBe(true);
@@ -188,11 +184,9 @@ test('saved options round-trip and lose to explicit flags', () => {
 
   expect(applySavedOptions(values, explicit)).toEqual(SAVED_OPTIONS);
 
-  // the explicit flags keep their command-line values
   expect(values.since).toBe('7d');
   expect(values['wall-clock']).toBe(true);
 
-  // everything else comes from the save, with the repos list split
   expect(values.repo).toEqual(['acme/api', 'acme/web']);
   expect(values.user).toBe('someone');
   expect(values.target).toBe('1d');
@@ -268,19 +262,10 @@ test('starts empty on a corrupt or outdated file', () => {
   expect(new PrCache('outdated').has('k')).toBe(false);
 });
 
-/**
- * The remaining tests drive the fetch pipeline against the fake gh binary
- * in tui/testdata. Its canned data has five closed and three open review
- * PRs and four closed and one open authored PR.
- */
 function useFakeGh(): void {
   configureAuth(undefined, `${import.meta.dir}/tui/testdata`);
 }
 
-/**
- * Builds an empty details entry in the current shape, which the cache
- * tests poison the store with to prove where a read comes from.
- */
 function emptyDetails(): PrDetails {
   return {
     additions: 0,
@@ -312,11 +297,6 @@ test('serves closed review PRs from the cache and repairs entries on bypass', as
   expect(second.cacheHits).toBe(5);
   expect(second.results).toEqual(first.results);
 
-  /**
-   * Poison the cached entry for a closed PR. The next read must come from
-   * the cache, so the PR classifies as inaccessible, which proves reads
-   * hit the store. A bypass run then refetches and rewrites the entry.
-   */
   const store = new PrCache<PrDetails>('details');
 
   store.set(prKey('acme/api', 1), emptyDetails());
@@ -344,7 +324,6 @@ test('drops a stale cache entry when a PR shows up open again', async () => {
   const prs = await loadReviewPrs();
   const store = new PrCache<PrDetails>('details');
 
-  // acme/web#3 is open in the canned searches, so this entry is stale
   store.set(prKey('acme/web', 3), emptyDetails());
 
   store.save();
@@ -362,12 +341,6 @@ test('refetches a cached details entry written before the outstanding review req
   const prs = await loadReviewPrs();
   const store = new PrCache<PrDetails>('details');
 
-  /**
-   * An entry from before the field existed lacks the review requests. It
-   * reads as a miss although the PR is closed, so the load refetches it
-   * once and writes it back in the current shape, after which it serves
-   * from the cache again.
-   */
   const legacy: Partial<PrDetails> = emptyDetails();
 
   delete legacy.reviewRequests;
@@ -394,11 +367,6 @@ test('classifies the canned team requests against the resolved teams', async () 
 
   expect(teams).toEqual(new Set(['acme/backend', 'acme/oncall', 'globex/platform']));
 
-  /**
-   * The backend team is still requested on api#9, so it waits for the
-   * team, and a teammate already answered on web#16, so nothing waits
-   * there. Without the teams both read as requests of someone else.
-   */
   const { results } = await fetchReviewRaw(prs, 'testuser', undefined, { teams });
 
   expect(results.find((result) => result.pr.number === 9)).toMatchObject({
@@ -420,12 +388,6 @@ test('resolveTeams caches the lookup per login and credentials, and a hard reloa
 
   const auth = await authFingerprint();
 
-  /**
-   * The fake pages the memberships. The oncall team only sits on acme's
-   * second team page and the platform team only on the second
-   * organization page, so the full set proves the lookup follows both
-   * connections to their last page before it caches anything.
-   */
   expect(readCachedTeams(auth, 'testuser')).toBeNull();
   expect(await resolveTeams('testuser')).toEqual(new Set(['acme/backend', 'acme/oncall', 'globex/platform']));
 
@@ -434,10 +396,6 @@ test('resolveTeams caches the lookup per login and credentials, and a hard reloa
     fresh: true,
   });
 
-  /**
-   * A poisoned cached entry proves the next resolve reads the cache
-   * instead of asking gh, and a bypass refetches and repairs it.
-   */
   writeCachedTeams(['acme/cached'], 'testuser', auth);
 
   expect(await resolveTeams('testuser')).toEqual(new Set(['acme/cached']));
@@ -448,7 +406,6 @@ test('resolveTeams caches the lookup per login and credentials, and a hard reloa
     fresh: true,
   });
 
-  // an entry of another login or other credentials never serves
   expect(readCachedTeams(auth, 'someone')).toBeNull();
   expect(readCachedTeams('other-fingerprint', 'testuser')).toBeNull();
 });
@@ -471,12 +428,7 @@ test('resolveTeams refreshes an expired entry and falls back to it when the look
   expect(await resolveTeams('testuser')).toEqual(new Set(['acme/backend', 'acme/oncall', 'globex/platform']));
   expect(readCachedTeams(auth, 'testuser')?.fresh).toBe(true);
 
-  /**
-   * The fake cannot resolve the teams of any other login, the way a token
-   * without the read:org scope fails the query. The expired entry still
-   * serves then, and without any entry the user has no teams, so the
-   * load goes on either way.
-   */
+  // the fake fails the team lookup for any login but testuser
   expire('someone', ['acme/stale']);
 
   expect(await resolveTeams('someone')).toEqual(new Set(['acme/stale']));
@@ -489,19 +441,12 @@ test('resolveTeams refreshes an expired entry and falls back to it when the look
 });
 
 test('resolveTeams keeps the expired teams when the token path answers with an incomplete list', async () => {
-  /**
-   * The token path passes a GraphQL answer through when it carries data
-   * next to its errors, and an error nulls the branch it hit, so a
-   * membership answer can arrive with an organization or its teams
-   * missing. Such an answer must not replace the cached teams, because a
-   * missing team would hide its review requests until the entry expires
-   * again. The stubbed fetch stands in for the API here, and the token
-   * fingerprint keys the entries like the real token path would.
-   */
+  // a GraphQL error nulls the branch it hit, so a partial answer can lack an organization or its teams
   const originalFetch = globalThis.fetch;
   const answers: unknown[] = [];
 
   globalThis.fetch = (async () => Response.json(answers.shift())) as unknown as typeof fetch;
+
   configureAuth('test-token');
 
   try {
@@ -518,7 +463,6 @@ test('resolveTeams keeps the expired teams when the token path answers with an i
     const acme = { login: 'acme', teams: page([{ combinedSlug: 'acme/backend' }]) };
     const errors = [{ message: 'Resource not accessible by integration' }];
 
-    // a missing organization, a missing team list, and a missing team each read as incomplete
     answers.push(
       { data: { user: { organizations: page([acme, null]) } }, errors },
       { data: { user: { organizations: page([acme, { login: 'globex', teams: null }]) } }, errors },
@@ -531,13 +475,13 @@ test('resolveTeams keeps the expired teams when the token path answers with an i
       expect(readCachedTeams(auth, 'testuser')).toEqual({ teams: ['acme/stale'], fresh: false });
     }
 
-    // a complete answer refreshes the entry as before
     answers.push({ data: { user: { organizations: page([acme, { login: 'globex', teams: page([]) }]) } } });
 
     expect(await resolveTeams('testuser')).toEqual(new Set(['acme/backend']));
     expect(readCachedTeams(auth, 'testuser')).toEqual({ teams: ['acme/backend'], fresh: true });
   } finally {
     globalThis.fetch = originalFetch;
+
     useFakeGh();
   }
 });
@@ -553,10 +497,6 @@ test('resolveUser prefers the configured user, then the cached login', async () 
   expect(await resolveUser('')).toBe('testuser');
   expect(readCachedLogin(auth)).toBe('testuser');
 
-  /**
-   * A poisoned cached login proves the next resolve reads the cache
-   * instead of asking gh, and a bypass refetches and repairs it.
-   */
   writeCachedLogin('cacheduser', auth);
 
   expect(await resolveUser('')).toBe('cacheduser');
@@ -753,11 +693,6 @@ test('snapshot round-trips with revived dates for the same options', () => {
 });
 
 test('a snapshot whose unrequested results lack a review time never gets served', () => {
-  /**
-   * Snapshots written before unrequested results carried the review time
-   * would show broken durations in the reviewing queue, so the loader
-   * drops them and waits for the background refresh.
-   */
   const legacy = {
     ...SNAPSHOT_DATA,
     reviewResults: SNAPSHOT_DATA.reviewResults.map((result) =>
@@ -771,10 +706,6 @@ test('a snapshot whose unrequested results lack a review time never gets served'
 });
 
 test('a snapshot whose reviewed results lack a verdict never gets served', () => {
-  /**
-   * Snapshots written before reviewed results carried the verdict would
-   * render an empty verdict gauge, so the loader drops them the same way.
-   */
   const legacy = {
     ...SNAPSHOT_DATA,
     reviewResults: SNAPSHOT_DATA.reviewResults.map((result) =>
@@ -792,26 +723,11 @@ test('snapshot serves a narrower since window by creation date and rejects a wid
 
   const narrowed = loadSnapshot({ ...SNAPSHOT_OPTIONS, since: '2026-07-01' });
 
-  /**
-   * The reviewed PR from June and the only sized PR fall out of the July
-   * window, while the pending and unrequested PRs stay. The stored data
-   * had one inaccessible authored PR (authoredTotal 2 with 1 size), and
-   * that delta carries over.
-   */
   expect(narrowed?.sinceIso).toBe('2026-07-01');
   expect(narrowed?.reviewResults.map((result) => result.pr.number)).toEqual([3, 5]);
   expect(narrowed?.sizes).toEqual([]);
   expect(narrowed?.authoredTotal).toBe(1);
 
-  /**
-   * Mentions are cut by their own time. The July window drops the June
-   * mention on web#13 and keeps the August one, with the id of the cut
-   * mention joining the earlier ids the entry already had, drops web#14
-   * whose only mention is from June, and keeps the unreadable web#15
-   * because its update time falls in the window, which is the rule the
-   * search applies to a PR the load cannot read. A window that starts
-   * after every mention and update leaves nothing.
-   */
   const [web13, , web15] = SNAPSHOT_DATA.mentions ?? [];
 
   expect(narrowed?.mentions).toEqual([
@@ -845,14 +761,6 @@ test('serves mentioned PRs from the mention cache until the search reports a new
   const prs = collectMentionedPrs(mentioned.items);
   const first = await fetchMentionsRaw(prs, 'testuser');
 
-  /**
-   * The canned data mentions testuser in the third comment on web#13 and
-   * in the third inline comment of the third review on api#7, and the
-   * fake serves two entries per page, so both mentions only turn up once
-   * the fetch follows every list past its first page. The mention on
-   * web#3 names a longer login and never counts, which also proves that
-   * a PR without a mention is cached and does not refetch.
-   */
   expect(first.cacheHits).toBe(0);
 
   expect(first.mentions.map((entry) => [`${entry.pr.repo}#${entry.pr.number}`, entry.mentions])).toEqual([
@@ -865,7 +773,6 @@ test('serves mentioned PRs from the mention cache until the search reports a new
   expect(second.cacheHits).toBe(3);
   expect(second.mentions).toEqual(first.mentions);
 
-  // a newer update time on one PR sends only that PR back to GitHub
   const bumped = prs.map((pr) => (pr.number === 13 ? { ...pr, updatedAt: new Date('2026-08-26T09:00:00Z') } : pr));
   const third = await fetchMentionsRaw(bumped, 'testuser');
 
@@ -877,12 +784,6 @@ test('serves mentioned PRs from the mention cache until the search reports a new
   expect(bypassed.cacheHits).toBe(0);
   expect(bypassed.mentions).toEqual(first.mentions);
 
-  /**
-   * A PR the fake has no texts for reads like one the token cannot read.
-   * It stays in the result with null mentions, so the notification diff
-   * knows the load did not observe it, and stays out of the cache, so
-   * the next load retries it.
-   */
   const unreadable = { ...prs[0], number: 99, updatedAt: new Date('2026-08-26T09:00:00Z') };
   const withUnreadable = await fetchMentionsRaw([...prs, unreadable], 'testuser');
 
@@ -906,13 +807,6 @@ test('the since option cuts mentions by their time after the cache is read', asy
     [7, []],
   ]);
 
-  /**
-   * The mention on api#7 predates the window and drops out with its PR,
-   * while the one on web#13 stays. The cut runs on the cached texts, so
-   * the narrower window hits the cache for every PR instead of
-   * refetching, and a PR the fetch could not read stays in the result
-   * regardless, because nothing is known about its mentions.
-   */
   const unreadable = { ...prs[0], number: 99, updatedAt: new Date('2026-08-26T09:00:00Z') };
   const since = new Date('2026-08-25T00:00:00Z');
   const cut = await fetchMentionsRaw([...prs, unreadable], 'testuser', undefined, { since });
@@ -924,18 +818,10 @@ test('the since option cuts mentions by their time after the cache is read', asy
     { pr: unreadable, mentions: null, earlier: [] },
   ]);
 
-  // a mention at the exact start of the window counts as inside it
   const edge = await fetchMentionsRaw(prs, 'testuser', undefined, { since: new Date('2026-08-24T16:00:00Z') });
 
   expect(edge.mentions.map((entry) => entry.pr.number)).toEqual([13, 7]);
 
-  /**
-   * A PR that keeps a mention in the window carries the ids of the ones
-   * the window cut as its earlier ids, so a mark made on it covers them.
-   * No canned PR mentions testuser twice, so the cached texts of web#13
-   * gain an older mention by hand, which the cache serves because the
-   * update time still matches the search.
-   */
   const store = new PrCache<{ user: string; updatedAt: string; mentions: { id: string; at: string }[] }>('mentions');
   const web13 = prKey('acme/web', 13);
   const cached = store.get(web13);
@@ -967,14 +853,6 @@ test('the mention cache only serves the login it was written for', async () => {
   const mentioned = await searchPrs({ ...searchArgs, mode: 'mentioned' });
   const prs = collectMentionedPrs(mentioned.items);
 
-  /**
-   * Nothing on the canned PRs mentions alice, and her own comment on
-   * web#13 does not count for her, so every PR caches as one without a
-   * mention for her. The same PRs unchanged must still refetch for
-   * testuser and find the mentions, instead of serving alice's empty
-   * results. Logins compare case-insensitively, so a differently cased
-   * spelling of the same login hits the cache.
-   */
   const alice = await fetchMentionsRaw(prs, 'alice');
 
   expect(alice.mentions).toEqual([]);

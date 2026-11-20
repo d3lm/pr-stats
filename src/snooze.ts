@@ -4,25 +4,8 @@ import { cacheDir, cacheEnabled, prKey, writeFileAtomic } from './cache';
 import type { ReviewPr, ReviewResult } from './data';
 import { CliError } from './utils';
 
-/**
- * Names what a snooze parks. A review snooze parks a pending review
- * request of the awaiting queue, and a mention snooze parks an unread
- * mention of the mention inbox. The two live side by side on the same
- * PR, because a review request and a mention are two separate asks.
- */
 export type SnoozeKind = 'review' | 'mention';
 
-/**
- * One snoozed ask. The kind names what the snooze parks, the ref names
- * the PR as repo#number, until holds the wake-up time in milliseconds
- * since the epoch, and at holds the time of the ask the snooze covers,
- * the pending review request for a review snooze and the newest mention
- * for a mention snooze. A mention snooze also holds the ids of the texts
- * that mentioned you when it was made, so an edit to one of them, which
- * moves its time, does not count as a new mention. A newer ask of the
- * same kind on the same PR voids the snooze instead of hiding the
- * re-request or the new mention.
- */
 export interface Snooze {
   kind: SnoozeKind;
   ref: string;
@@ -31,27 +14,15 @@ export interface Snooze {
   ids?: readonly string[];
 }
 
-/**
- * Names the ask a snooze covers, the kind and the PR ref together, which
- * is what tells two snoozes apart.
- */
 export interface SnoozeTargetKey {
   kind: SnoozeKind;
   ref: string;
 }
 
-/**
- * Reports whether the snooze covers the given kind of ask on the given
- * PR.
- */
 export function snoozeMatches(snooze: Snooze, target: SnoozeTargetKey): boolean {
   return snooze.kind === target.kind && snooze.ref === target.ref;
 }
 
-/**
- * Duration the snooze dialog starts with until the user picks a default
- * in the settings dialog.
- */
 export const DEFAULT_SNOOZE_DURATION = '30m';
 
 const MINUTE_MS = 60_000;
@@ -59,20 +30,10 @@ const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 const WEEK_MS = 7 * DAY_MS;
 
-/**
- * Longest snooze the dialog accepts. Four weeks parks a PR for a month
- * while keeping the wake-up time within a range a review queue can still
- * mean something.
- */
 const MAX_SNOOZE_MS = 4 * WEEK_MS;
 
 const UNIT_MS: Record<string, number> = { m: MINUTE_MS, h: HOUR_MS, d: DAY_MS, w: WEEK_MS };
 
-/**
- * Converts a snooze duration like 30m, 2h, 1d, or 1w into milliseconds,
- * or returns null for anything else, including durations shorter than a
- * minute or longer than four weeks.
- */
 export function snoozeDurationMs(input: string): number | null {
   const match = /^(\d+)([mhdw])$/.exec(input);
 
@@ -85,11 +46,6 @@ export function snoozeDurationMs(input: string): number | null {
   return ms >= MINUTE_MS && ms <= MAX_SNOOZE_MS ? ms : null;
 }
 
-/**
- * Parses a snooze duration into milliseconds, throwing a CliError that
- * names the accepted forms for anything snoozeDurationMs refuses. The
- * snooze dialog and the settings dialog validate their edits with it.
- */
 export function parseSnoozeDuration(input: string): number {
   const ms = snoozeDurationMs(input);
 
@@ -100,12 +56,6 @@ export function parseSnoozeDuration(input: string): number {
   return ms;
 }
 
-/**
- * Formats a wake-up time for the queue and the footer. A time on the
- * same calendar day as now shows as a clock time alone, and any other
- * day leads with the date, so a snooze into next week never reads like
- * one that ends this afternoon.
- */
 export function formatWakeTime(until: number, now = Date.now()): string {
   const wake = new Date(until);
   const today = new Date(now);
@@ -119,33 +69,22 @@ export function formatWakeTime(until: number, now = Date.now()): string {
   return sameDay ? time : `${wake.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`;
 }
 
-/**
- * Resolves the path of the snooze file, which lives next to settings.json
- * in the cache directory and stays out of the files a cache clear deletes.
- */
 export function snoozesFile(): string {
   return join(cacheDir(), 'snoozes.json');
 }
 
-/**
- * On-disk shape of one snooze, keyed by kind and PR ref in the file as
- * kind:ref, with the times as ISO strings so the file reads well when
- * opened by hand. Only mention snoozes carry the ids of the texts they
- * cover. Files written before mention snoozes existed key their entries
- * by the PR ref alone and call the ask time requestedAt, and the reader
- * still takes both forms as review snoozes.
- */
 interface StoredSnooze {
   until: string;
   at?: string;
+  /**
+   * Holds the ask time in files written before mention snoozes existed.
+   */
   requestedAt?: string;
   ids?: string[];
 }
 
 /**
- * Splits a stored key into the kind and the PR ref. A key without a
- * known kind prefix is a review snooze from before mention snoozes
- * existed, whose whole key is the ref.
+ * A key without a kind prefix is a review snooze written before mention snoozes existed.
  */
 function parseStoredKey(key: string): SnoozeTargetKey {
   for (const kind of ['review', 'mention'] as const) {
@@ -157,11 +96,6 @@ function parseStoredKey(key: string): SnoozeTargetKey {
   return { kind: 'review', ref: key };
 }
 
-/**
- * Parses one stored snooze, or returns null when the entry does not hold
- * two valid timestamps, so a damaged entry drops out instead of breaking
- * the whole file.
- */
 function reviveSnooze(key: string, stored: unknown): Snooze | null {
   if (typeof stored !== 'object' || stored === null) {
     return null;
@@ -191,12 +125,7 @@ function reviveSnooze(key: string, stored: unknown): Snooze | null {
 }
 
 /**
- * Reads the snoozes from the cache directory, soonest wake-up first.
- * Returns an empty list while the cache is disabled, so debug runs and
- * tests never read the real file, and for a missing or unreadable file,
- * because the file is not meant to be edited by hand and a fresh start
- * beats a failed one. Expired snoozes stay in the list, because the TUI
- * still has to wake them up and report the PRs that came back.
+ * Keeps expired snoozes because the TUI still has to wake them up.
  */
 export function readSnoozes(): Snooze[] {
   if (!cacheEnabled()) {
@@ -228,11 +157,6 @@ export function readSnoozes(): Snooze[] {
   return snoozes.toSorted((a, b) => a.until - b.until);
 }
 
-/**
- * Writes the snoozes to the cache directory, replacing the previous
- * file. Returns false without writing while the cache is disabled, which
- * keeps debug runs from writing snoozes.
- */
 export function writeSnoozes(snoozes: Snooze[]): boolean {
   if (!cacheEnabled()) {
     return false;
@@ -253,11 +177,6 @@ export function writeSnoozes(snoozes: Snooze[]): boolean {
   return true;
 }
 
-/**
- * Finds the snooze on the given kind of ask on the given PR whose
- * wake-up time lies ahead at the given time and that the covers
- * predicate accepts, or returns undefined when none does.
- */
 function findSnooze(
   snoozes: readonly Snooze[],
   target: SnoozeTargetKey,
@@ -267,13 +186,6 @@ function findSnooze(
   return snoozes.find((snooze) => snoozeMatches(snooze, target) && snooze.until > now && covers(snooze));
 }
 
-/**
- * Finds the snooze that covers an ask of the given kind on the given PR
- * at the given time, or returns undefined when none does. A snooze
- * covers the ask while its wake-up time lies ahead and the ask is not
- * newer than the one the snooze recorded, so a review re-requested after
- * a snooze shows up in the queue right away.
- */
 export function activeSnooze(
   snoozes: readonly Snooze[],
   target: SnoozeTargetKey,
@@ -283,14 +195,6 @@ export function activeSnooze(
   return findSnooze(snoozes, target, now, (snooze) => askedAt <= snooze.at);
 }
 
-/**
- * Splits entries of one kind of ask into the ones still awaiting
- * attention and the ones a snooze covers at the given time, keeping the
- * order of the awaiting entries and sorting the snoozed ones soonest
- * wake-up first, each carrying its wake-up time. The covers predicate
- * decides whether a snooze on the entry's PR still covers the entry's
- * ask, which it does not once a newer ask arrived.
- */
 export function partitionSnoozed<T extends { pr: { repo: string; number: number } }>(
   kind: SnoozeKind,
   entries: T[],
@@ -317,11 +221,6 @@ export function partitionSnoozed<T extends { pr: { repo: string; number: number 
   return { awaiting, snoozed };
 }
 
-/**
- * Splits pending review entries into the ones still awaiting your review
- * and the ones a review snooze covers at the given time, the way
- * partitionSnoozed does for any kind of ask.
- */
 export function splitSnoozed<T extends { pr: ReviewPr; requestedAt: Date }>(
   entries: T[],
   snoozes: readonly Snooze[],
@@ -330,10 +229,6 @@ export function splitSnoozed<T extends { pr: ReviewPr; requestedAt: Date }>(
   return partitionSnoozed('review', entries, snoozes, now, (snooze, entry) => entry.requestedAt.getTime() <= snooze.at);
 }
 
-/**
- * Returns the wake-up time of the snooze that ends next, or null when
- * nothing is snoozed. The wake-up timer arms itself on it.
- */
 export function nextWakeUp(snoozes: readonly Snooze[]): number | null {
   if (snoozes.length === 0) {
     return null;
@@ -342,21 +237,10 @@ export function nextWakeUp(snoozes: readonly Snooze[]): number | null {
   return Math.min(...snoozes.map((snooze) => snooze.until));
 }
 
-/**
- * Lists the snoozes whose wake-up time has passed at the given time.
- */
 export function dueSnoozes(snoozes: readonly Snooze[], now: number): Snooze[] {
   return snoozes.filter((snooze) => snooze.until <= now);
 }
 
-/**
- * Lists the PRs behind the given review snoozes that still await a
- * review, from you or from a team of yours, in the order of the snoozes.
- * A PR that got reviewed, closed, or re-requested while snoozed is no
- * longer the request the snooze parked, so it stays out and the snooze
- * ends quietly. Mention snoozes among the given ones are skipped,
- * because the mention module answers for them.
- */
 export function wokenPrs(due: readonly Snooze[], results: readonly ReviewResult[]): ReviewPr[] {
   const pending = new Map<string, { pr: ReviewPr; requestedAt: number }>();
 

@@ -5,25 +5,10 @@ import type { CliValues } from './flags';
 import { snoozeDurationMs } from './snooze';
 import { CliError } from './utils';
 
-/**
- * Channels a desktop notification can go through. Auto asks the terminal
- * to post the notification and falls back to the platform command,
- * terminal and command force one of those paths, and bell rings the
- * terminal bell instead of posting any text. The settings dialog cycles
- * through them in this order.
- */
 export const NOTIFY_CHANNELS = ['auto', 'terminal', 'command', 'bell'] as const;
 
 export type NotifyChannel = (typeof NOTIFY_CHANNELS)[number];
 
-/**
- * Sites a PR link opens on. GitHub opens the PR page itself, and Linear
- * opens the same PR in Linear Diffs, the review view a Linear workspace
- * gets once an admin enables Diffs on its GitHub integration. A workspace
- * without Diffs lands on Linear's page for enabling it, so the target only
- * helps on a workspace that has it. The settings dialog cycles through
- * them in this order.
- */
 export const LINK_TARGETS = ['github', 'linear'] as const;
 
 export type LinkTarget = (typeof LINK_TARGETS)[number];
@@ -32,12 +17,6 @@ const GITHUB_ORIGIN = 'https://github.com/';
 
 const LINEAR_REVIEW_ORIGIN = 'https://linear.review/';
 
-/**
- * Rewrites a GitHub PR link for the given target. Linear serves its
- * review view of a PR under linear.review at the PR's GitHub path, so
- * the rewrite swaps the origin and keeps the rest. The github target
- * returns the link unchanged, and so does a link outside github.com.
- */
 export function linkUrl(url: string, target: LinkTarget): string {
   if (target === 'linear' && url.startsWith(GITHUB_ORIGIN)) {
     return `${LINEAR_REVIEW_ORIGIN}${url.slice(GITHUB_ORIGIN.length)}`;
@@ -47,123 +26,32 @@ export function linkUrl(url: string, target: LinkTarget): string {
 }
 
 /**
- * Shape of settings.json in the cache directory. Unlike the cached data
- * and the saved options, the file is meant to be edited by hand, so it
- * carries no version wrapper and a rewrite preserves keys this interface
- * does not know about.
+ * Users edit settings.json by hand, so a rewrite preserves keys this interface does not know about.
  */
 export interface Settings {
-  /**
-   * Mirrors the --no-cache flag. While set, every load refetches instead
-   * of reading the cached PRs, and fresh results still update the cache.
-   */
   noCache?: boolean;
-  /**
-   * Picks the site enter and a click on a PR reference open, the PR
-   * page on GitHub or the PR's review view on Linear. The copied link
-   * stays the GitHub link either way.
-   */
   openIn?: LinkTarget;
-  /**
-   * Makes enter and a click on a PR reference copy the PR's link to the
-   * clipboard instead of opening it in the browser.
-   */
   copyLinks?: boolean;
-  /**
-   * Keeps the TUI reloading its data in the background while it runs,
-   * with the reloadInterval setting naming the cadence.
-   */
   autoReload?: boolean;
-  /**
-   * Names how long the TUI waits after one load finishes before the
-   * next background reload starts, like 30s, 10m, or 2h. The interval
-   * only applies while autoReload is set.
-   */
   reloadInterval?: string;
-  /**
-   * Sends a desktop notification when a load finds a PR newly awaiting
-   * your review or a review re-requested from you. The first load of a
-   * session compares against the startup snapshot, so it reports what
-   * changed since the previous session, and only a session without a
-   * snapshot starts by recording what is already waiting.
-   */
   notifications?: boolean;
-  /**
-   * Makes every load also search the PRs that mention you, in their
-   * body, a comment, or a review, your own PRs included, and lists them
-   * in the mention inbox on the awaiting-you tab. Defaults to on, and
-   * turning it off skips the extra search and hides the inbox, so a
-   * session without it pays nothing for mentions.
-   */
   trackMentions?: boolean;
-  /**
-   * Also sends a desktop notification when a load finds a PR that
-   * newly mentions you. Only applies while notifications and
-   * trackMentions are both set, because the notification needs the
-   * mention data the tracking fetches.
-   */
   notifyMentions?: boolean;
-  /**
-   * Lists the open PRs where only a team you belong to was asked for a
-   * review in their own section below the awaiting queue. Defaults to
-   * on, and turning it off hides the section and the team requests from
-   * the awaiting-you tab while the load still classifies them.
-   */
   teamReviews?: boolean;
-  /**
-   * Also sends a desktop notification when a load finds a PR newly
-   * requested of a team you belong to. Only applies while notifications
-   * and teamReviews are both set, because a notification about a request
-   * the queue hides would lead nowhere.
-   */
   notifyTeamReviews?: boolean;
-  /**
-   * Folds the reviews you gave on a request of a team you belong to, and
-   * the team requests still open, into the review stats and the JSON
-   * export. Defaults to off, which keeps the review times to the
-   * requests that named you and reports the team reviews as excluded.
-   */
   teamReviewStats?: boolean;
-  /**
-   * Picks the channel the notifications go through. With auto the
-   * TUI asks the terminal to post them and falls back to the platform
-   * command, terminal forces the terminal path, command forces the
-   * platform command, the bundled pr-stats.app helper on macOS and
-   * notify-send on Linux, and bell rings the terminal bell instead
-   * of posting any text.
-   */
   notifyChannel?: NotifyChannel;
-  /**
-   * Names the duration the snooze dialog starts with when s snoozes a PR
-   * on the awaiting-review queue, like 30m, 2h, or 1d. The dialog still
-   * takes another duration for one snooze.
-   */
   snoozeDuration?: string;
-  /**
-   * Holds the theme, the active preset (a built-in name or custom) plus
-   * the colors that form the custom theme. The theme module validates
-   * and applies it.
-   */
   theme?: unknown;
 }
 
-/**
- * Interval the auto-reload setting runs on until the user picks one.
- */
 export const DEFAULT_RELOAD_INTERVAL = '10m';
 
 /**
- * Longest interval the auto-reload setting accepts. A timer delay must
- * fit in a 32-bit signed integer, and a day sits well inside that while
- * still covering any cadence a TUI left running would want.
+ * A timer delay above the 32-bit signed integer range fires immediately.
  */
 const MAX_RELOAD_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Converts a reload interval like 30s, 10m, or 2h into milliseconds, or
- * returns null for anything else, including intervals shorter than a
- * second or longer than a day.
- */
 export function reloadIntervalMs(input: string): number | null {
   const match = /^(\d+)([smh])$/.exec(input);
 
@@ -176,11 +64,6 @@ export function reloadIntervalMs(input: string): number | null {
   return ms >= 1000 && ms <= MAX_RELOAD_INTERVAL_MS ? ms : null;
 }
 
-/**
- * Parses a reload interval into milliseconds, throwing a CliError that
- * names the accepted forms for anything reloadIntervalMs refuses. The
- * settings dialog validates interval edits with it.
- */
 export function parseReloadInterval(input: string): number {
   const ms = reloadIntervalMs(input);
 
@@ -191,26 +74,12 @@ export function parseReloadInterval(input: string): number {
   return ms;
 }
 
-/**
- * Resolves the path of the settings file. The settings dialog shows it on
- * the reset row.
- */
 export function settingsFile(): string {
   return join(cacheDir(), 'settings.json');
 }
 
-/**
- * Holds the settings the last loadSettings call read, so the save
- * functions can rewrite the file without dropping the other keys it
- * holds.
- */
 let current: Settings = {};
 
-/**
- * Writes the current settings to settings.json. Returns false without
- * writing while the cache is disabled, which keeps debug runs from
- * writing settings.
- */
 function writeCurrent(): boolean {
   if (!cacheEnabled()) {
     return false;
@@ -221,13 +90,6 @@ function writeCurrent(): boolean {
   return true;
 }
 
-/**
- * Reads settings.json from the cache directory. Returns empty settings
- * while the cache is disabled, so debug runs and tests never read the
- * real file, and when no file exists. A file that is not valid JSON or
- * holds the wrong types throws a CliError, because the file is edited by
- * hand and a silent fallback would hide the mistake.
- */
 export function loadSettings(): Settings {
   current = {};
 
@@ -324,160 +186,84 @@ export function loadSettings(): Settings {
   return current;
 }
 
-/**
- * Persists the noCache setting to settings.json, keeping every other key
- * the file holds, including a hand-written theme. Returns false without
- * writing while the cache is disabled, which keeps debug runs from
- * writing settings.
- */
 export function saveNoCache(on: boolean): boolean {
   current = { ...current, noCache: on };
 
   return writeCurrent();
 }
 
-/**
- * Persists the open-in target to settings.json, keeping every other key
- * the file holds. Returns false without writing while the cache is
- * disabled, which keeps debug runs from writing settings.
- */
 export function saveOpenIn(target: LinkTarget): boolean {
   current = { ...current, openIn: target };
 
   return writeCurrent();
 }
 
-/**
- * Persists the copy-links setting to settings.json, keeping every other
- * key the file holds. Returns false without writing while the cache is
- * disabled, which keeps debug runs from writing settings.
- */
 export function saveCopyLinks(on: boolean): boolean {
   current = { ...current, copyLinks: on };
 
   return writeCurrent();
 }
 
-/**
- * Persists the auto-reload toggle to settings.json, keeping every other
- * key the file holds, the saved interval included, so turning the reload
- * back on resumes the cadence it had. Returns false without writing while
- * the cache is disabled, which keeps debug runs from writing settings.
- */
 export function saveAutoReload(on: boolean): boolean {
   current = { ...current, autoReload: on };
 
   return writeCurrent();
 }
 
-/**
- * Persists an already validated reload interval to settings.json, keeping
- * every other key the file holds. Returns false without writing while the
- * cache is disabled, which keeps debug runs from writing settings.
- */
 export function saveReloadInterval(value: string): boolean {
   current = { ...current, reloadInterval: value };
 
   return writeCurrent();
 }
 
-/**
- * Persists the notifications toggle to settings.json, keeping every
- * other key the file holds. Returns false without writing while the
- * cache is disabled, which keeps debug runs from writing settings.
- */
 export function saveNotifications(on: boolean): boolean {
   current = { ...current, notifications: on };
 
   return writeCurrent();
 }
 
-/**
- * Persists the mention tracking toggle to settings.json, keeping every
- * other key the file holds. Returns false without writing while the
- * cache is disabled, which keeps debug runs from writing settings.
- */
 export function saveTrackMentions(on: boolean): boolean {
   current = { ...current, trackMentions: on };
 
   return writeCurrent();
 }
 
-/**
- * Persists the mention notifications toggle to settings.json, keeping
- * every other key the file holds. Returns false without writing while
- * the cache is disabled, which keeps debug runs from writing settings.
- */
 export function saveNotifyMentions(on: boolean): boolean {
   current = { ...current, notifyMentions: on };
 
   return writeCurrent();
 }
 
-/**
- * Persists the team review requests toggle to settings.json, keeping
- * every other key the file holds. Returns false without writing while
- * the cache is disabled, which keeps debug runs from writing settings.
- */
 export function saveTeamReviews(on: boolean): boolean {
   current = { ...current, teamReviews: on };
 
   return writeCurrent();
 }
 
-/**
- * Persists the team request notifications toggle to settings.json,
- * keeping every other key the file holds. Returns false without writing
- * while the cache is disabled, which keeps debug runs from writing
- * settings.
- */
 export function saveNotifyTeamReviews(on: boolean): boolean {
   current = { ...current, notifyTeamReviews: on };
 
   return writeCurrent();
 }
 
-/**
- * Persists the team review stats toggle to settings.json, keeping every
- * other key the file holds. Returns false without writing while the
- * cache is disabled, which keeps debug runs from writing settings.
- */
 export function saveTeamReviewStats(on: boolean): boolean {
   current = { ...current, teamReviewStats: on };
 
   return writeCurrent();
 }
 
-/**
- * Persists the notification channel to settings.json, keeping every
- * other key the file holds. Returns false without writing while the
- * cache is disabled, which keeps debug runs from writing settings.
- */
 export function saveNotifyChannel(channel: NotifyChannel): boolean {
   current = { ...current, notifyChannel: channel };
 
   return writeCurrent();
 }
 
-/**
- * Persists an already validated default snooze duration to settings.json,
- * keeping every other key the file holds. Returns false without writing
- * while the cache is disabled, which keeps debug runs from writing
- * settings.
- */
 export function saveSnoozeDuration(value: string): boolean {
   current = { ...current, snoozeDuration: value };
 
   return writeCurrent();
 }
 
-/**
- * Persists the theme to settings.json, keeping every other key the file
- * holds. An undefined value removes the theme key, which happens when the
- * settings dialog lands back on the default theme without overrides.
- * Returns false without writing while the cache is disabled, which keeps
- * debug runs from writing settings.
- */
 export function saveTheme(value: unknown): boolean {
   current = { ...current };
 
@@ -490,13 +276,6 @@ export function saveTheme(value: unknown): boolean {
   return writeCurrent();
 }
 
-/**
- * Deletes the settings file, so future runs start from the defaults. The
- * settings already loaded keep applying to the running session, and a
- * later saveNoCache writes a fresh file that only holds the toggle.
- * Returns false without touching anything while the cache is disabled,
- * which keeps debug runs away from the real file.
- */
 export function resetSettings(): boolean {
   if (!cacheEnabled()) {
     return false;
@@ -510,10 +289,7 @@ export function resetSettings(): boolean {
 }
 
 /**
- * Loads the settings and merges them into freshly parsed CLI values. The
- * noCache setting only fills in when --no-cache was not given, so the
- * flag always wins. Call this after configureCache, because a disabled
- * cache reads no settings.
+ * Runs after configureCache because a disabled cache reads no settings.
  */
 export function applySettings(values: CliValues, explicit: Set<string>): Settings {
   const settings = loadSettings();

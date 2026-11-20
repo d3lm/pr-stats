@@ -10,17 +10,8 @@ const PAGE_UP = '\u001B[5~';
 
 const PAGE_DOWN = '\u001B[6~';
 
-/**
- * Names the card heading the test follows, which sits in the middle of
- * the review pane's first screen, so it stays in view through a step in
- * either direction.
- */
 const ANCHOR = 'Review time trend';
 
-/**
- * Returns the frame row that holds the anchor, or -1 once it scrolled
- * out of view.
- */
 function anchorRow(setup: AppSetup): number {
   return setup
     .captureCharFrame()
@@ -28,12 +19,6 @@ function anchorRow(setup: AppSetup): number {
     .findIndex((line) => line.includes(ANCHOR));
 }
 
-/**
- * Draws frames until the frame differs from the one before the input and
- * returns the anchor row then, or the unchanged row when nothing moved
- * within the timeout. The input reaches the renderer asynchronously, so
- * a fixed sleep would read the old frame on a slow run.
- */
 async function rowOnceMoved(setup: AppSetup, before: string): Promise<number> {
   const start = Date.now();
 
@@ -50,9 +35,6 @@ async function rowOnceMoved(setup: AppSetup, before: string): Promise<number> {
   return anchorRow(setup);
 }
 
-/**
- * Presses one key and returns the anchor row once the pane moved.
- */
 async function rowAfterKey(setup: AppSetup, key: string): Promise<number> {
   const before = setup.captureCharFrame();
 
@@ -61,10 +43,6 @@ async function rowAfterKey(setup: AppSetup, key: string): Promise<number> {
   return rowOnceMoved(setup, before);
 }
 
-/**
- * Turns the mouse wheel one notch over the given row and returns the
- * anchor row once the pane moved.
- */
 async function rowAfterWheel(setup: AppSetup, row: number, direction: 'up' | 'down'): Promise<number> {
   const before = setup.captureCharFrame();
 
@@ -89,11 +67,6 @@ test('every scroll input moves the charts pane once, by the shared step', async 
 
     const top = anchorRow(setup);
 
-    /**
-     * The step keys, the arrows, and a wheel notch all move the pane by
-     * the same number of rows, and each input moves it once, so a key the
-     * keymap handles never scrolls a second time on its own.
-     */
     for (const [down, up] of [
       ['j', 'k'],
       [KeyCodes.ARROW_DOWN, KeyCodes.ARROW_UP],
@@ -105,17 +78,12 @@ test('every scroll input moves the charts pane once, by the shared step', async 
     expect(await rowAfterWheel(setup, top, 'down')).toBe(top - SCROLL_STEP_ROWS);
     expect(await rowAfterWheel(setup, top, 'up')).toBe(top);
 
-    /**
-     * A page moves half a viewport, further than a step either way. The
-     * page back can land a row off, because OpenTUI rounds the half of an
-     * odd viewport height, so home checks the exact way back below.
-     */
+    // paging back can land a row off because OpenTUI rounds half of an odd viewport height
     const paged = await rowAfterKey(setup, PAGE_DOWN);
 
     expect(paged).toBeLessThan(top - SCROLL_STEP_ROWS);
     expect(await rowAfterKey(setup, PAGE_UP)).toBeGreaterThan(paged + SCROLL_STEP_ROWS);
 
-    // end reaches the last card, and home returns to the top
     expect(await rowAfterKey(setup, KeyCodes.END)).toBe(-1);
     expect(setup.captureCharFrame()).toContain('Review time by repo');
     expect(await rowAfterKey(setup, KeyCodes.HOME)).toBe(top);

@@ -13,11 +13,6 @@ test('snoozes the highlighted PR through the snooze dialog and unsnoozes it with
   const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 140, height: 44 });
 
   try {
-    /**
-     * The awaiting-review tab opens on its repo picker, and enter on All
-     * repos opens the aggregate queue with the cursor on the longest
-     * waiting PR, whose row the footer offers to snooze.
-     */
     await waitForText(setup, '2 PRs awaiting your review');
 
     setup.mockInput.pressEnter();
@@ -27,11 +22,6 @@ test('snoozes the highlighted PR through the snooze dialog and unsnoozes it with
     expect(setup.captureCharFrame()).toContain('s snooze');
     expect(setup.captureCharFrame()).not.toContain('Snoozed (n=');
 
-    /**
-     * The s key opens the snooze dialog, which names the PR and starts
-     * in the duration edit with the default snooze. Escape closes it
-     * without snoozing anything.
-     */
     setup.mockInput.pressKey('s');
 
     await waitForText(setup, 'Snooze for');
@@ -51,13 +41,6 @@ test('snoozes the highlighted PR through the snooze dialog and unsnoozes it with
     expect(setup.captureCharFrame()).toContain('Awaiting your review (n=2)');
     expect(setup.captureCharFrame()).not.toContain('Snoozed (n=');
 
-    /**
-     * A duration the parser refuses keeps the dialog open and shows the
-     * error in place of the hint, and a valid one parks the PR in the
-     * snoozed section with its wake-up time in the lead column. The
-     * debug run keeps the cache disabled, so the snooze only lasts the
-     * session, which the footer notice says.
-     */
     setup.mockInput.pressKey('s');
 
     await waitForText(setup, 'Snooze for');
@@ -88,11 +71,6 @@ test('snoozes the highlighted PR through the snooze dialog and unsnoozes it with
     expect(snoozedFrame).toContain('snoozed acme/api#7 until');
     expect(snoozedFrame).toContain('the snooze is not saved');
 
-    /**
-     * The picker counts the snoozed PR apart from the awaiting one, and
-     * reopening the aggregate keeps the cursor, which now sits on the
-     * remaining awaiting PR.
-     */
     setup.mockInput.pressEscape();
 
     await waitForText(setup, '1 PR awaiting your review, 1 requested of your team, 1 snoozed');
@@ -103,11 +81,6 @@ test('snoozes the highlighted PR through the snooze dialog and unsnoozes it with
 
     expect(setup.captureCharFrame()).toContain('s snooze');
 
-    /**
-     * Moving past the team request onto the snoozed row flips the hint
-     * to unsnooze, and the s key puts the PR straight back on the
-     * awaiting list.
-     */
     setup.mockInput.pressArrow('down');
     setup.mockInput.pressArrow('down');
 
@@ -128,12 +101,6 @@ test('snoozes the highlighted PR through the snooze dialog and unsnoozes it with
 }, 30_000);
 
 test('wakes a snooze up on time, puts the PR back on the awaiting list, persists the change, and notifies', async () => {
-  /**
-   * The snooze file and the snapshot need an enabled cache, so this test
-   * points the cache at a temp directory like the snapshot test above.
-   * The snapshot mirrors the canned data, so the fresh load reports no
-   * request changes and the only notification comes from the wake-up.
-   */
   const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
 
   process.env.PR_STATS_CACHE_DIR = dir;
@@ -205,13 +172,6 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
 
   saveSnapshot(initial, snapshot);
 
-  /**
-   * The snooze on api#7 covers the request the canned data reports and
-   * wakes up a few seconds into the test, long enough for the snapshot
-   * to render the snoozed section first. The snapshot also carries the
-   * team request the canned data reports, so the picker reads the same
-   * before and after the fresh load.
-   */
   const until = Date.now() + 4000;
 
   writeSnoozes([{ kind: 'review', ref: 'acme/api#7', until, at: Date.parse('2026-08-20T09:00:00Z') }]);
@@ -232,11 +192,6 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
   );
 
   try {
-    /**
-     * The snapshot renders right away with the snooze read from disk, so
-     * the picker counts one snoozed PR and the aggregate queue parks it
-     * in the snoozed section with its wake-up time.
-     */
     await waitForText(setup, '1 PR awaiting your review, 1 requested of your team, 1 snoozed');
 
     setup.mockInput.pressEnter();
@@ -247,12 +202,6 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
     expect(lineWith(setup.captureCharFrame(), 'acme/api#7')).toContain('until ');
     expect(sent).toEqual([]);
 
-    /**
-     * At the wake-up time the PR moves back onto the awaiting list, the
-     * snooze leaves the file, and the notification names the PR, while
-     * the fresh load in between stays quiet because nothing changed
-     * against the snapshot.
-     */
     await waitForTextGone(setup, 'Snoozed (n=1)');
 
     expect(setup.captureCharFrame()).toContain('Awaiting your review (n=2)');
@@ -263,10 +212,6 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
     expect(readSnoozes()).toEqual([]);
     expect(JSON.parse(readFileSync(join(dir, 'snoozes.json'), 'utf8'))).toEqual({});
 
-    /**
-     * Snoozing from the dialog persists to the file with the wake-up
-     * time and the request time the snooze covers.
-     */
     setup.mockInput.pressKey('s');
 
     await waitForText(setup, 'Snooze for');
@@ -287,12 +232,6 @@ test('wakes a snooze up on time, puts the PR back on the awaiting list, persists
     expect(setup.captureCharFrame()).toContain('Snoozed (n=1)');
     expect(sent).toHaveLength(1);
 
-    /**
-     * The default-snooze row in the settings dialog edits the duration
-     * the dialog starts with. A value the parser refuses keeps the edit
-     * open with the error, and a valid one persists to settings.json and
-     * seeds the next snooze dialog.
-     */
     setup.mockInput.pressKey('S');
 
     await waitForText(setup, 'reloads the data in the background');

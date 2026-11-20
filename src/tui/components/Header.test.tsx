@@ -3,12 +3,6 @@ import { destroyApp, initial, renderApp, waitForText } from '../testing/harness'
 import { Header } from './Header';
 
 test('keeps the rate-limit countdown whole on narrow terminals and cuts the context instead', async () => {
-  /**
-   * The context of the canned options runs past eighty columns on its
-   * own, so at both widths the header has to cut something, and it has
-   * to be the context, because the countdown is the only sign that the
-   * reload behind the data waits out a limit.
-   */
   for (const width of [80, 100]) {
     const setup = await renderApp(
       <Header

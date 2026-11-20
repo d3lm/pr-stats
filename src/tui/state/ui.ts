@@ -2,22 +2,10 @@ import type { SnoozeKind } from '../../snooze';
 import { FIELDS } from './options';
 import { firstSettingOn, SETTING_PAGES, settingPageOf, SETTINGS, THEME_COLORS, type CacheAction } from './settings';
 
-/**
- * Names the dialog currently covering the charts, where null means none is
- * open. The options dialog edits the data and analysis options, the
- * settings dialog holds app-level settings like the cache and the theme,
- * the theme dialog opens from the settings dialog with the editable color
- * list, and the snooze dialog asks how long to park the highlighted PR of
- * the awaiting-review queue.
- */
 export type Modal = 'options' | 'settings' | 'theme' | 'snooze' | null;
 
 /**
- * Names the ask the snooze dialog is about, a review request or a
- * mention on the given PR, with the time of the ask the snooze records
- * so a later re-request or a newer mention voids it. A mention target
- * also names the texts that mention you, so an edit to one of them does
- * not void the snooze.
+ * Holds the time of the ask in at, so a later re-request or newer mention voids the snooze.
  */
 export interface SnoozeTarget {
   kind: SnoozeKind;
@@ -27,14 +15,6 @@ export interface SnoozeTarget {
   ids?: readonly string[];
 }
 
-/**
- * Everything that tracks the dialogs and their feedback, the open modal,
- * the edit mode, the selected row of each dialog, the validation errors,
- * the settings-action message, the browser-open failure, and the success
- * notice. One reducer owns it all because these values move together,
- * like a selection move clearing the row's error or an escape closing
- * the dialog and its feedback at once.
- */
 export interface UiState {
   modal: Modal;
   editing: boolean;
@@ -42,31 +22,14 @@ export interface UiState {
   selectedSetting: number;
   selectedThemeColor: number;
   fieldError: string | null;
-  /**
-   * Holds the validation error of the reload interval edit in the
-   * settings dialog, shown in place of the row hint until the next edit,
-   * selection move, or escape.
-   */
   settingError: string | null;
   themeColorError: string | null;
-  /**
-   * Holds the PR the open snooze dialog is about, or null while no
-   * snooze dialog is open.
-   */
   snoozeTarget: SnoozeTarget | null;
-  /**
-   * Holds the validation error of the duration edit in the snooze
-   * dialog, shown in place of the dialog hint until the next edit or
-   * escape.
-   */
   snoozeError: string | null;
   cacheAction: CacheAction | null;
   openError: string | null;
   /**
-   * Holds the success confirmation the footer shows with a checkmark,
-   * like a copied link, a saved options report, or a snoozed PR. Every
-   * report stores a fresh object even when the text repeats, which
-   * restarts the App's expiry timer through the changed identity.
+   * A fresh object per report restarts the expiry timer even when the text repeats.
    */
   successNotice: { text: string } | null;
 }
@@ -115,9 +78,6 @@ export type UiAction =
   | { type: 'themeColorErrorReported'; message: string }
   | { type: 'cacheActionReported'; action: CacheAction };
 
-/**
- * Steps a dialog selection by one row with wrap-around.
- */
 function cycled(previous: number, delta: 1 | -1, count: number): number {
   return (previous + count + delta) % count;
 }
@@ -125,7 +85,6 @@ function cycled(previous: number, delta: 1 | -1, count: number): number {
 export function uiReducer(state: UiState, action: UiAction): UiState {
   switch (action.type) {
     case 'noticesDismissed': {
-      // returning the same state skips the re-render, and every keypress dispatches this
       if (state.openError === null && state.successNotice === null) {
         return state;
       }
@@ -155,7 +114,6 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, modal: null, fieldError: null };
     }
     case 'settingsModalEscaped': {
-      // the first escape only backs out of a pending confirmation
       if (state.cacheAction === 'confirm' || state.cacheAction === 'resetConfirm') {
         return { ...state, cacheAction: null };
       }
@@ -166,19 +124,9 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, modal: 'settings', themeColorError: null, cacheAction: null };
     }
     case 'snoozeModalOpened': {
-      /**
-       * The dialog opens straight into the duration edit, because the
-       * duration is all it asks for. The App seeds the draft with the
-       * default duration alongside this dispatch.
-       */
       return { ...state, modal: 'snooze', editing: true, snoozeTarget: action.target, snoozeError: null };
     }
     case 'snoozeCommitted': {
-      /**
-       * A committed snooze closes the dialog and confirms in the footer.
-       * Debug runs keep the cache disabled, in which case the snooze only
-       * lasts the session and the error slot says so instead.
-       */
       const closed = { ...state, modal: null, editing: false, snoozeTarget: null, snoozeError: null };
 
       if (action.saved) {
@@ -198,11 +146,6 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, selectedField: cycled(state.selectedField, action.delta, FIELDS.length), fieldError: null };
     }
     case 'settingSelectionMoved': {
-      /**
-       * The selection walks the flat list, so a move past the last row of
-       * a page lands on the first row of the next one and the dialog
-       * follows to that page.
-       */
       return {
         ...state,
         selectedSetting: cycled(state.selectedSetting, action.delta, SETTINGS.length),
@@ -216,7 +159,6 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, selectedSetting: firstSettingOn(page), settingError: null, cacheAction: null };
     }
     case 'settingPageSelected': {
-      // the digit of the page already shown keeps the row, so a repeated press changes nothing
       if (action.page === settingPageOf(state.selectedSetting)) {
         return state;
       }
@@ -235,7 +177,6 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, editing: true, fieldError: null, settingError: null, themeColorError: null };
     }
     case 'editCancelled': {
-      // the snooze dialog is nothing but its edit, so cancelling the edit closes it
       if (state.modal === 'snooze') {
         return { ...state, modal: null, editing: false, snoozeTarget: null, snoozeError: null };
       }
@@ -249,7 +190,6 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
       return { ...state, fieldError: action.message };
     }
     case 'optionsSaveReported': {
-      // a landed save confirms in the footer notice, a failed one in the modal's error slot
       if (action.saved) {
         return { ...state, fieldError: null, successNotice: { text: 'options saved' } };
       }
@@ -271,7 +211,8 @@ export function uiReducer(state: UiState, action: UiAction): UiState {
     case 'cacheActionReported': {
       return { ...state, cacheAction: action.action };
     }
+    default: {
+      return state;
+    }
   }
-
-  return state;
 }

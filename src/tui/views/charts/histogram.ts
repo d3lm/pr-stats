@@ -6,9 +6,6 @@ import type { Card, Line } from './model';
 
 const HIST_BAR_WIDTH = 36;
 
-/**
- * Picks the tick step for a count axis so at most five ticks appear.
- */
 function axisStep(maxCount: number): number {
   for (const step of [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000, 2000, 5000]) {
     if (maxCount / step <= 5) {
@@ -24,18 +21,9 @@ export interface HistogramSpec {
   subtitle: string;
   values: number[];
   buckets: Bucket[];
-  /**
-   * Formats a value of the bucketed quantity for the p50 marker, like a
-   * duration on the review tab or a line count on the size tab.
-   */
   format: (value: number) => string;
 }
 
-/**
- * Builds a bucketed histogram card. Every bucket gets a bar with its count
- * and share, the bucket holding the median is highlighted with a p50
- * marker, and a count axis runs along the bottom.
- */
 export function buildHistogramCard({ title, subtitle, values, buckets, format }: HistogramSpec): Card {
   const counts = buckets.map(() => 0);
 
@@ -84,6 +72,7 @@ export function buildHistogramCard({ title, subtitle, values, buckets, format }:
     if (at >= lastEnd + 2) {
       placeText(tickCells, at, '╵', theme.dim);
       placeText(numberCells, at, String(value), theme.dim);
+
       lastEnd = at + String(value).length;
     }
   }

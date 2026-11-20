@@ -6,18 +6,8 @@ import { mondayOf, WEEK_MS, weekAxisRow } from './weeks';
 const VOLUME_ROWS = 4;
 const VOLUME_MAX_BARS = 18;
 
-/**
- * Eighth-height block characters for the top of a column, indexed by how
- * many eighths of the boundary row are filled.
- */
 const V_PARTIALS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
-/**
- * Builds a per-week column chart of the given events. Each column is one
- * week, long ranges group several weeks per column, and the busiest
- * column is highlighted. Weights turn the columns from event counts into
- * per-week sums, one weight per date, like comment counts per PR.
- */
 export function buildVolumeCard(title: string, dates: Date[], weights?: number[]): Card {
   const mondays = dates.map((date) => mondayOf(zonedStamp(date).dayUtcMs));
   const first = Math.min(...mondays);

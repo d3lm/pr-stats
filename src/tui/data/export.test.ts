@@ -18,10 +18,6 @@ const options: OptionsState = {
   workDays: 'Mon-Fri',
   workHours: '0-24',
   tz: 'UTC',
-  /**
-   * Wall-clock mode keeps the expected durations a plain subtraction, so
-   * the fixtures do not need to dodge weekends.
-   */
   wallClock: true,
   includeDrafts: false,
   reviewTypes: '',
@@ -117,10 +113,6 @@ const raw: RawData = {
   fetchedAt: new Date('2026-07-10T00:00:00Z'),
 };
 
-/**
- * Puts the shared time mode back to the defaults, so the wall-clock mode
- * these tests configure never leaks into tests that run later.
- */
 function restoreTimeMode(): void {
   configureTimeMode({
     business: true,
@@ -140,10 +132,6 @@ test('builds the report with durations, targets, and per-PR entries', () => {
     expect(report.options.wallClock).toBe(true);
     expect(report.options.reviewTypes).toBeNull();
 
-    /**
-     * The team cycles count in their own fields and stay out of the
-     * summaries until the team stats flag folds them in.
-     */
     expect(report.review.counts).toEqual({
       reviewed: 2,
       pending: 1,
@@ -159,10 +147,6 @@ test('builds the report with durations, targets, and per-PR entries', () => {
     expect(report.review.reviewed.map((entry) => entry.number)).toEqual([1, 2]);
     expect(report.review.pending.map((entry) => entry.number)).toEqual([3]);
 
-    /**
-     * The pending request has waited 24 wall-clock hours by fetch time,
-     * far past the 2h target, so it counts as a guaranteed miss.
-     */
     expect(report.review.target).toEqual({ label: '2h', hours: 2, inside: 1, over: 1, pendingOverdue: 1 });
 
     expect(report.review.reviewed[0]).toEqual({
@@ -193,11 +177,6 @@ test('builds the report with durations, targets, and per-PR entries', () => {
     expect(report.authored.sizeLines).toEqual({ count: 2, mean: 100, p50: 50, p90: 150, min: 50, max: 150 });
     expect(report.authored.mergeTimeHours).toEqual({ count: 1, mean: 24, p50: 24, p90: 24, min: 24, max: 24 });
 
-    /**
-     * Only the merged PR received a review, 12 wall-clock hours after
-     * its creation, and the other PR closed unreviewed, so nothing is
-     * still awaiting a first review.
-     */
     expect(report.authored.firstReviewHours).toEqual({ count: 1, mean: 12, p50: 12, p90: 12, min: 12, max: 12 });
     expect(report.authored.awaitingFirstReview).toBe(0);
 
@@ -250,7 +229,6 @@ test('the team stats flag folds the team cycles into the review counts and summa
       pendingTeam: 1,
     });
 
-    // the ten-hour team review joins the two direct ones
     expect(report.review.reviewTimeHours).toEqual({ count: 3, mean: 5, p50: 4, p90: 10, min: 1, max: 10 });
     expect(report.review.verdicts).toEqual({ approved: 2, changesRequested: 1, commented: 0, other: 0 });
     expect(report.review.reviewed.map((entry) => entry.number)).toEqual([1, 2, 4]);
@@ -291,10 +269,6 @@ test('writes the report to pr-stats.json in the working directory', () => {
     process.chdir(dir);
     exportStatsFile(raw, options);
 
-    /**
-     * The report only holds JSON-native values, so the file parses back
-     * into exactly what the builder returned.
-     */
     const written = JSON.parse(readFileSync(join(dir, 'pr-stats.json'), 'utf8')) as StatsReport;
 
     expect(written).toEqual(buildStatsReport(raw, options));
@@ -306,11 +280,6 @@ test('writes the report to pr-stats.json in the working directory', () => {
   }
 });
 
-/**
- * Drives the published --json code path end to end, the same canned data
- * the App tests render, through a child process so the report on stdout
- * gets parsed exactly like a jq consumer would.
- */
 test('the --json flag prints the full report to stdout', async () => {
   const child = Bun.spawn({
     cmd: [
@@ -349,12 +318,6 @@ test('the --json flag prints the full report to stdout', async () => {
   expect(report.searchCapped).toBe(false);
   expect(report.options.timezone).toBe('Europe/Berlin');
 
-  /**
-   * The backend team is still asked on api#9, which counts as a team
-   * request and stays out of the pending count while the team stats
-   * setting is off, and a teammate already answered on web#16, which
-   * leaves nothing to count.
-   */
   expect(report.review.counts).toEqual({
     reviewed: 3,
     pending: 2,
@@ -365,7 +328,6 @@ test('the --json flag prints the full report to stdout', async () => {
     pendingTeam: 1,
   });
 
-  // the same three cycles the review tab headlines as p50 6h and mean 10.1h
   expect(report.review.reviewTimeHours).toEqual({ count: 3, mean: 10.08, p50: 6, p90: 24, min: 0.25, max: 24 });
   expect(report.review.verdicts).toEqual({ approved: 2, changesRequested: 1, commented: 0, other: 0 });
   expect(report.review.reviewed.map((entry) => entry.totalLines)).toEqual([190, 700, 4]);
@@ -389,17 +351,9 @@ test('the --json flag prints the full report to stdout', async () => {
   expect(report.authored.mergeTimeHours?.count).toBe(3);
   expect(report.authored.mergeTimeHours?.p50).toBe(24);
 
-  /**
-   * Three authored PRs received a review. api#10 got alice's review six
-   * hours into its creation Friday, api#11 was created on a Saturday and
-   * alice reviewed it Tuesday noon Berlin time, 36 counted hours, and
-   * web#13 got its first review a full day in. Nothing else is open and
-   * unreviewed.
-   */
   expect(report.authored.firstReviewHours).toEqual({ count: 3, mean: 22, p50: 24, p90: 36, min: 6, max: 36 });
   expect(report.authored.awaitingFirstReview).toBe(0);
 
-  // api#14 sits exactly on the 400-line budget, so it counts as inside
   expect(report.authored.sizeTarget).toEqual({ label: '<= 400 lines, <= 20 files', inside: 3, over: 2 });
 
   expect(report.authored.reviewers.leaderboard[0]).toEqual({ login: 'alice', prs: 3, reviews: 3 });

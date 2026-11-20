@@ -1,9 +1,8 @@
 import { spawn } from 'node:child_process';
 
 /**
- * Picks the platform's command that opens a URL in the default browser.
- * The empty string on the Windows path fills start's window-title slot,
- * which would otherwise swallow the URL.
+ * The empty string on Windows fills the window-title slot of start, which would otherwise
+ * swallow the URL.
  */
 function openCommand(url: string): { command: string; args: string[] } {
   switch (process.platform) {
@@ -19,12 +18,6 @@ function openCommand(url: string): { command: string; args: string[] } {
   }
 }
 
-/**
- * Opens the URL in the default browser. The child is detached and fire
- * and forget, so nothing blocks on it. A spawn failure or a non-zero
- * exit reports through onError instead of tearing down the TUI, so the
- * caller can tell the user the open failed rather than staying silent.
- */
 export function openInBrowser(url: string, onError: (message: string) => void): void {
   const { command, args } = openCommand(url);
   const child = spawn(command, args, { stdio: 'ignore', detached: true });

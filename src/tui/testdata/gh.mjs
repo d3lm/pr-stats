@@ -1,21 +1,6 @@
-/**
- * Fake gh CLI for regression-testing pr-stats without network access.
- * It serves canned search results and GraphQL responses so the pr-stats
- * output is deterministic across runs, except for the pending and
- * reviewing durations, which depend on the current time.
- */
-
 const args = process.argv.slice(2);
 
-/**
- * The teams testuser belongs to, as the teams query pages them by their
- * combined org/slug. The first organization page holds acme, whose first
- * team page holds the backend team and points at a second team page with
- * the oncall team, and the page points at a second organization page,
- * which holds globex with the platform team. A lookup that stops at the
- * first pages therefore misses two of the three teams. The team requests
- * below name acme/backend, so they classify as team cycles.
- */
+// a teams lookup that stops at the first organization or team page misses two of the three teams
 const ORGANIZATION_PAGES = [
   {
     after: null,
@@ -31,10 +16,6 @@ const ORGANIZATION_PAGES = [
 
 const TEAM_PAGES = [{ organization: 'acme', after: 'acme-teams-1', teams: ['acme/oncall'], endCursor: null }];
 
-/**
- * Builds one page of a teams connection from the slugs on it and the
- * cursor of the page after it, null on the last page.
- */
 function teamPage(teams, endCursor) {
   return {
     pageInfo: { hasNextPage: endCursor !== null, endCursor },
@@ -44,13 +25,6 @@ function teamPage(teams, endCursor) {
   };
 }
 
-/**
- * Review timelines keyed by PR. A request names a user by login or a
- * team by its combined slug, and the outstanding list holds the review
- * requests still open on the PR the same way, which the team
- * classification checks a team request against. A PR without the list
- * has no outstanding request.
- */
 const REVIEW_TIMELINES = {
   'acme/api#1': {
     additions: 150,
@@ -103,11 +77,6 @@ const REVIEW_TIMELINES = {
     reviews: [{ login: 'testuser', at: '2026-08-24T09:00:00Z', state: 'COMMENTED' }],
   },
   'acme/api#9': {
-    /**
-     * Only the backend team was asked, and the request is still open, so
-     * the PR sits in the team section of the awaiting queue and stays out
-     * of the direct counts.
-     */
     additions: 210,
     deletions: 35,
     requests: [{ at: '2026-08-25T09:00:00Z', team: 'acme/backend' }],
@@ -115,12 +84,6 @@ const REVIEW_TIMELINES = {
     outstanding: [{ team: 'acme/backend' }],
   },
   'acme/web#16': {
-    /**
-     * The backend team was asked and a teammate answered, which cleared
-     * the team's request without a trace on the timeline, so the PR
-     * classifies as inaccessible like a request of a team testuser is
-     * not on.
-     */
     additions: 60,
     deletions: 12,
     requests: [{ at: '2026-08-10T09:00:00Z', team: 'acme/backend' }],
@@ -164,11 +127,7 @@ const SIZES = {
     reviews: { nodes: [] },
   },
   'acme/web#13': {
-    /**
-     * The trailing zero-comment reviews push the reviewer leaderboard
-     * one row past its cap, so the tests can drive the x expansion.
-     * Their empty comment counts keep every comment total unchanged.
-     */
+    // the zero-comment reviews push the reviewer leaderboard one row past its cap
     additions: 2500,
     deletions: 400,
     changedFiles: 48,
@@ -189,11 +148,7 @@ const SIZES = {
     },
   },
   'acme/api#14': {
-    /**
-     * The only review here is the author replying to their own threads,
-     * which GitHub records as a review too, so this PR counts as merged
-     * unreviewed and stays off the leaderboard.
-     */
+    // the author's replies to their own threads count as a review on GitHub
     additions: 300,
     deletions: 100,
     changedFiles: 12,
@@ -206,37 +161,17 @@ const SIZES = {
   },
 };
 
-/**
- * Builds one text that can carry a mention, published when it was
- * written and never edited.
- */
 function text(id, body, at, login) {
   return { id, body, createdAt: at, publishedAt: at, lastEditedAt: null, author: { login } };
 }
 
-/**
- * Builds one submitted review with its inline comments.
- */
 function review(id, body, at, login, comments = []) {
   return { id, body, submittedAt: at, lastEditedAt: null, author: { login }, comments };
 }
 
-/**
- * Number of entries the fake serves per page of a text list. The real
- * API pages at a hundred, but the small size makes every list of three
- * run past its first page, so the fetch has to follow the cursors to
- * find the mentions below.
- */
+// a page size this small makes the mention fetch follow cursors
 const MENTION_PAGE = 2;
 
-/**
- * Texts of the PRs the mentions search returns, keyed like the timelines
- * and holding the complete lists the pages are cut from. The mention
- * fetch scans them for @testuser, so web#13 counts from alice's second
- * comment and api#7 from bob's third inline comment on the third review,
- * both of which sit beyond the first page of their list. The author's
- * own mention on web#13 and the longer login on web#3 never count.
- */
 const MENTIONS = {
   'acme/web#13': {
     ...text('web13', 'Redesign of the dashboard. @testuser owns the follow-up.', '2026-07-20T10:00:00Z', 'testuser'),
@@ -269,11 +204,6 @@ const MENTIONS = {
   },
 };
 
-/**
- * Cuts one page out of a complete list. A cursor is the index of the last
- * entry of the page before, as a string, so the page after it starts one
- * past that index.
- */
 function page(list, after) {
   const start = after === undefined ? 0 : Number(after) + 1;
   const nodes = list.slice(start, start + MENTION_PAGE);
@@ -287,11 +217,6 @@ function page(list, after) {
   };
 }
 
-/**
- * Cuts one page out of the reviews list, with the first page of each
- * review's inline comments nested inside the way the real API returns
- * it.
- */
 function reviewsPage(reviews, after) {
   const cut = page(reviews, after);
 
@@ -303,12 +228,6 @@ function reviewsPage(reviews, after) {
   };
 }
 
-/**
- * Answers the mention queries. The first call asks for the first pages of
- * every list of a batch of PRs under pr-numbered aliases, and the
- * follow-up calls ask for one more page of a list under a comments or
- * reviews alias, or of one review's inline comments through its node id.
- */
 function handleMentionQuery(query) {
   const data = {};
 
@@ -363,19 +282,7 @@ function searchItem(repo, number, title, createdAt, state, updatedAt = createdAt
   };
 }
 
-/**
- * Canned results of the four searches, keyed by the qualifier that
- * identifies each query, see searchMode.
- */
 const SEARCHES = {
-  /**
-   * The review search unites the PRs the user was asked to review with
-   * the ones the user reviewed. The requested half also returns the PRs
-   * where only a team of the user is asked, and keeps returning web#16
-   * here although a teammate already answered, so the classification has
-   * to tell the two team requests apart by the outstanding review
-   * requests.
-   */
   review: [
     searchItem('acme/web', 3, 'Add pagination to the list view', '2026-08-22T10:00:00Z', 'open'),
     searchItem('acme/web', 4, 'Rework session handling', '2026-06-19T10:00:00Z', 'closed'),
@@ -388,14 +295,6 @@ const SEARCHES = {
     searchItem('acme/web', 6, 'Fix typo in settings page', '2026-07-15T13:00:00Z', 'closed'),
     searchItem('acme/api', 8, 'Add caching to the sessions store', '2026-08-21T10:00:00Z', 'open'),
   ],
-
-  /**
-   * The request search returns the open PRs whose request still stands,
-   * without a creation bound. Every canned request sits inside the
-   * window, so the review search already returns all of them and the
-   * load has to fold the repeats away. It also keeps returning web#16
-   * like the review search does, so the outstanding check still decides.
-   */
   requested: [
     searchItem('acme/web', 3, 'Add pagination to the list view', '2026-08-22T10:00:00Z', 'open'),
     searchItem('acme/api', 7, 'Refactor the billing worker', '2026-08-19T10:00:00Z', 'open'),
@@ -409,12 +308,6 @@ const SEARCHES = {
     searchItem('acme/web', 13, 'Redesign the dashboard', '2026-07-20T10:00:00Z', 'open'),
     searchItem('acme/api', 14, 'Add rate limiting middleware', '2026-08-01T10:00:00Z', 'closed'),
   ],
-
-  /**
-   * The mentions search unites the mentions index with the login as a
-   * quoted text term bounded by the involves qualifier in one query, so
-   * a PR both halves match, like api#7, comes back once.
-   */
   mentioned: [
     searchItem('acme/web', 13, 'Redesign the dashboard', '2026-07-20T10:00:00Z', 'open', '2026-08-25T14:00:00Z'),
     searchItem('acme/api', 7, 'Refactor the billing worker', '2026-08-19T10:00:00Z', 'open', '2026-08-24T16:00:00Z'),
@@ -429,14 +322,6 @@ const SEARCHES = {
   ],
 };
 
-/**
- * Adds an open PR created long before the window of any test, which
- * testuser reviewed on a first request and was asked again about since.
- * Only the request search returns it, the way GitHub's review search
- * drops it on its creation bound. It joins the canned data only while
- * PR_STATS_TEST_OLD_REQUEST is set, so the App tests keep their queues
- * and the load test opts in.
- */
 if (process.env.PR_STATS_TEST_OLD_REQUEST === '1') {
   REVIEW_TIMELINES['acme/api#30'] = {
     additions: 40,
@@ -452,12 +337,6 @@ if (process.env.PR_STATS_TEST_OLD_REQUEST === '1') {
   SEARCHES.requested.push(searchItem('acme/api', 30, 'Retire the legacy importer', '2025-11-01T10:00:00Z', 'open'));
 }
 
-/**
- * Tells the four searches apart by the qualifiers of their query. The
- * review query carries the reviewed-by qualifier, the request query the
- * review-requested qualifier without it, the mentions query the mentions
- * qualifier, and the authored query none of them.
- */
 function searchMode(query) {
   if (query.includes('reviewed-by:')) {
     return 'review';
@@ -474,10 +353,6 @@ function searchMode(query) {
   return 'authored';
 }
 
-/**
- * Reshapes a canned item into the REST search endpoint's item shape,
- * which the real endpoint returns and the search mapping reads.
- */
 function restSearchItem(item) {
   return {
     number: item.number,
@@ -491,11 +366,6 @@ function restSearchItem(item) {
   };
 }
 
-/**
- * Answers one page of the search endpoint from the canned results. The
- * pr-stats searches go through gh api with the query and the paging as
- * field parameters, the way the REST endpoint takes them.
- */
 function handleSearch(fields) {
   const query = fields.q ?? '';
   const mode = searchMode(query);
@@ -505,14 +375,6 @@ function handleSearch(fields) {
     process.exit(1);
   }
 
-  /**
-   * The real review and request searches exclude the user's own PRs with
-   * a negated author term, because GitHub records inline replies as
-   * reviews. The fake insists on that term so a search that drops it
-   * fails every test that loads through it. The authored and mentions
-   * searches keep the user's own PRs on purpose, so the fake refuses the
-   * term there.
-   */
   const excludesOwn = query.includes('-author:testuser');
 
   if ((mode === 'review' || mode === 'requested') !== excludesOwn) {
@@ -520,11 +382,6 @@ function handleSearch(fields) {
     process.exit(1);
   }
 
-  /**
-   * The request search has no creation bound and asks for open PRs only,
-   * because it exists to find the requests the review search's window
-   * hides. A bound on it would defeat that, so the fake refuses one.
-   */
   if (mode === 'requested' && (query.includes('created:') || !query.includes('is:open'))) {
     process.stderr.write(`fake gh got a request search with the wrong bounds: ${query}\n`);
     process.exit(1);
@@ -541,10 +398,6 @@ function handleSearch(fields) {
   });
 }
 
-/**
- * Collects the -f key=value field parameters of a gh api call into an
- * object.
- */
 function fieldParams() {
   const fields = {};
 
@@ -559,10 +412,6 @@ function fieldParams() {
   return fields;
 }
 
-/**
- * Maps a canned reviewer, a login or a team slug, onto the User or Team
- * union node the API returns for a requested reviewer.
- */
 function requestedReviewer(reviewer) {
   if (reviewer.login !== undefined) {
     return { login: reviewer.login };
@@ -571,16 +420,6 @@ function requestedReviewer(reviewer) {
   return { slug: reviewer.team.split('/')[1], combinedSlug: reviewer.team };
 }
 
-/**
- * Answers the teams queries, the one that lists the organizations of one
- * login with the first team page of each, and the follow-up that asks
- * one organization for a later team page. Both name the login in the
- * userLogins filter and page with an after cursor. Only testuser is
- * known, and any other login fails the way a token without the read:org
- * scope would, so the tests can drive the soft failure of the team
- * lookup. A cursor the canned pages do not know fails too, which catches
- * a lookup that pages from the wrong place.
- */
 function handleTeamsQuery(query) {
   const login = /userLogins: \["([^"]+)"\]/.exec(query)?.[1];
 
@@ -625,16 +464,10 @@ function handleTeamsQuery(query) {
 function handleGraphql(query) {
   const aliasPattern = /pr(\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\)\s*\{\s*pullRequest\(number: (\d+)\)/g;
 
-  // both team queries filter the teams by the login, which no PR query does
   if (query.includes('userLogins')) {
     return JSON.stringify({ data: handleTeamsQuery(query) });
   }
 
-  /**
-   * The review and size queries both fetch additions and deletions, so
-   * the size query is the one asking for the changed-files counter, and
-   * the mention query is the one asking for the PR body.
-   */
   const wantsSizes = query.includes('changedFiles');
 
   if (/\bbody\b/.test(query)) {
@@ -649,6 +482,7 @@ function handleGraphql(query) {
 
     if (wantsSizes) {
       data[alias] = { pullRequest: SIZES[key] ?? null };
+
       continue;
     }
 
@@ -656,6 +490,7 @@ function handleGraphql(query) {
 
     if (!timeline) {
       data[alias] = null;
+
       continue;
     }
 

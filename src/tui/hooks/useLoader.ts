@@ -5,83 +5,26 @@ import { loadData, loadSnapshot, type LoadPhase, type RawData } from '../data/lo
 import { fetchParamsKey, type OptionsState } from '../state/options';
 
 export interface Loader {
-  /**
-   * Holds the loaded data, or null until the first load or the startup
-   * snapshot delivers some.
-   */
   raw: RawData | null;
-  /**
-   * Marks the shown data as the startup snapshot from the previous
-   * session. The flag drops once fresh data replaces it.
-   */
   isSnapshot: boolean;
   loading: boolean;
-  /**
-   * Holds the progress of the running load for the placeholder and the
-   * header spinner.
-   */
   load: LoadPhase | null;
   error: string | null;
-  /**
-   * Marks the error as a rate limit GitHub kept enforcing through the
-   * retries of the load, so the UI can ask for patience instead of an
-   * immediate retry. The previous data stays on screen either way.
-   */
   rateLimited: boolean;
-  /**
-   * Reports that the live options differ from the ones the shown data was
-   * loaded for, so the footer can ask for a reload.
-   */
   stale: boolean;
-  /**
-   * Reloads the data. A plain reload serves closed PRs from the on-disk
-   * cache, and a hard reload bypasses it, refetching everything and
-   * rewriting the cached entries. While the disable-cache setting is on,
-   * every reload bypasses the cache.
-   */
   reload: (bypassCache?: boolean) => void;
 }
 
 export interface LoaderCallbacks {
-  /**
-   * Fires once on mount with the startup snapshot when one rendered,
-   * before the first load starts, so the snapshot can stand in for the
-   * load before that one wherever a caller compares consecutive loads.
-   */
   onSnapshot?: (data: RawData) => void;
-  /**
-   * Fires with every freshly loaded dataset, right after it became the
-   * shown data, and never for the startup snapshot.
-   */
   onLoaded?: (data: RawData) => void;
 }
 
 export interface LoaderSettings {
-  /**
-   * Makes every load bypass the cache, from the --no-cache flag, the
-   * saved setting, or the settings dialog toggle. A noCache start also
-   * skips the startup snapshot like every other cache read.
-   */
   noCache: boolean;
-  /**
-   * Makes every load also look for PRs that mention the user, which the
-   * mention notifications need. The loads skip the extra search and
-   * fetch while it is off.
-   */
   mentions: boolean;
 }
 
-/**
- * Owns the data-loading lifecycle. The lazy snapshot initializer runs
- * once on mount, so the disk read happens exactly once and the charts
- * render instantly from the previous session while the first real load
- * runs in the background. Reload reads the options and the settings from
- * the render it was created in, which useKeyboard keeps current, so a
- * reload always fetches for the latest committed options. The callbacks
- * report the snapshot once and then every fresh load, always in that
- * order, because the snapshot callback runs before the first load even
- * starts.
- */
 export function useLoader(
   options: OptionsState,
   { noCache, mentions }: LoaderSettings,
@@ -103,26 +46,11 @@ export function useLoader(
   const [error, setError] = useState<string | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
 
-  /**
-   * Guards against overlapping loads through a ref, because a second
-   * keypress can land before the loading state commits.
-   */
+  // a ref guards against overlapping loads because a second keypress can land before the loading state commits
   const loadingRef = useRef(false);
 
-  /**
-   * Marks the hook as disposed once its component unmounts, through the
-   * mount effect cleanup. A load that resolves later checks the flag and
-   * publishes nothing, so no state write can land in an unmounted
-   * component.
-   */
   const disposedRef = useRef(false);
 
-  /**
-   * Runs one load and publishes its outcome. Every state update in here
-   * lands after an await, so the mount effect can start a load without
-   * ever setting state synchronously inside an effect, and every one is
-   * gated on the disposed flag.
-   */
   const run = async (bypassCache: boolean) => {
     loadingRef.current = true;
 
@@ -171,22 +99,7 @@ export function useLoader(
     void run(bypassCache || noCache);
   };
 
-  /**
-   * The first load starts on mount, behind the startup snapshot when one
-   * rendered. The initial state already describes a running load, so this
-   * skips the resets a reload does and only starts the fetch, with the
-   * mount-render closure carrying exactly the initial options the first
-   * load must fetch for. The ref guard keeps later renders of this
-   * dependency-free effect from starting the load again. The snapshot
-   * reports right before the fetch starts, which is what guarantees the
-   * callback order, since the load can only finish after an await.
-   *
-   * The cleanup marks the hook disposed, which keeps a load that resolves
-   * after unmount from writing state. On re-renders the cleanup and the
-   * next effect body run back to back in the same synchronous flush, so
-   * the body resets the flag before any in-flight load can observe it and
-   * only a real unmount leaves it set.
-   */
+  // the effect runs after every render, so only a real unmount leaves disposedRef set
   const startedRef = useRef(false);
 
   useEffect(() => {

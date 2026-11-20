@@ -21,24 +21,11 @@ const EMPTY_PLACEHOLDERS: Partial<Record<keyof OptionsState, string>> = {
   reviewTypes: '(every type)',
 };
 
-/**
- * Splits the fields into the two sections the modal renders. The fetch
- * fields change what GitHub returns, and the analysis fields recompute the
- * charts instantly from the cached data.
- */
 const SECTIONS: { title: string; fields: FieldSpec[] }[] = [
   { title: 'Data', fields: FIELDS.filter((field) => field.fetch) },
   { title: 'Analysis', fields: FIELDS.filter((field) => !field.fetch) },
 ];
 
-/**
- * Centered modal over the charts with every option the command line
- * exposes. The fields are grouped into sections, a save-state line
- * labels how the options relate to the saved ones, and the line below
- * it describes the selected field or shows its validation error.
- * Edits that need a reload light up the stale notice in the app footer
- * instead of the modal.
- */
 export function OptionsModal({
   options,
   saved,
@@ -104,11 +91,6 @@ export function OptionsModal({
   );
 }
 
-/**
- * Builds the save-state line above the hint. It labels whether the live
- * options match the options saved in the cache directory, so it doubles as
- * the indicator that this run pulled its options from a save.
- */
 function savedLine(options: OptionsState, saved: OptionsState | null): { text: string; color: string } {
   if (saved === null) {
     return { text: 'press s to save these options for future runs', color: theme.dim };
@@ -133,13 +115,6 @@ function displayValue(key: keyof OptionsState, value: string | boolean): { text:
   return { text: value, isPlaceholder: false };
 }
 
-/**
- * Renders one option row. The value slot right-aligns the current value,
- * turns into an input while editing, and gets arrows around toggle values
- * on the selected row to show that left and right cycle them. A multi
- * row keeps its value on the row and opens the checklist dropdown below
- * it instead of an input.
- */
 function FieldRow({
   field,
   options,
@@ -210,14 +185,6 @@ function FieldRow({
   );
 }
 
-/**
- * The dropdown under a multi row, a focused checklist built on OpenTUI's
- * select. Enter toggles the highlighted choice through the App's toggle
- * handler, which rewrites the option value, and the fresh value renders
- * back into the checkbox glyphs, so the list stays open for more
- * toggles. Escape leaves the edit mode through the keymap, like a text
- * input.
- */
 function Checklist({
   choices,
   checked,

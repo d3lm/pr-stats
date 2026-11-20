@@ -7,11 +7,6 @@ import type { PrRow } from '../views/rows';
 import type { KeymapContext } from './context';
 import { entryAt, handleRepoPickerKey } from './helpers';
 
-/**
- * Resolves the derived views and the state key of the given queue tab,
- * so the key handler below works the same on the three sub-tabs of the
- * Awaiting you tab and on the open-PRs tab.
- */
 function queueTabOf(key: QueueTabKey, views: AppViews | null) {
   if (key === 'pending') {
     return { key, view: views?.pending ?? null, repos: views?.pendingRepos ?? [], scope: views?.pendingScope ?? null };
@@ -38,11 +33,6 @@ function queueTabOf(key: QueueTabKey, views: AppViews | null) {
   return { key, view: views?.open ?? null, repos: views?.openRepos ?? [], scope: views?.openScope ?? null };
 }
 
-/**
- * Opens the PR of the row under the cursor on the site the open-in
- * setting names, or copies its link while the copy-links setting is on,
- * and reports a failed open in the footer.
- */
 function openRow(row: PrRow, context: KeymapContext): void {
   if (context.copyLinks) {
     context.copyRow(row);
@@ -53,14 +43,6 @@ function openRow(row: PrRow, context: KeymapContext): void {
   }
 }
 
-/**
- * Snoozes or unsnoozes the row under the cursor. Only the pending rows
- * and the inbox rows carry an ask to park, so the reviewed queue, the
- * read mentions, and the open authored PRs ignore the key. A snoozed row
- * unsnoozes right away, and an awaiting or unread row opens the snooze
- * dialog, which starts in the edit mode with the default duration as
- * the draft.
- */
 function snoozeRow(row: PrRow, context: KeymapContext): void {
   const ask =
     row.pending !== undefined
@@ -83,11 +65,6 @@ function snoozeRow(row: PrRow, context: KeymapContext): void {
   context.beginEdit(context.snoozeDuration);
 }
 
-/**
- * Acts on the d key for the row under the cursor. The key marks an
- * unread or a snoozed mention read and a read one unread again, and
- * leaves every row without a mention alone.
- */
 function markRow(row: PrRow, context: KeymapContext): void {
   if (row.mention === undefined) {
     return;
@@ -100,10 +77,6 @@ function markRow(row: PrRow, context: KeymapContext): void {
   }
 }
 
-/**
- * Marks every unread mention on screen read in one go, which clears the
- * inbox of the opened scope.
- */
 function markAllRows(view: QueueView | null, context: KeymapContext): void {
   const unread = unreadMentionRows(view);
 
@@ -112,19 +85,6 @@ function markAllRows(view: QueueView | null, context: KeymapContext): void {
   }
 }
 
-/**
- * The queue tabs open on a repo picker when the data spans multiple
- * repos, like the stats tabs, and otherwise render one selectable PR
- * list, whose cursor the movement keys drive and whose highlighted PR
- * enter opens in the browser. On the aggregate list, g toggles grouping
- * the rows by repo. On the awaiting queue, s opens the snooze dialog for
- * an awaiting PR and unsnoozes a snoozed one, and on the mention inbox
- * it does the same for an unread mention, while shift+s opens the
- * settings before the key gets here. On the inbox, d marks the mention
- * under the cursor read, or unread again from the read list, and shift+d
- * marks every unread mention on screen read. The panel scrolls the
- * cursor row into view on its own.
- */
 export function handleQueueKey(key: KeyEvent, queue: QueueTabKey, context: KeymapContext): void {
   const { key: tab, view, repos, scope } = queueTabOf(queue, context.views);
 
@@ -175,6 +135,9 @@ export function handleQueueKey(key: KeyEvent, queue: QueueTabKey, context: Keyma
         markRow(row, context);
       }
 
+      break;
+    }
+    default: {
       break;
     }
   }

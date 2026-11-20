@@ -10,12 +10,6 @@ import {
 } from './compute';
 import type { PrReview, ReviewResult, SizeEntry } from './data';
 
-/**
- * Builds a size entry with the given comment counts and review authors
- * and a fixed size, so the tests only vary what the comment and reviewer
- * stats read. The reviews carry no submission time, which the reviewer
- * and comment stats never read.
- */
 function entry(number: number, discussion: number, review: number, reviewers: string[] = []): SizeEntry {
   return {
     pr: {
@@ -64,11 +58,7 @@ test('ties in the ranking keep the input order', () => {
   expect(stats.top.map((size) => size.pr.number)).toEqual([3, 1, 2]);
 });
 
-/**
- * The merge-stat dates stay on the Wednesday and Thursday after the
- * helper's creation date, so the durations come out the same in every
- * time mode a previously run test may have left configured.
- */
+// the dates stay on weekdays, so the durations match in any time mode an earlier test left configured
 test('splits the PRs by outcome and derives the merge durations, most recent first', () => {
   const merged1 = { ...entry(1, 0, 0), mergedAt: new Date('2026-07-02T12:00:00Z') };
   const merged2 = { ...entry(2, 0, 0), mergedAt: new Date('2026-07-01T06:00:00Z') };
@@ -124,19 +114,9 @@ test('splits the merged PRs by review coverage, where self-replies never count',
   expect(stats.mergedReviewed).toBe(1);
   expect(stats.mergedUnreviewed).toBe(2);
 
-  /**
-   * The closed PR stays out of the coverage but its review still counts
-   * on the leaderboard.
-   */
   expect(stats.leaderboard).toEqual([{ login: 'alice', prs: 2, reviews: 2 }]);
 });
 
-/**
- * Builds a size entry with the given reviews, state, and creation date,
- * so the first-review tests only vary who reviewed and when. The dates
- * stay on the Wednesday and Thursday the other helpers use, so the
- * durations come out the same in every time mode.
- */
 function reviewedEntry(
   number: number,
   reviews: PrReview[],
@@ -190,12 +170,6 @@ test('open PRs without a counted review wait, longest first, and closed ones sta
   expect(stats.awaiting.map((result) => result.hours)).toEqual([24, 12]);
 });
 
-/**
- * Builds one completed review cycle on the given PR with the given
- * verdict, so the cycle and verdict tests can vary just those two.
- * The PR size derives from the number, so the size pass-through is
- * visible per PR.
- */
 function reviewedResult(number: number, verdict: string): ReviewResult {
   return {
     kind: 'reviewed',
@@ -226,11 +200,6 @@ test('counts the completed cycles per PR and carries the verdicts and sizes thro
   expect(stats.reviewed.map((entry) => entry.lines)).toEqual([100, 100, 200]);
 });
 
-/**
- * Builds a team cycle on the given PR, a request of the backend team
- * that you answered, or one that still waits when no review time is
- * given, on an open PR unless a state overrides it.
- */
 function teamResult(number: number, requestedAt: string, reviewedAt: string | null, state = 'open'): ReviewResult {
   const pr = {
     repo: 'acme/api',
@@ -271,11 +240,6 @@ test('the team cycles stand apart until the includeTeam flag folds them into the
     },
   ] satisfies ReviewResult[];
 
-  /**
-   * Without the flag the team fields alone hold the team cycles, with
-   * their durations measured like the direct ones, and the direct counts
-   * read as before.
-   */
   const apart = computeReviewStats(results, { now });
 
   expect(apart.reviewed.map((entry) => entry.pr.number)).toEqual([1]);
@@ -288,12 +252,6 @@ test('the team cycles stand apart until the includeTeam flag folds them into the
     [3, 'acme/backend', 24],
   ]);
 
-  /**
-   * With the flag the team review joins the reviewed entries and the
-   * cycles, the open team request joins the pending ones in request
-   * order, and the closed one counts as expired, while the team fields
-   * keep reporting them.
-   */
   const folded = computeReviewStats(results, { now, includeTeam: true });
 
   expect(folded.reviewed.map((entry) => entry.pr.number)).toEqual([1, 2]);
@@ -304,13 +262,8 @@ test('the team cycles stand apart until the includeTeam flag folds them into the
   expect(folded.teamReviewed).toEqual(apart.teamReviewed);
   expect(folded.teamPending).toEqual(apart.teamPending);
 
-  // the team requests list oldest first, open PRs only
   expect(teamPendingRequests(results).map((entry) => entry.pr.number)).toEqual([3]);
 
-  /**
-   * The reviewing queue lists the team cycle you answered like a direct
-   * one, and leaves a PR alone while your team is asked about it again.
-   */
   expect(latestReviews(results).map((entry) => entry.pr.number)).toEqual([2]);
 
   expect(

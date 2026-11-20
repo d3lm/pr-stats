@@ -1,17 +1,5 @@
 #!/usr/bin/env bash
 
-# Builds the macOS notification helper into dist/pr-stats.app. The TUI
-# spawns the binary inside the bundle to post desktop notifications under
-# the pr-stats name and icon instead of Script Editor's, see
-# native/macos/main.swift for the why. The script compiles the helper for
-# arm64 and x86_64 and joins the slices into one universal binary, renders
-# the icon set from native/macos/icon.png, assembles the bundle, stamps
-# the package version into the Info.plist, and ad-hoc signs the result.
-# Ad-hoc signing is enough because npm never sets the quarantine attribute
-# on the files it extracts, so Gatekeeper leaves the bundle alone. The
-# helper only builds on macOS and needs the Xcode command line tools, and
-# the publish workflow runs it on a macOS runner.
-
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -60,6 +48,7 @@ cp "$source_dir/Info.plist" "$bundle/Contents/Info.plist"
   -c "Set :CFBundleVersion $version" \
   "$bundle/Contents/Info.plist"
 
+# npm never sets the quarantine attribute, so Gatekeeper accepts an ad-hoc signature.
 codesign --force --sign - --identifier "$bundle_id" "$bundle"
 
 echo "built $bundle ($version, $(lipo -archs "$bundle/Contents/MacOS/$executable"))"

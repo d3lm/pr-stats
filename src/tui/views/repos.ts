@@ -4,37 +4,19 @@ import { splitSnoozed, type Snooze } from '../../snooze';
 import type { RawData } from '../data/load';
 
 export interface RepoOption {
-  /**
-   * Holds the repo the entry opens, where null selects the aggregate view
-   * across every repo.
-   */
   repo: string | null;
   label: string;
   detail: string;
 }
 
-/**
- * Formats the picker detail for one repo on the review tab.
- */
 function reviewDetail(counts: { reviewed: number; pending: number }): string {
   return `${counts.reviewed} reviewed` + (counts.pending > 0 ? `, ${counts.pending} pending` : '');
 }
 
-/**
- * Formats the picker detail for one repo on the size tab.
- */
 function sizeDetail(count: number): string {
   return `${count} authored ${count === 1 ? 'PR' : 'PRs'}`;
 }
 
-/**
- * Builds the entries for the repo picker on the review tab. The team flag
- * mirrors the team stats setting and counts the cycles a team of yours
- * was asked for into the details, so a repo that only reaches you through
- * a team does not read as zero while the charts count it. Returns an
- * empty array when the data spans at most one repo, in which case the tab
- * skips the picker and renders the charts directly.
- */
 export function buildReviewRepoOptions(raw: RawData, teamReviewStats = false): RepoOption[] {
   const countsByRepo = new Map<string, { reviewed: number; pending: number }>();
 
@@ -76,11 +58,6 @@ export function buildReviewRepoOptions(raw: RawData, teamReviewStats = false): R
   ];
 }
 
-/**
- * Builds the entries for the repo picker on the size tab. Returns an empty
- * array when the analyzed PRs span at most one repo, in which case the tab
- * skips the picker and renders the charts directly.
- */
 export function buildSizeRepoOptions(raw: RawData): RepoOption[] {
   const countByRepo = new Map<string, number>();
 
@@ -102,12 +79,6 @@ export function buildSizeRepoOptions(raw: RawData): RepoOption[] {
   ];
 }
 
-/**
- * Builds a picker from per-repo counts, All repos with the totals first
- * and then every repo in the given order, each described by the detail
- * formatter. Returns an empty array below two repos, in which case the
- * tab skips the picker and renders its content directly.
- */
 function pickerOf<T extends Record<string, number>>(
   countsByRepo: Map<string, T>,
   zero: () => T,
@@ -135,11 +106,6 @@ function pickerOf<T extends Record<string, number>>(
   ];
 }
 
-/**
- * Adds one to the given count of the given repo. The maps are filled
- * with every repo of the data before the counting starts, so a repo the
- * map lacks cannot occur and is left alone rather than invented.
- */
 function bump<T extends Record<string, number>>(countsByRepo: Map<string, T>, repo: string, key: keyof T & string) {
   const counts: Record<string, number> | undefined = countsByRepo.get(repo);
 
@@ -148,11 +114,6 @@ function bump<T extends Record<string, number>>(countsByRepo: Map<string, T>, re
   }
 }
 
-/**
- * Collects one zeroed counts object per repo with review activity, so
- * the pickers of the awaiting and the reviewed sub-tabs list the same
- * repos as the review tab's picker.
- */
 function reviewRepos<T>(raw: RawData, zero: () => T): Map<string, T> {
   const countsByRepo = new Map<string, T>();
 
@@ -175,9 +136,6 @@ function zeroPending(): PendingCounts {
   return { awaiting: 0, team: 0, snoozed: 0 };
 }
 
-/**
- * Formats the picker detail for one repo on the awaiting sub-tab.
- */
 function pendingDetail(counts: PendingCounts): string {
   const awaiting = `${counts.awaiting} ${counts.awaiting === 1 ? 'PR' : 'PRs'} awaiting your review`;
 
@@ -188,19 +146,6 @@ function pendingDetail(counts: PendingCounts): string {
   );
 }
 
-/**
- * Builds the entries for the repo picker on the awaiting sub-tab of the
- * Awaiting you tab. The repos mirror the review tab's picker, every repo
- * with review activity, so this tab shows its picker whenever that tab
- * does. The details count the open PRs still awaiting a review, which
- * can be zero, next to the ones requested of a team of yours and the
- * snoozed ones of either kind. The snoozes decide which pending PRs
- * count as snoozed at the given time, which defaults to the current time
- * like the queue view, and the team flag mirrors the team setting, so
- * the team requests stay out of the counts while the queue hides them.
- * Returns an empty array when the data spans at most one repo, in which
- * case the tab skips the picker and renders the queue directly.
- */
 export function buildPendingRepoOptions(
   raw: RawData,
   snoozes: readonly Snooze[] = [],
@@ -249,21 +194,10 @@ function zeroReviewed(): ReviewedCounts {
   return { reviewed: 0 };
 }
 
-/**
- * Formats the picker detail for one repo on the reviewed sub-tab.
- */
 function reviewedDetail(counts: ReviewedCounts): string {
   return `${counts.reviewed} reviewed ${counts.reviewed === 1 ? 'PR' : 'PRs'} still open`;
 }
 
-/**
- * Builds the entries for the repo picker on the reviewed sub-tab of the
- * Awaiting you tab. The repos mirror the review tab's picker like the
- * awaiting sub-tab, and the details count the open PRs you already
- * reviewed, which can be zero. Returns an empty array when the data
- * spans at most one repo, in which case the tab skips the picker and
- * renders the list directly.
- */
 export function buildReviewedRepoOptions(raw: RawData): RepoOption[] {
   const countsByRepo = reviewRepos(raw, zeroReviewed);
 
@@ -288,9 +222,6 @@ function zeroMentions(): MentionCounts {
   return { unread: 0, snoozed: 0, read: 0 };
 }
 
-/**
- * Formats the picker detail for one repo on the mentions sub-tab.
- */
 function mentionDetail(counts: MentionCounts): string {
   const unread = `${counts.unread} unread ${counts.unread === 1 ? 'mention' : 'mentions'}`;
 
@@ -301,16 +232,6 @@ function mentionDetail(counts: MentionCounts): string {
   );
 }
 
-/**
- * Builds the entries for the repo picker on the mentions sub-tab of the
- * Awaiting you tab, every repo with a PR that mentions you, most unread
- * first. The details count the unread mentions, which can be zero, next
- * to the snoozed and the read ones. The snoozes and the read state decide
- * where each mention counts at the given time, which defaults to the
- * current time like the queue view. Returns an empty array when the
- * mentions span at most one repo, or while the data holds no mentions,
- * in which case the tab skips the picker and renders the inbox directly.
- */
 export function buildMentionRepoOptions(
   raw: RawData,
   snoozes: readonly Snooze[] = [],
@@ -350,21 +271,10 @@ export function buildMentionRepoOptions(
   );
 }
 
-/**
- * Formats the picker detail for one repo on the open-PRs tab.
- */
 function openDetail(count: number): string {
   return `${count} open ${count === 1 ? 'PR' : 'PRs'}`;
 }
 
-/**
- * Builds the entries for the repo picker on the open-PRs tab. The repos
- * mirror the size tab's picker, every repo with an analyzed authored PR,
- * so this tab shows its picker whenever that tab does, and the details
- * count your authored PRs that are still open, which can be zero. Returns
- * an empty array when the analyzed PRs span at most one repo, in which
- * case the tab skips the picker and renders the list directly.
- */
 export function buildOpenRepoOptions(raw: RawData): RepoOption[] {
   const countByRepo = new Map<string, number>();
 
@@ -389,23 +299,10 @@ export function buildOpenRepoOptions(raw: RawData): RepoOption[] {
   ];
 }
 
-/**
- * Formats the picker detail for one repo on the merged sub-tab of the
- * Your PRs tab.
- */
 function mergedDetail(counts: { merged: number; closed: number }): string {
   return `${counts.merged} merged` + (counts.closed > 0 ? `, ${counts.closed} closed unmerged` : '');
 }
 
-/**
- * Builds the entries for the repo picker on the merged sub-tab of the
- * Your PRs tab. The repos mirror the size tab's picker, every repo with
- * an analyzed authored PR, so this sub-tab shows its picker whenever the
- * open sub-tab does, and the details count the merged and the
- * closed-unmerged PRs, which can both be zero. Returns an empty array
- * when the analyzed PRs span at most one repo, in which case the sub-tab
- * skips the picker and renders the charts directly.
- */
 export function buildMergedRepoOptions(raw: RawData): RepoOption[] {
   const countsByRepo = new Map<string, { merged: number; closed: number }>();
 
@@ -444,18 +341,10 @@ export function buildMergedRepoOptions(raw: RawData): RepoOption[] {
   ];
 }
 
-/**
- * Formats the picker detail for one repo on the comments tab.
- */
 function commentDetail(comments: number, prs: number): string {
   return `${comments} ${comments === 1 ? 'comment' : 'comments'} on ${prs} ${prs === 1 ? 'PR' : 'PRs'}`;
 }
 
-/**
- * Builds the entries for the repo picker on the comments tab. Returns an
- * empty array when the analyzed PRs span at most one repo, in which case
- * the tab skips the picker and renders the charts directly.
- */
 export function buildCommentRepoOptions(raw: RawData): RepoOption[] {
   const countsByRepo = new Map<string, { prs: number; comments: number }>();
 
@@ -464,6 +353,7 @@ export function buildCommentRepoOptions(raw: RawData): RepoOption[] {
 
     counts.prs += 1;
     counts.comments += size.comments.total;
+
     countsByRepo.set(size.pr.repo, counts);
   }
 

@@ -19,26 +19,15 @@ import {
 } from './testing/harness';
 
 test('sends notifications through the injected notifier and keeps the first load and unchanged reloads quiet', async () => {
-  /**
-   * Persisting the toggle needs an enabled cache, so this test points
-   * the cache at a temp directory like the auto-reload test and loads
-   * the empty settings the way bootstrap would. The injected notifier
-   * records every send and reports a delivery failure for each one,
-   * which exercises the footer path without touching a real desktop.
-   */
   const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
 
   process.env.PR_STATS_CACHE_DIR = dir;
+
   configureCache(true);
   loadSettings();
 
   const sent: { title: string; body: string }[] = [];
 
-  /**
-   * The failure of a send waits until the test releases it, the way a
-   * spawn error arrives after the send returned, so the frame in between
-   * can prove that the message slot reported the attempt first.
-   */
   const pending: { fail: (() => void) | null } = { fail: null };
 
   const setup = await renderApp(
@@ -57,10 +46,6 @@ test('sends notifications through the injected notifier and keeps the first load
   );
 
   try {
-    /**
-     * The first load only establishes the baseline, so nothing goes out
-     * even though two PRs already await a review.
-     */
     await waitForText(setup, '2 PRs awaiting your review');
 
     const firstRefresh = await waitForRefresh(setup);
@@ -68,10 +53,6 @@ test('sends notifications through the injected notifier and keeps the first load
 
     expect(sent).toEqual([]);
 
-    /**
-     * The notifications toggle opens the Notifications page of the
-     * settings dialog and persists right away.
-     */
     setup.mockInput.pressKey('S');
 
     await waitForText(setup, 'reloads the data in the background');
@@ -90,11 +71,6 @@ test('sends notifications through the injected notifier and keeps the first load
     expect(setup.captureCharFrame()).toContain('‹ yes ›');
     expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ notifications: true });
 
-    /**
-     * The mention toggle below it persists the same way. The next load
-     * starts looking for mentions and only records them, so the reload
-     * at the end still sends nothing for the canned mentions.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'also notifies you when someone @-mentions you');
@@ -111,11 +87,6 @@ test('sends notifications through the injected notifier and keeps the first load
       notifyMentions: true,
     });
 
-    /**
-     * The team request toggle below it persists the same way. The
-     * canned backend request on api#9 already sits in the baseline, so
-     * the reload at the end sends nothing for it either.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'also notifies you when a PR gets requested');
@@ -133,12 +104,6 @@ test('sends notifications through the injected notifier and keeps the first load
       notifyTeamReviews: true,
     });
 
-    /**
-     * The channel row below the toggles cycles auto, terminal, the
-     * platform command, and bell with wrap-around, and persists each
-     * step. The cycle ends back on auto, so the send below keeps the
-     * default routing.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'auto tries the terminal');
@@ -160,7 +125,6 @@ test('sends notifications through the injected notifier and keeps the first load
 
     await waitForText(setup, '‹ auto ›');
 
-    // left from the first value wraps around to the bell at the end of the cycle
     setup.mockInput.pressArrow('left');
 
     await waitForText(setup, '‹ bell ›');
@@ -183,14 +147,7 @@ test('sends notifications through the injected notifier and keeps the first load
       notifyChannel: 'auto',
     });
 
-    /**
-     * With the renderer posing as iTerm2, the test row names the
-     * terminal as the channel a send takes and trades its hint for the
-     * caveat about the profile setting iTerm2 gates the sequence behind,
-     * because the send itself would report no failure there. The bell
-     * channel never sends the sequence, so the plain hint returns with
-     * it, and the cycle ends back on auto for the send below.
-     */
+    // iTerm2 silently drops the notification sequence unless a profile setting allows it
     setRendererCapabilities(setup.renderer, { notifications: true, terminal: { name: 'iTerm2', version: '3.6.0' } });
 
     setup.mockInput.pressArrow('down');
@@ -199,8 +156,6 @@ test('sends notifications through the injected notifier and keeps the first load
 
     expect(lineWith(setup.captureCharFrame(), 'Send test notification')).toContain('terminal');
     expect(setup.captureCharFrame()).not.toContain('sends a sample notification');
-
-    // the caveat wraps onto the second line of the hint slot instead of clipping
     expect(setup.captureCharFrame()).toContain('Profiles › Terminal');
 
     setup.mockInput.pressArrow('up');
@@ -225,13 +180,6 @@ test('sends notifications through the injected notifier and keeps the first load
 
     await waitForText(setup, '‹ auto ›');
 
-    /**
-     * Enter on the test row sends the sample notification through the
-     * injected notifier and reports the attempt in the message slot. The
-     * notifier's failure report then takes the dialog's bottom line over,
-     * because at this height the dialog covers the footer notice slot the
-     * failure also lands in.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'Notification Center Alerts');
@@ -248,18 +196,13 @@ test('sends notifications through the injected notifier and keeps the first load
 
     expect(setup.captureCharFrame()).not.toContain('test notification sent');
 
-    /**
-     * A reload of the unchanged canned data finds nothing new against
-     * the baseline, so nothing else goes out while the setting is on.
-     * The refresh time has second granularity, so the reload waits for
-     * the next second before it can prove that a load finished.
-     */
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'r reload');
 
     expect(setup.captureCharFrame()).not.toContain('could not send the notification');
 
+    // the refresh time has second granularity
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, 1100 - (Date.now() - firstRefreshSeen))));
 
     setup.mockInput.pressKey('r');
@@ -276,15 +219,6 @@ test('sends notifications through the injected notifier and keeps the first load
 }, 30_000);
 
 test('seeds the notification baseline from the startup snapshot, so the first load reports what changed since the last session', async () => {
-  /**
-   * The snapshot stands for the previous session and needs an enabled
-   * cache to be read, so this test points the cache at a temp directory
-   * like the notifications test above. It holds web#3 awaiting a review
-   * since the same request the canned data reports, and api#7 sitting on
-   * the reviewed queue after a review without a personal request, while
-   * the canned data has api#7 awaiting a review again. It knows nothing
-   * of the backend team's request on api#9.
-   */
   const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
 
   process.env.PR_STATS_CACHE_DIR = dir;
@@ -347,14 +281,6 @@ test('seeds the notification baseline from the startup snapshot, so the first lo
   );
 
   try {
-    /**
-     * The snapshot renders first with its single awaiting PR, and the
-     * fresh load then brings the second one and the team request. Only
-     * api#7 and api#9 are news against the snapshot. Without a completed
-     * request cycle of yours on it, the notification calls api#7 a new
-     * request, and the backend team's request on api#9 reports under its
-     * own heading because the team notifications are on.
-     */
     await waitForText(setup, '1 PR awaiting your review');
     await waitForText(setup, '2 PRs awaiting your review');
 
@@ -366,10 +292,6 @@ test('seeds the notification baseline from the startup snapshot, so the first lo
       { title: 'Review requested of your team on acme/api#9', body: 'Migrate the queue consumers' },
     ]);
 
-    /**
-     * A reload of the unchanged canned data finds nothing new against the
-     * baseline the first load left behind, the same as without a snapshot.
-     */
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, 1100 - (Date.now() - firstRefreshSeen))));
 
     setup.mockInput.pressKey('r');
@@ -386,14 +308,6 @@ test('seeds the notification baseline from the startup snapshot, so the first lo
 }, 30_000);
 
 test('a snapshot of another account never seeds the review baseline', async () => {
-  /**
-   * The snapshot is the one of the test above, which reports api#7 as a
-   * new request when it belongs to the same login, but it was loaded for
-   * alice while the fake resolves testuser, as after switching the gh
-   * account with an empty user option. Alice's pending PRs say nothing
-   * about what is news to testuser, so the first load only records what
-   * is there.
-   */
   const dir = mkdtempSync(join(tmpdir(), 'pr-stats-app-'));
 
   process.env.PR_STATS_CACHE_DIR = dir;

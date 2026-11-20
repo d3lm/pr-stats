@@ -50,11 +50,6 @@ import {
   type StatsView,
 } from '../views/stats';
 
-/**
- * Resolves the scope a tab actually renders. Data that spans at most one
- * repo has no picker and always shows the aggregate view, and an opened
- * repo that vanished falls back to the picker.
- */
 function resolveScope(scope: PanelScope, repos: RepoOption[]): PanelScope {
   if (repos.length === 0) {
     return { view: 'detail', repo: null };
@@ -63,10 +58,6 @@ function resolveScope(scope: PanelScope, repos: RepoOption[]): PanelScope {
   return dropVanishedRepo(scope, repos);
 }
 
-/**
- * Everything the tabs render, derived from the loaded data
- * and the live options in one synchronous pass.
- */
 export interface AppViews {
   pendingRepos: RepoOption[];
   reviewedRepos: RepoOption[];
@@ -84,18 +75,10 @@ export interface AppViews {
   reviewScope: PanelScope;
   sizeScope: PanelScope;
   commentScope: PanelScope;
-  /**
-   * Holds the view of the opened scope, or null while the tab shows the
-   * repo picker instead.
-   */
   pending: QueueView | null;
   reviewed: QueueView | null;
   mentions: QueueView | null;
   open: QueueView | null;
-  /**
-   * Flags the sub-tabs of the Awaiting you tab that hold something to
-   * act on across every repo, which the sub-tab bar marks.
-   */
   alerts: QueueAlerts;
   merged: StatsView | null;
   review: StatsView | null;
@@ -103,33 +86,11 @@ export interface AppViews {
   comments: StatsView | null;
 }
 
-/**
- * The settings that steer how the views treat the review requests of a
- * team you belong to. The team flag lists them on the awaiting queue,
- * and the stats flag folds them into the review tab and its pickers.
- */
 export interface TeamViewSettings {
   teamReviews: boolean;
   teamReviewStats: boolean;
 }
 
-/**
- * Derives everything the tabs render from the loaded data, the live
- * options, the per-tab scopes with the queue grouping, the snoozes, the
- * read state of the mention inbox, the team settings, and the terminal
- * width. Returns null before the first data arrives. Pure apart from
- * configuring the shared
- * time-mode singleton the compute layers read, which happens right
- * before they run so it stays consistent for this render, and apart from
- * the awaiting-you queue reading the clock to place the snoozed PRs,
- * which the wake-up timer keeps current by changing the snoozes when one
- * ends.
- *
- * The view builders bake the current theme colors into their lines, so
- * the theme epoch invalidates the memo. It changes identity whenever the
- * settings dialog changes the theme, which rebuilds the views with the
- * new colors.
- */
 export function useViewModel(
   raw: RawData | null,
   options: OptionsState,
@@ -143,14 +104,10 @@ export function useViewModel(
   themeEpoch: unknown,
 ): AppViews | null {
   return useMemo(() => {
-    // referenced for the memo alone, the builders read the theme directly
+    // the builders bake theme colors into their lines, so a theme change rebuilds the views
     void themeEpoch;
 
-    /**
-     * The compute and format layers read the shared time-mode singleton, so
-     * it gets configured here right before they run. Everything below is
-     * synchronous, which keeps the singleton consistent for this render.
-     */
+    // the compute layers read this global, which stays consistent only because the code below is synchronous
     configureTimeMode({
       business: !options.wallClock,
       workWindows: parseWorkHours(options.workHours),
@@ -180,11 +137,6 @@ export function useViewModel(
 
     const sizeTarget = options.sizeTarget === '' ? undefined : parseSizeTarget(options.sizeTarget);
 
-    /**
-     * The queue builders read the clock themselves through their defaults,
-     * so the flag passes behind an undefined time rather than a clock
-     * read in the memo.
-     */
     const now = undefined;
 
     const pendingRepos = buildPendingRepoOptions(raw, snoozes, now, teamReviews);

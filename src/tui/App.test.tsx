@@ -10,12 +10,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
   const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
 
   try {
-    /**
-     * The app opens on the awaiting-review tab, whose queue spans two
-     * repos in the canned data, so the load is done once its repo picker
-     * renders. The Stats tab opens on the review-time sub-tab, whose
-     * picker renders the same way under the sub-tab strip.
-     */
     await waitForText(setup, '2 PRs awaiting your review');
 
     setup.mockInput.pressKey('3');
@@ -42,13 +36,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(reviewFrame).toContain('@testuser');
     expect(reviewFrame).toContain('1-3 tabs');
 
-    /**
-     * The pinned strip above the charts summarizes how the PRs classified,
-     * and the scope row carries the headline percentiles. Every canned PR
-     * took a single review round, so the PR count and the round count agree.
-     * The canned p90 of 24 hours lands exactly on the one-day target, so the
-     * headline reports the target as met.
-     */
     expect(reviewFrame).toContain('3 PRs reviewed');
     expect(reviewFrame).toContain('3 review rounds');
     expect(reviewFrame).toContain('2 awaiting you');
@@ -59,16 +46,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(reviewFrame).toContain('at the 1d target');
     expect(reviewFrame).toContain('3 of 3 reviews');
 
-    /**
-     * The scroll area opens with the full-width distribution strip, and
-     * the service-level gauge leads the chart cards because a target is
-     * configured. The pending review on acme/web has waited past the
-     * one-day target, so the gauge counts it as a guaranteed miss next
-     * to the completed reviews. The pending queue lives on its own tab,
-     * so the review tab never repeats it as a list. The terminal is too
-     * narrow for two chart columns here, so the cards stack and the
-     * histogram marks the bucket that holds the median.
-     */
     expect(reviewFrame).toContain('Review time distribution');
     expect(reviewFrame).toContain('mean 10.1h');
     expect(reviewFrame).not.toContain('Awaiting your review (n=');
@@ -77,14 +54,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(reviewFrame).toContain('awaiting and already over');
     expect(reviewFrame).toContain('← p50 6h');
 
-    /**
-     * The remaining charts sit below the fold, so scroll the review pane
-     * down card by card in the grid's fill order. The scatter plots the
-     * three completed reviews against their PR sizes, the cycles
-     * histogram counts every canned PR as one-and-done, and the verdict
-     * gauge splits the three completed reviews into two approvals and
-     * one change request.
-     */
     await scrollToText(setup, 'Review time trend');
     await scrollToText(setup, 'When you review');
     await scrollToText(setup, 'reviews in that hour');
@@ -103,11 +72,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await scrollToText(setup, 'Pending request age');
 
-    /**
-     * The end of the pane holds the by-repo comparison, which the
-     * aggregate view renders because the data spans two repos, with the
-     * off-hours gauge above it.
-     */
     setup.mockInput.pressKey(KeyCodes.END);
 
     await waitForText(setup, 'Review time by repo');
@@ -119,10 +83,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(reviewEndFrame).toContain('weekend');
     expect(reviewEndFrame).toContain('n=2');
 
-    /**
-     * Escape returns to the picker, and the row below All repos drills
-     * into acme/api alone.
-     */
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'Select a repository');
@@ -135,15 +95,10 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await waitForText(setup, '2 of 3 reviews');
 
-    /**
-     * The scope header above the charts names the opened repo, so it stays
-     * clear which repo the stats cover.
-     */
     expect(setup.captureCharFrame()).toContain('▸ acme/api');
     expect(setup.captureCharFrame()).toContain('2 PRs reviewed');
     expect(setup.captureCharFrame()).toContain('2 review rounds');
 
-    // t moves to the PR size sub-tab, which opens on its own picker
     setup.mockInput.pressKey('t');
 
     await waitForText(setup, '5 authored PRs');
@@ -154,11 +109,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     const sizeFrame = setup.captureCharFrame();
 
-    /**
-     * The size tab mirrors the review tab layout, with its own pinned
-     * strip, headline percentiles, over-target list, distribution strip,
-     * and the lines-total histogram marking the median bucket.
-     */
     expect(sizeFrame).toContain('▸ All repos');
     expect(sizeFrame).toContain('5 PRs analyzed');
     expect(sizeFrame).toContain('1 open');
@@ -170,12 +120,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(sizeFrame).toContain('Authored PRs over the size target');
     expect(sizeFrame).toContain('← p50 400');
 
-    /**
-     * The remaining size charts sit below the fold, so scroll the pane
-     * down card by card in the grid's fill order. The net lines trend
-     * sums additions minus deletions per week, so its line ends on the
-     * +200 of the last merged PR.
-     */
     await scrollToText(setup, 'PR size trend');
     await scrollToText(setup, 'Files touched');
     await scrollToText(setup, 'weekly net lines');
@@ -197,10 +141,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(setup.captureCharFrame()).toContain('inside target');
 
-    /**
-     * The size picker keeps its own cursor, so it starts back at All
-     * repos and two moves land on acme/web.
-     */
     setup.mockInput.pressEscape();
 
     await waitForText(setup, '2 authored PRs');
@@ -220,10 +160,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(setup.captureCharFrame()).toContain('▸ acme/web');
     expect(setup.captureCharFrame()).toContain('p50 45 lines');
 
-    /**
-     * The comments sub-tab opens on its own picker, whose details count
-     * the comments per repo, most commented first.
-     */
     setup.mockInput.pressKey('t');
 
     await waitForText(setup, '30 comments on 5 PRs');
@@ -239,12 +175,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     const commentFrame = setup.captureCharFrame();
 
-    /**
-     * The comments tab mirrors the stats tab layout, with its own pinned
-     * strip, headline percentiles, most-commented list, distribution
-     * strip, the comments histogram marking the median bucket, and the
-     * scatter of comments against PR size.
-     */
     expect(commentFrame).toContain('▸ All repos');
     expect(commentFrame).toContain('5 PRs analyzed');
     expect(commentFrame).toContain('30 comments received');
@@ -257,12 +187,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(commentFrame).toContain('16 comments (4 discussion, 12 review)');
     expect(commentFrame).toContain('← p50 3');
 
-    /**
-     * The remaining comment charts sit below the fold, so scroll the pane
-     * down card by card in the grid's fill order. The volume chart sums
-     * the comment counts per week instead of counting PRs, so its total
-     * says 30 over the same nine weeks the size tab spans.
-     */
     await scrollToText(setup, 'Comment trend');
     await scrollToText(setup, 'Comments vs size');
     await scrollToText(setup, '9 weeks · 30 total');
@@ -278,11 +202,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(commentEndFrame).toContain('Comment spread');
     expect(commentEndFrame).toContain('no comments');
 
-    /**
-     * Shift+t cycles the sub-tabs backward, and each sub-tab keeps its
-     * own scope, so the size sub-tab still shows the acme/web charts it
-     * was left on.
-     */
     setup.mockInput.pressKey('T');
 
     await waitForText(setup, '2 of 5 PRs');
@@ -306,24 +225,12 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(optionsFrame).not.toContain('Clear cache');
     expect(optionsFrame).not.toContain('applies on reload');
 
-    // nothing is saved, so the save-state line offers the save
     expect(optionsFrame).toContain('press s to save these options for future runs');
 
-    /**
-     * Debug runs keep the cache disabled, so saving from the modal stores
-     * nothing and says so in the error slot. The next navigation clears
-     * the message again.
-     */
     setup.mockInput.pressKey('s');
 
     await waitForText(setup, 'cache is disabled for this session · options not saved');
 
-    /**
-     * Toggle wall clock with space. Moving up from the first field wraps
-     * to the wall clock toggle at the bottom, and the toggle flips the
-     * time-mode label in the header. Wall clock is an analysis option, so
-     * the reload notice stays away.
-     */
     setup.mockInput.pressArrow('up');
 
     await waitForText(setup, 'measure raw elapsed time including weekends');
@@ -334,11 +241,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(setup.captureCharFrame()).not.toContain('options changed');
 
-    /**
-     * Toggling a data option marks the loaded data stale, which lights up
-     * the reload notice in the app footer. The waits between the key
-     * presses let React commit each selection change first.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'ISO date or a relative value');
@@ -359,24 +261,12 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await waitForText(setup, 'options changed · press r to reload');
 
-    /**
-     * Escape closes the modal, which brings back the stats hints and
-     * removes the option fields from the frame.
-     */
     setup.mockInput.pressEscape();
 
     await waitForText(setup, 'esc back');
 
     expect(setup.captureCharFrame()).not.toContain('Work hours');
 
-    /**
-     * The settings dialog opens with shift+s on its General page, with
-     * the auto-reload toggle selected first. The tab strip names every
-     * page, only the rows of the shown page render, and the footer names
-     * the keys that switch pages. Auto reload starts off, and the
-     * interval row below it shows the default cadence a toggle would
-     * start with.
-     */
     setup.mockInput.pressKey('S');
 
     await waitForText(setup, 'reloads the data in the background');
@@ -402,11 +292,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(lineWith(setup.captureCharFrame(), 'Reload interval')).toContain('10m');
 
-    /**
-     * The link rows follow on the same page. The open-in row starts on
-     * github and cycles to linear and back, and the copy-links toggle
-     * closes the page.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'github opens the PR page');
@@ -426,13 +311,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await waitForText(setup, 'clipboard');
 
-    /**
-     * Down past the last row of a page walks onto the first row of the
-     * next page, and the dialog follows to that page. The awaiting-you
-     * page starts with the mention tracking and the team requests on,
-     * the team review count off, and the default-snooze row shows the
-     * duration the snooze dialog starts with.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'searches the PRs that @-mention you');
@@ -461,13 +339,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(lineWith(setup.captureCharFrame(), 'Default snooze')).toContain('30m');
 
-    /**
-     * Tab switches to the next page and lands on its first row. The
-     * notifications toggle starts off, the mention and team request
-     * toggles below it too, the channel row starts on auto, and the
-     * test row below them names the channel the notification goes
-     * through.
-     */
     setup.mockInput.pressTab();
 
     await waitForText(setup, 'notifies you when a load finds');
@@ -502,12 +373,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(setup.captureCharFrame()).toContain('Send test notification');
 
-    /**
-     * Shift+tab goes back one page, and a digit jumps straight to the
-     * page at that position. The appearance page holds the theme rows,
-     * where left and right cycle the built-in themes and apply them
-     * right away, and the debug run cannot persist the choice.
-     */
     setup.mockInput.pressTab({ shift: true });
 
     await waitForText(setup, 'searches the PRs that @-mention you');
@@ -528,12 +393,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await waitForText(setup, '‹ default ›');
 
-    /**
-     * The edit-colors row opens the theme dialog, which lists every
-     * theme color with its hex value. A bad value keeps the edit open
-     * and shows the error, and escape backs out to the settings dialog
-     * on the page it left.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'opens the color list');
@@ -568,11 +427,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(setup.captureCharFrame()).toContain('Edit colors');
 
-    /**
-     * The data page opens on the disable-cache toggle. Toggling it flips
-     * the value right away, and the debug run cannot persist it, which
-     * the message slot reports.
-     */
     setup.mockInput.pressKey('5');
 
     await waitForText(setup, 'refetch everything on every load');
@@ -583,7 +437,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(dataFrame).toContain('‹ no ›');
     expect(dataFrame).toContain('Clear cache');
 
-    // the clear-cache row shows the size of the cache directory after its path
     expect(dataFrame).toContain(`pr-stats · ${formatBytes(cacheSize())}`);
 
     setup.mockInput.pressKey(' ');
@@ -592,12 +445,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     expect(setup.captureCharFrame()).toContain('‹ yes ›');
 
-    /**
-     * The clear-cache action sits below the toggle. The first enter arms
-     * the confirmation, escape backs out without closing the dialog, and
-     * a confirmed clear reports that the cache is disabled, because debug
-     * runs never touch it.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'deletes the cached PR data');
@@ -621,12 +468,7 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await waitForText(setup, 'nothing to clear');
 
-    /**
-     * The export row shows the file it would write, next to the
-     * same-report hint. The enter press stays untested here because it
-     * would write pr-stats.json into the repo, and the export itself is
-     * covered by the export tests.
-     */
+    // pressing enter on the export row would write pr-stats.json into the repo
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'writes the loaded stats to this file');
@@ -634,11 +476,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
     expect(setup.captureCharFrame()).toContain('Export stats as JSON');
     expect(setup.captureCharFrame()).toContain('pr-stats.json');
 
-    /**
-     * The reset-settings action closes the page and mirrors the
-     * clear-cache confirm flow, and the debug run has no settings file
-     * to delete.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'deletes the settings file');
@@ -651,10 +488,6 @@ test('loads canned data and renders both tabs, the options modal, and the settin
 
     await waitForText(setup, 'nothing to reset');
 
-    /**
-     * Down from the last row of the last page wraps around to the first
-     * row of the first page.
-     */
     setup.mockInput.pressArrow('down');
 
     await waitForText(setup, 'reloads the data in the background');

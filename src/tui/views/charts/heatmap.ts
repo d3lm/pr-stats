@@ -19,28 +19,11 @@ function heatColor(count: number): string {
 export interface HeatmapSpec {
   title: string;
   subtitle: string;
-  /**
-   * Holds the events the weekday-by-hour grid counts, one date per event.
-   */
   grid: Date[];
-  /**
-   * Describes the count columns to the right of the grid, each counting
-   * its own dates per weekday. A muted column renders its counts in the
-   * muted color to mark it as secondary.
-   */
   columns: { label: string; dates: Date[]; muted?: boolean }[];
-  /**
-   * Names what one grid cell counts in the legend, like "reviews in that
-   * hour".
-   */
   legend: string;
 }
 
-/**
- * Builds a weekday-by-hour heatmap card in the style of the GitHub
- * contribution grid. Each cell covers one local hour and the hours are
- * grouped into four six-hour blocks.
- */
 export function buildHeatmapCard({ title, subtitle, grid, columns, legend }: HeatmapSpec): Card {
   const cells = WEEKDAY_LABELS.map(() => Array.from({ length: 24 }, () => 0));
 
@@ -87,9 +70,10 @@ export function buildHeatmapCard({ title, subtitle, grid, columns, legend }: Hea
 
     for (const [i, column] of columns.entries()) {
       const count = counts[i][day];
+      const countText = count === 0 ? '·' : String(count);
 
       line.push({
-        text: (count === 0 ? '·' : String(count)).padStart(columnWidths[i]),
+        text: countText.padStart(columnWidths[i]),
         fg: count === 0 ? theme.dim : column.muted === true ? theme.muted : theme.text,
       });
     }

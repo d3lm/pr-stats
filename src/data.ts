@@ -23,25 +23,6 @@ export interface ReviewPr {
   createdAt: Date;
 }
 
-/**
- * Classification of one request cycle from a PR's review timeline. A PR
- * yields one result per completed request-review cycle plus at most one
- * pending result for an unanswered request, so a PR that was reviewed and
- * then re-requested contributes both. Reviewed and pending results carry
- * raw timestamps instead of durations, so a different time mode can
- * recompute durations without refetching anything. Unrequested results
- * carry the time of your latest review, which feeds the reviewing queue.
- * Reviewed results also carry the verdict of the review that closed the
- * cycle, a GitHub review state like APPROVED or CHANGES_REQUESTED, and
- * the total lines the PR changed, which feeds the review-time-vs-size
- * scatter.
- *
- * The team kinds mirror pending and reviewed for a cycle that only a
- * team you belong to was asked for, and name that team by its combined
- * org/slug. They stay apart from the direct kinds so the settings decide
- * at read time whether they show up in the queue and count in the stats,
- * which keeps the stored snapshot valid across a toggle.
- */
 export type ReviewResult =
   | { kind: 'inaccessible'; pr: ReviewPr }
   | { kind: 'unrequested'; pr: ReviewPr; reviewedAt: Date }
@@ -67,30 +48,14 @@ export interface AuthoredPr {
   createdAt: Date;
 }
 
-/**
- * Comment counts of one authored PR. Discussion comments live on the
- * conversation, review comments sit inline on the diff, and total is
- * their sum. Both counts include the author's own replies, because the
- * per-comment authors are not fetched.
- */
 export interface CommentCounts {
   discussion: number;
   review: number;
   total: number;
 }
 
-/**
- * One review on an authored PR as the size fetch returns it.
- */
 export interface PrReview {
-  /**
-   * Holds the reviewer's login, or null when the account was deleted.
-   */
   login: string | null;
-  /**
-   * Holds when the review was submitted, or null for a pending review
-   * that exists but was never submitted.
-   */
   submittedAt: Date | null;
 }
 
@@ -100,22 +65,11 @@ export interface SizeEntry {
   additions: number;
   deletions: number;
   total: number;
-  /**
-   * Holds when the PR was merged, or null while it is open or was closed
-   * without a merge.
-   */
   mergedAt: Date | null;
-  /**
-   * Holds when the PR was closed, merged or not, or null while it is
-   * open.
-   */
   closedAt: Date | null;
   comments: CommentCounts;
   /**
-   * Holds every review on the PR, one entry per review round with the
-   * reviewer's login and submission time, so a repeat reviewer appears
-   * once per round. GitHub records inline replies as reviews too, so
-   * the PR author's own login shows up here, and consumers exclude it.
+   * GitHub records inline replies as reviews, so the PR author's own login shows up here.
    */
   reviews: PrReview[];
 }
@@ -123,44 +77,21 @@ export interface SizeEntry {
 export type ProgressCallback = (done: number, total: number) => void;
 
 export interface FetchOptions {
-  /**
-   * Skips reading the cache so every PR gets refetched from GitHub. Fresh
-   * results for closed PRs still get written back, which repairs stale
-   * entries.
-   */
   bypassCache?: boolean;
 }
 
 /**
- * Number of PRs fetched per GraphQL call. Each PR becomes an alias in one
- * batched query, and 25 keeps the query size well under the API limits.
+ * Keeps the aliased batch query well under the GitHub GraphQL size limits.
  */
 const BATCH_SIZE = 25;
 
 /**
- * Number of batched GraphQL calls kept in flight at once, across every
- * fetch in the process. Running batches concurrently cuts the wall-clock
- * time of a large fetch, and the small bound keeps the request rate
- * friendly to GitHub's secondary rate limits even when the review and
- * size fetches run at the same time.
+ * Bounds in-flight GraphQL calls process-wide to stay under GitHub's secondary rate limits.
  */
 const MAX_CONCURRENT_BATCHES = 4;
 
-/**
- * The shared gate every fetch runs its batches through. Sharing one gate
- * keeps the process-wide number of in-flight GraphQL calls at the bound
- * when the review and size fetches run concurrently.
- */
 const limit = createLimiter(MAX_CONCURRENT_BATCHES);
 
-/**
- * Fetches the given PRs in batches with a bounded number of calls in
- * flight, stores every result into the found map, and writes the PRs the
- * cacheable predicate accepts back to the cache, which by default are the
- * closed ones. The onBatchDone callback receives the number of PRs
- * processed so far. Batches can finish out of order, so that count grows
- * monotonically but not in input order.
- */
 async function fetchMissing<Pr extends { repo: string; number: number; state: string }, T>(
   misses: Pr[],
   fetchBatch: (batch: Pr[]) => Promise<(T | null)[]>,
@@ -194,21 +125,13 @@ async function fetchMissing<Pr extends { repo: string; number: number; state: st
         }
 
         completed += batch.length;
+
         onBatchDone(completed);
       }),
     ),
   );
 }
 
-/**
- * Resolves the login the stats cover. A configured user always wins and
- * never touches the cache. Otherwise the cached login skips the lookup
- * round trip, and a fresh lookup fills the cache. The cache entry is
- * keyed by a fingerprint of the active credentials, so switching the
- * token or the gh account resolves the new user immediately instead of
- * serving the previous one until the entry expires. The entry also
- * expires after a day, and a bypass skips it entirely.
- */
 export async function resolveUser(configured: string, bypassCache = false): Promise<string> {
   const trimmed = configured.trim();
 
@@ -233,18 +156,6 @@ export async function resolveUser(configured: string, bypassCache = false): Prom
   return login;
 }
 
-/**
- * Resolves the teams the user belongs to, as a set of combined org/slug
- * names, so the classification can tell a review request of one of your
- * teams from one of another team. The cached entry serves while it is
- * fresh and was written for the same login under the same credentials,
- * and a bypass skips it like resolveUser does, so a hard reload picks up
- * a changed membership right away. A failed lookup, which a token
- * without the read:org scope causes, never fails the load. It falls back
- * to the cached entry even when that has expired, and to no teams at all
- * without one, in which case the team requests classify as they did
- * before the lookup existed.
- */
 export async function resolveTeams(user: string, bypassCache = false): Promise<ReadonlySet<string>> {
   const auth = await authFingerprint();
   const cached = readCachedTeams(auth, user);
@@ -265,11 +176,7 @@ export async function resolveTeams(user: string, bypassCache = false): Promise<R
 }
 
 /**
- * Turns the review search results into the PR list the review fetch
- * works from. The search already unites the PRs you were asked to review
- * with the ones you reviewed and returns each once, so this only reshapes
- * the items, keyed by repo and number in case a page boundary ever
- * repeats one.
+ * GitHub search can repeat an item across a page boundary.
  */
 export function collectReviewPrs(review: SearchPrItem[]): ReviewPr[] {
   const prByKey = new Map<string, ReviewPr>();
@@ -290,27 +197,11 @@ export function collectReviewPrs(review: SearchPrItem[]): ReviewPr[] {
   return [...prByKey.values()];
 }
 
-/**
- * The PR list of the review fetch together with the keys of the PRs the
- * windowed review search did not return, see mergeRequestedPrs.
- */
 export interface MergedReviewPrs {
   prs: ReviewPr[];
   outsideWindow: Set<string>;
 }
 
-/**
- * Unites the PRs of the windowed review search with the ones of the
- * unbounded request search into the list the review fetch works from, so
- * a request on a PR older than the window reaches the queue. Each PR
- * comes out once, in the order of the review search first, and the keys
- * of the PRs only the request search returned come out as the outside
- * set, which the load hands to queueResultsOnly once the fetch classified
- * them, because those PRs may only feed the queue and not the histogram.
- * A PR both searches return counts as inside the window, whatever its
- * creation date, because the review search decides what the histogram
- * covers.
- */
 export function mergeRequestedPrs(review: SearchPrItem[], requested: SearchPrItem[]): MergedReviewPrs {
   const prs = collectReviewPrs(review);
   const inside = new Set(prs.map((pr) => prKey(pr.repo, pr.number)));
@@ -328,15 +219,6 @@ export function mergeRequestedPrs(review: SearchPrItem[], requested: SearchPrIte
   return { prs, outsideWindow };
 }
 
-/**
- * Drops every result of the PRs outside the window except their open
- * requests, direct or of a team, so those PRs sit in the awaiting queue
- * while their completed cycles stay out of the review-time statistics,
- * which the since window bounds by the PR's creation date. The results
- * of the other PRs pass through untouched. An outside PR whose request
- * was answered in the meantime, which the search may still return while
- * its index catches up, leaves no result at all.
- */
 export function queueResultsOnly(results: ReviewResult[], outsideWindow: ReadonlySet<string>): ReviewResult[] {
   if (outsideWindow.size === 0) {
     return results;
@@ -351,35 +233,8 @@ export function queueResultsOnly(results: ReviewResult[], outsideWindow: Readonl
 }
 
 /**
- * Classifies one PR from its review timeline into one result per request
- * cycle. Requests and reviews merge into one chronological walk where the
- * earliest unanswered request opens a cycle and the next review closes it,
- * so a re-request while a review is already outstanding never starts a
- * second cycle, and a review at the same instant as a request still counts
- * for it. A final unanswered request becomes a pending result, which keeps
- * a PR that was reviewed and then re-requested in the pending queue.
- * A countedStates set restricts which GitHub review states count as a
- * review at all, so an uncounted review neither closes a cycle nor puts
- * the PR on the reviewing queue, and a PR whose only reviews are uncounted
- * drops out entirely when no request names you.
- *
- * Requests of a team in the teams set join the same walk, so one review
- * of yours closes a direct and a team request at once, and a direct
- * request dominates within a cycle. A direct request opens the cycle or
- * takes it over, a team request that arrives while a direct request is
- * open changes nothing, and a review closes the cycle as reviewed while a
- * direct request is open and as team-reviewed otherwise, dated from the
- * earliest team request of the cycle. A team cycle still open at the end
- * of the walk becomes team-pending when one of its teams is still among
- * the PR's outstanding review requests, because a teammate's review
- * clears the team's request without leaving a trace on the timeline, and
- * drops otherwise. Its request time is the earliest, across the teams
- * still requested, of each team's latest request in the cycle. Only the
- * latest per team can stand for a request that still waits, because a
- * team a teammate satisfied and that was then asked again leaves two
- * events in the cycle, and the first would hide the re-request behind an
- * old snooze and overstate the wait. Exported for the classification
- * tests, the fetch pipeline is the only production caller.
+ * A teammate's review clears a team request without leaving a trace on the timeline,
+ * so team-pending relies on the outstanding review requests.
  */
 export function classifyPr(
   pr: ReviewPr,
@@ -394,11 +249,6 @@ export function classifyPr(
 
   const teamSlugs = new Set([...teams].map((team) => team.toLowerCase()));
 
-  /**
-   * Resolves the combined slug of a team request that names one of your
-   * teams, in the spelling the teams set uses, or null for a user request
-   * and a team you do not belong to.
-   */
   const teamOf = (reviewer: { login?: string; combinedSlug?: string } | null | undefined): string | null => {
     const slug = reviewer?.combinedSlug;
 
@@ -414,6 +264,7 @@ export function classifyPr(
 
     if (node.requestedReviewer?.login === user) {
       requests.push({ at: new Date(node.createdAt), team: null });
+
       continue;
     }
 
@@ -438,10 +289,7 @@ export function classifyPr(
     }),
   );
 
-  /**
-   * Requests sort before reviews at the same timestamp, so a review that
-   * lands at the exact moment of a request closes that request's cycle.
-   */
+  // requests sort before reviews at the same timestamp, so a review at that instant closes the request's cycle
   const events: { at: Date; isRequest: boolean; team: string | null; state: string }[] = [
     ...requests.map(({ at, team }) => {
       return { at, isRequest: true, team, state: '' };
@@ -466,6 +314,7 @@ export function classifyPr(
       }
     } else if (openedAt !== null) {
       results.push({ kind: 'reviewed', pr, requestedAt: openedAt, reviewedAt: event.at, verdict: event.state, lines });
+
       openedAt = null;
       teamRequests = [];
     } else if (teamRequests.length > 0) {
@@ -515,13 +364,6 @@ export function classifyPr(
     return results;
   }
 
-  /**
-   * The reviewed-by search also returns PRs where you reviewed without a
-   * direct request, for example via a team request of a team the lookup
-   * does not know. There is no request timestamp, so these cannot go
-   * into the histogram, but the latest review time rides along for the
-   * reviewing queue.
-   */
   if (reviews.length === 0) {
     return [{ kind: 'inaccessible', pr }];
   }
@@ -529,15 +371,6 @@ export function classifyPr(
   return [{ kind: 'unrequested', pr, reviewedAt: new Date(Math.max(...reviews.map((review) => review.at.getTime()))) }];
 }
 
-/**
- * Splits the PRs into cached results and PRs that need a fetch. Only closed
- * and merged PRs are ever served from the cache, because their timelines and
- * sizes no longer change. A cached entry for a PR that shows up open again
- * was written before a reopen, so it gets dropped and the PR gets refetched.
- * The stale predicate lets a caller reject an entry that predates a field
- * the store's version did not bump for, which refetches it once and
- * rewrites it in the current shape.
- */
 function partitionCached<Pr extends { repo: string; number: number; state: string }, T>(
   prs: Pr[],
   cache: PrCache<T>,
@@ -553,6 +386,7 @@ function partitionCached<Pr extends { repo: string; number: number; state: strin
     if (pr.state === 'open') {
       cache.delete(key);
       misses.push(pr);
+
       continue;
     }
 
@@ -574,43 +408,17 @@ export interface ReviewFetch {
 }
 
 export interface ReviewFetchOptions extends FetchOptions {
-  /**
-   * Restricts which GitHub review states count as a review during
-   * classification. An absent set counts every submitted review.
-   */
   countedStates?: ReadonlySet<string>;
-  /**
-   * Names the teams the user belongs to by their combined org/slug, so
-   * a request of one of them classifies as a team cycle. An absent set
-   * leaves every team request out, as before the lookup existed.
-   */
   teams?: ReadonlySet<string>;
 }
 
 /**
- * Reports whether a cached details entry predates the outstanding review
- * requests, which the team classification needs. Such an entry counts as
- * a miss, so it refetches once and rewrites in the current shape without
- * a bump of the cache version, which would also discard the saved
- * options that share the version.
+ * Bumping the cache version instead would also discard the saved options that share it.
  */
 function lacksReviewRequests(details: PrDetails): boolean {
   return (details as Partial<PrDetails>).reviewRequests === undefined;
 }
 
-/**
- * Fetches the review timeline for every PR and classifies each one into
- * its request cycles, so the result list can be longer than the PR list.
- * Closed PRs come from the on-disk cache when possible, and freshly
- * fetched closed PRs get written back to it. Inaccessible PRs are
- * never cached, so a transient failure cannot hide a PR permanently.
- * The onProgress callback receives the number of processed PRs and
- * the total, first for the cache hits and then after every batch.
- * The countedStates and teams options only steer the classification, and
- * the raw timelines cache independently of them, so changing the filter
- * or a team membership only reruns the classification against cached
- * data.
- */
 export async function fetchReviewRaw(
   prs: ReviewPr[],
   user: string,
@@ -637,9 +445,6 @@ export async function fetchReviewRaw(
   };
 }
 
-/**
- * Maps the authored search results onto the PR shape the size analysis uses.
- */
 export function collectAuthoredPrs(authored: SearchPrItem[]): AuthoredPr[] {
   return authored.map((item) => {
     return {
@@ -658,14 +463,6 @@ export interface SizeFetch {
   cacheHits: number;
 }
 
-/**
- * Fetches the size and comment counters for every authored PR. Closed PRs
- * come from the on-disk cache when possible, and freshly fetched closed
- * PRs get written back to it. Inaccessible PRs are skipped, so the returned list
- * can be shorter than the input. The onProgress callback receives the
- * number of processed PRs and the total, first for the cache hits and
- * then after every batch.
- */
 export async function fetchSizeRaw(
   prs: AuthoredPr[],
   onProgress?: ProgressCallback,
@@ -720,10 +517,6 @@ export async function fetchSizeRaw(
   return { sizes, cacheHits };
 }
 
-/**
- * One PR the mentions search returned. The update time rides along from
- * the search, because the mention fetch keys its cache on it.
- */
 export interface MentionedPr {
   repo: string;
   number: number;
@@ -734,33 +527,14 @@ export interface MentionedPr {
   updatedAt: Date;
 }
 
-/**
- * One text on a PR that names you. The id is the GraphQL node id of the
- * text, which identifies it across loads, and the time is when the text
- * became visible in its current form, so the later of its publication
- * and its last edit. The notification diff uses the id to tell a text it
- * has already reported from a new one, and the time to tell a new text
- * from an old one it simply had not seen before.
- */
 export interface Mention {
   id: string;
   at: Date;
 }
 
 /**
- * One PR the mentions search returned, with every text on it that names
- * you, or null when the load could not read the PR in full. The null
- * keeps the PR in the result, so the notification diff knows the load
- * did not observe it and holds its cutoff until a later load does,
- * instead of dropping a mention that arrived in the meantime as old.
- *
- * The earlier ids name the texts that mentioned you before the since
- * window, which the window cut dropped from the mentions. The read
- * marks, the snoozes, and the notification baseline record them along
- * with the ids of the mentions, so an edit that carries one of those
- * texts into the window reads as the handled text it is and not as a
- * new mention. The list is empty without a window and for a PR the load
- * could not read.
+ * A null mentions list makes the notification diff hold its cutoff instead of treating a new
+ * mention as old.
  */
 export interface MentionEntry {
   pr: MentionedPr;
@@ -769,13 +543,7 @@ export interface MentionEntry {
 }
 
 /**
- * On-disk shape of one mention cache entry. The mentions were found for
- * the given login, in lower case the way GitHub compares logins, and the
- * update time is the one the search reported when the entry was written.
- * An entry only serves the same login on a PR whose search result still
- * carries the same update time, because the texts that count depend on
- * who is looking and any new comment, review, or edit moves the update
- * time. An empty list records that none of the texts names the login.
+ * GitHub moves a PR's update time on any new comment, review, or edit, so it is a safe cache key.
  */
 interface CachedMention {
   user: string;
@@ -783,10 +551,6 @@ interface CachedMention {
   mentions: { id: string; at: string }[];
 }
 
-/**
- * Maps the mentions search results onto the PR shape the mention fetch
- * uses.
- */
 export function collectMentionedPrs(mentioned: SearchPrItem[]): MentionedPr[] {
   return mentioned.map((item) => {
     return {
@@ -802,12 +566,7 @@ export function collectMentionedPrs(mentioned: SearchPrItem[]): MentionedPr[] {
 }
 
 /**
- * Builds the pattern that finds a mention of the given login in a text.
- * A mention is the login behind an at sign, which must not continue a
- * word or a path, so an email address or an org/login path never counts,
- * and must end where the login ends, so a longer login that starts the
- * same way never counts either. Logins compare case-insensitively the
- * way GitHub treats them.
+ * GitHub matches logins case-insensitively and does not treat emails or org/login paths as mentions.
  */
 function mentionPattern(user: string): RegExp {
   const escaped = user.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
@@ -816,17 +575,7 @@ function mentionPattern(user: string): RegExp {
 }
 
 /**
- * Matches the stretches of a text that GitHub shows as code or does not
- * show at all, which are the fenced code blocks, the inline code spans,
- * and the HTML comments. A login behind an at sign inside them is not a
- * mention on GitHub, which neither links it nor notifies anyone, so the
- * mention check blanks these stretches before it looks. A fence closes
- * on a line that carries a fence of the same character at least as
- * long, or runs to the end of the text when nothing closes it, and a
- * code span closes on the next backtick run of the same length, the way
- * CommonMark reads them. The alternatives are tried left to right at
- * every position, so whichever stretch opens first swallows the others
- * that start inside it.
+ * GitHub ignores logins inside code or HTML comments, which close per https://spec.commonmark.org/.
  */
 const CODE_OR_COMMENT_PATTERN = new RegExp(
   [
@@ -837,20 +586,10 @@ const CODE_OR_COMMENT_PATTERN = new RegExp(
   'gm',
 );
 
-/**
- * Blanks the code and the comments of a text, so a login named in them
- * does not read as a mention. Each stretch becomes one space, which
- * keeps the words around it apart. Exported for the tests, findMentions
- * is the only production caller.
- */
 export function stripCodeAndComments(body: string): string {
   return body.replaceAll(CODE_OR_COMMENT_PATTERN, ' ');
 }
 
-/**
- * Returns the latest of the given times, skipping the ones GitHub left
- * null. At least one time is expected to be set.
- */
 function latestOf(...times: (string | null)[]): Date {
   let latest = Number.NEGATIVE_INFINITY;
 
@@ -864,18 +603,7 @@ function latestOf(...times: (string | null)[]): Date {
 }
 
 /**
- * Finds every text on the PR that mentions the user, each with the time
- * it became visible in its current form. A text is visible once it is
- * published, which for an inline review comment is no earlier than the
- * submission of its review, because a comment drafted with a review
- * only shows up when the review does. An edit makes the text visible
- * anew, because an edit is how a mention gets added to an older text.
- * Texts the user wrote never count, because your own words are not news
- * to you, and a review that was never submitted is a draft nobody else
- * can see, so it drops out with its comments. A login inside code or an
- * HTML comment never counts either, because GitHub does not treat it as
- * a mention there, see stripCodeAndComments. Exported for the tests, the
- * mention fetch is the only production caller.
+ * GitHub shows inline review comments only once their review is submitted.
  */
 export function findMentions(details: PrMentionDetails, user: string): Mention[] {
   const pattern = mentionPattern(user);
@@ -932,41 +660,9 @@ export interface MentionFetch {
 }
 
 export interface MentionFetchOptions extends FetchOptions {
-  /**
-   * Drops the mentions that became visible before this time, so the
-   * result only holds the mentions within the since window even though
-   * the search finds every PR with any activity in it. An absent time
-   * keeps every mention.
-   */
   since?: Date;
 }
 
-/**
- * Fetches the texts of every mentioned PR and reduces each one to the
- * texts that mention the user. Unlike the review and size fetches, the
- * cache serves open PRs too, because an entry is keyed by the update
- * time the search reported and any new activity on the PR moves that
- * time. So a reload only fetches the PRs that changed since the entry
- * was written, which keeps the extra cost of watching for mentions close
- * to the one search. An entry also records the login it was found for
- * and only serves that login, because the same texts mention different
- * people, so switching the user refetches. PRs without a mention are
- * cached and left out of the result. PRs the fetch could not read stay
- * in the result with null mentions and out of the cache, so the
- * notification diff can hold their cutoff and the next load retries
- * them. The onProgress callback receives the number of processed PRs
- * and the total, first for the cache hits and then after every batch.
- *
- * The since option cuts the mentions to the window after the cache is
- * read, so the cache stays independent of the window and a change of
- * the window refetches nothing. The search finds every PR with activity
- * in the window, and the cut drops the mentions on it from before the
- * window, so a push or a comment on an old PR does not bring a mention
- * back that the window no longer covers. A PR left without a mention
- * drops out of the result like one that never had any, and a PR that
- * stays carries the ids of the cut mentions as its earlier ids, so the
- * marks made on it keep covering the texts the window no longer shows.
- */
 export async function fetchMentionsRaw(
   prs: MentionedPr[],
   user: string,

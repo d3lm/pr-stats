@@ -11,11 +11,6 @@ import {
   type RendererNotificationBoundary,
 } from './notify';
 
-/**
- * Runs the callback with process.platform posing as the given platform,
- * so the command routing can be checked for macOS and Linux on whatever
- * machine runs the tests, and restores the real value afterwards.
- */
 function withPlatform(platform: NodeJS.Platform, run: () => void): void {
   const original = Object.getOwnPropertyDescriptor(process, 'platform');
 
@@ -28,10 +23,6 @@ function withPlatform(platform: NodeJS.Platform, run: () => void): void {
   }
 }
 
-/**
- * Stands in for a spawned child. The test fires its exit or error by
- * hand, so the exit-code handling runs without a process.
- */
 class FakeChild implements NotifyChild {
   private readonly _errorListeners: ((error: Error) => void)[] = [];
   private readonly _exitListeners: ((code: number | null) => void)[] = [];
@@ -47,7 +38,7 @@ class FakeChild implements NotifyChild {
   }
 
   unref(): void {
-    // nothing to release on a fake
+    // the fake holds no process
   }
 
   exit(code: number | null): void {
@@ -63,10 +54,6 @@ class FakeChild implements NotifyChild {
   }
 }
 
-/**
- * Builds a spawn stand-in that records every command and hands out fake
- * children the test controls.
- */
 function fakeSpawn(): { calls: { command: string; args: string[] }[]; children: FakeChild[]; spawn: NotifySpawn } {
   const calls: { command: string; args: string[] }[] = [];
   const children: FakeChild[] = [];
@@ -87,15 +74,6 @@ function fakeSpawn(): { calls: { command: string; args: string[] }[]; children: 
 
 const HELPER = '/pkg/dist/pr-stats.app/Contents/MacOS/pr-stats-notifier';
 
-/**
- * Builds a renderer stub whose trigger records every call and answers
- * with the given acceptance, standing in for a terminal with or without
- * a notification protocol, and whose writeOut records the raw bytes the
- * bell channel sends. The terminal name feeds the quirk detection, so a
- * test can pose as iTerm2 or Apple Terminal. The command paths stay
- * untested here because they spawn a real process, and the channel
- * routing around them is what this file covers.
- */
 function fakeRenderer(
   accepts: boolean,
   name = '',
@@ -162,12 +140,7 @@ test('auto skips the terminal on Apple Terminal, which swallows the sequence, wh
   const skipped = fakeRenderer(true, 'Apple_Terminal');
   const errors: string[] = [];
 
-  /**
-   * The fallback would spawn a real command on this machine, so the test
-   * poses as a platform without one for the duration of the send. The
-   * unsupported-platform report then proves the send took the command
-   * path without the terminal ever being asked.
-   */
+  // freebsd has no notification command, so the fallback spawns nothing real
   withPlatform('freebsd', () => {
     createNotifier(skipped.renderer, 'auto')('the title', 'the body', (message) => errors.push(message));
   });
@@ -182,7 +155,6 @@ test('auto skips the terminal on Apple Terminal, which swallows the sequence, wh
 
   expect(forced.calls).toEqual([{ message: 'the body', title: 'the title' }]);
 
-  // iTerm2 keeps the terminal path on auto, because the sequence works once the profile allows it
   expect(notificationChannel(fakeRenderer(true, 'iTerm2').renderer, 'auto')).toBe('terminal');
 });
 
@@ -193,7 +165,6 @@ test('names the channel a send would take for each setting', () => {
   expect(notificationChannel(accepting, 'auto')).toBe('terminal');
   expect(notificationChannel(refusing, 'auto')).toBe(notificationTool());
 
-  // the forced channels ignore what the terminal reports
   expect(notificationChannel(refusing, 'terminal')).toBe('terminal');
   expect(notificationChannel(accepting, 'command')).toBe(notificationTool());
   expect(notificationChannel(refusing, 'bell')).toBe('bell');
@@ -209,11 +180,9 @@ test('explains the terminals that swallow the notification sequence and stays qu
     expect(notificationCaveat(kitty, channel)).toBeNull();
   }
 
-  // the Apple Terminal caveat reads differently depending on whether auto already routes around it
   expect(notificationCaveat(apple, 'auto')).toContain('takes the platform command');
   expect(notificationCaveat(apple, 'terminal')).toContain('switch the channel');
 
-  // the command and bell channels never send the sequence, so nothing stands in their way
   for (const channel of ['command', 'bell'] as const) {
     expect(notificationCaveat(iterm, channel)).toBeNull();
     expect(notificationCaveat(apple, channel)).toBeNull();
@@ -235,13 +204,11 @@ test('macOS posts through the bundled helper and falls back to osascript without
     expect(fallback?.command).toBe('osascript');
     expect(fallback?.name).toBe('osascript');
 
-    // the strings travel as arguments behind the script, never inside it
     expect(fallback?.args.slice(-2)).toEqual(['the title', 'the body']);
     expect(notificationTool(null)).toBe('osascript');
   });
 
   withPlatform('linux', () => {
-    // the helper is a macOS bundle, so Linux ignores it even when a path comes in
     expect(notifyCommand('the title', 'fix <Button> focus', HELPER)).toEqual({
       command: 'notify-send',
       args: ['--app-name=pr-stats', '--', 'the title', 'fix &lt;Button&gt; focus'],
@@ -289,21 +256,18 @@ test('a helper stuck on the permission prompt blocks further sends until it exit
       setSystemTime(new Date('2026-09-02T09:00:00Z'));
       sendNotification('the title', 'the body', report, spawn, HELPER);
 
-      // a second send inside the grace period runs, because a healthy helper takes under a second
       setSystemTime(new Date('2026-09-02T09:00:02Z'));
       sendNotification('the title', 'the body', report, spawn, HELPER);
 
       expect(calls).toHaveLength(2);
       expect(errors).toEqual([]);
 
-      // past the grace period the first helper can only be waiting on the prompt
       setSystemTime(new Date('2026-09-02T09:00:10Z'));
       sendNotification('the title', 'the body', report, spawn, HELPER);
 
       expect(calls).toHaveLength(2);
       expect(errors).toEqual(['the notification permission prompt for pr-stats is still waiting for an answer']);
 
-      // the user answers, the helpers exit, and sends flow again
       children[0]?.exit(0);
       children[1]?.exit(0);
       sendNotification('the title', 'the body', report, spawn, HELPER);

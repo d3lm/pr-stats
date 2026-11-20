@@ -4,51 +4,22 @@ import { blankCells, mergeCells, placeText } from './draw';
 import type { Line } from './model';
 
 export interface Distribution {
-  /**
-   * Holds the min, p50, p90, p99, max, and mean summary that renders
-   * right-aligned next to the section title.
-   */
   stats: Line;
   lines: Line[];
 }
 
-/**
- * Candidate durations in hours for the scale row under the review time
- * distribution axis. Only the candidates inside the data range render,
- * thinned to avoid overlaps.
- */
 export const DURATION_TICKS = [5 / 60, 0.25, 0.5, 1, 2, 4, 8, 24, 48, 96, 168, 336, 720, 2160];
 
-/**
- * Candidate counts for the scale row under the PR size distribution axis,
- * on the same round-number spirit as the duration ticks.
- */
 export const COUNT_TICKS = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10_000, 25_000, 50_000, 100_000];
 
 export interface DistributionSpec {
   values: number[];
   width: number;
-  /**
-   * Formats a value for the quantile labels and the summary line.
-   */
   format: (value: number) => string;
-  /**
-   * Holds the candidate values for the scale row under the axis. Only the
-   * candidates inside the data range render, thinned to avoid overlaps.
-   */
   ticks: number[];
-  /**
-   * Builds the fallback label when every value is identical, from the
-   * value count and the formatted value.
-   */
   flat: (count: number, value: string) => string;
 }
 
-/**
- * Builds a full-width distribution strip. The axis spans min to max on a
- * log scale with the median as a dot and p90 as a cross, the quantile
- * labels sit above their positions, and round values mark the scale below.
- */
 export function buildDistribution({ values, width, format, ticks, flat }: DistributionSpec): Distribution {
   const sorted = [...values].toSorted((a, b) => a - b);
   const min = sorted[0];
@@ -115,11 +86,7 @@ export function buildDistribution({ values, width, format, ticks, flat }: Distri
 
     placeText(labelCells, start, marker.text, marker.fg);
 
-    /**
-     * Only the interior markers draw a connector. The axis end caps already
-     * mark min and max, and a connector stacked on a cap would recolor the
-     * top of its vertical stroke.
-     */
+    // a connector stacked on an axis end cap would recolor the top of its stroke
     if (marker.align === 'center') {
       placeText(connectorCells, Math.min(Math.max(marker.at, 0), width - 1), '╷', marker.fg);
     }
@@ -140,6 +107,7 @@ export function buildDistribution({ values, width, format, ticks, flat }: Distri
     if (at >= scaleEnd + 3) {
       placeText(scaleCells, at, label, theme.dim);
       placeText(axisCells, pos(tick), '┬', theme.dim);
+
       scaleEnd = at + label.length;
     }
   }

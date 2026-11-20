@@ -14,10 +14,6 @@ import type { Modal } from '../state/ui';
 import { theme } from '../theme';
 import { mentionActionOf, queueRowAt, snoozeActionOf, unreadMentionRows, type QueueView } from '../views/queue';
 
-/**
- * Renders the footer, a full-width rule above one row with the key hints
- * on the left and the notice slot on the right.
- */
 export function Footer({
   width,
   modal,
@@ -32,12 +28,6 @@ export function Footer({
   width: number;
   modal: Modal;
   editing: boolean;
-  /**
-   * Holds where the user is, the active tab and sub-tab, the scopes,
-   * and the row cursors, which decide the hints for the queue keys, like
-   * whether s offers to snooze or to unsnooze the highlighted row and
-   * whether d offers to mark its mention read or unread.
-   */
   browse: BrowseState;
   views: AppViews | null;
   copyLinks: boolean;
@@ -45,21 +35,9 @@ export function Footer({
   successNotice: string | null;
   stale: boolean;
 }) {
-  /**
-   * A failure or a success notice takes the right slot over the stale
-   * notice, because it answers the action the user just made, and the
-   * next keypress brings the stale notice back. The success notice
-   * carries a checkmark in front of it.
-   */
   const notice = openError ?? successNotice ?? (stale ? 'options changed · press r to reload' : '');
   const check = openError === null && successNotice !== null;
 
-  /**
-   * The notice keeps its full width and the hints truncate to the
-   * remaining space, so the two never overlap on a narrow terminal. The
-   * two cells of padding frame the row and the checkmark takes two more,
-   * with a two-cell gap between the hints and the notice.
-   */
   const noticeWidth = notice === '' ? 0 : notice.length + (check ? 2 : 0) + 2;
 
   const hints = truncated(hintsFor(modal, editing, browse, views, copyLinks), width - 2 - noticeWidth);
@@ -95,9 +73,7 @@ export function Footer({
 }
 
 /**
- * Cuts the hint line to the given number of cells with a trailing
- * ellipsis, so a footer notice never overlaps the hints. Every hint is
- * one cell per character, so the string length counts cells.
+ * Assumes every hint is single-width, so one character is one cell.
  */
 function truncated(text: string, limit: number): string {
   if (text.length <= limit) {
@@ -107,10 +83,6 @@ function truncated(text: string, limit: number): string {
   return limit <= 1 ? '' : `${text.slice(0, limit - 1).trimEnd()}…`;
 }
 
-/**
- * Resolves the derived view, the repo options, and the scope of the given
- * queue tab.
- */
 function queueViewsOf(key: QueueTabKey, views: AppViews) {
   if (key === 'pending') {
     return { view: views.pending, repos: views.pendingRepos, scope: views.pendingScope };
@@ -127,11 +99,6 @@ function queueViewsOf(key: QueueTabKey, views: AppViews) {
   return { view: views.open, repos: views.openRepos, scope: views.openScope };
 }
 
-/**
- * Resolves the derived view, the repo options, and the scope
- * of the given stats tab, or an empty triple while the data
- * has not loaded.
- */
 function statsViewsOf(key: StatsTabKey, views: AppViews | null) {
   if (views === null) {
     return { view: null, repos: [], scope: null };
@@ -152,15 +119,8 @@ function statsViewsOf(key: StatsTabKey, views: AppViews | null) {
   return { view: views.comments, repos: views.commentRepos, scope: views.commentScope };
 }
 
-/**
- * Names the digit range that picks a top-level tab, like 1-3.
- */
 const TAB_DIGITS = `1-${TABS.length}`;
 
-/**
- * Names the t hint of the active tab, which leads with the sub-tab the
- * next press switches to.
- */
 function subTabHint(browse: BrowseState): string {
   if (browse.tab === 0) {
     return `t ${cycledSubTab(PENDING_SUB_TABS, browse.pendingTab, 1).label.toLowerCase()} · `;
@@ -173,13 +133,6 @@ function subTabHint(browse: BrowseState): string {
   return `t ${cycledSubTab(STATS_SUB_TABS, browse.statsTab, 1).label.toLowerCase()} · `;
 }
 
-/**
- * Names the hints of the queue keys for the highlighted row of the given
- * queue view, what s does with it, snoozing an awaiting PR or an unread
- * mention or unsnoozing a snoozed one, and what d does with a mention,
- * marking it read or unread again, with the D hint offering to mark
- * every unread mention read while the inbox shows any.
- */
 function queueKeyHints(view: QueueView | null, cursor: number): string {
   const row = queueRowAt(view, cursor);
   const snoozeAction = snoozeActionOf(row);
@@ -192,14 +145,6 @@ function queueKeyHints(view: QueueView | null, cursor: number): string {
   return `${snooze}${mark}${markAll}`;
 }
 
-/**
- * Builds the footer hint line for the current input mode. The queue
- * detail hints name what enter does with the highlighted PR, which the
- * copy-links setting flips from opening to copying, followed by the
- * queue keys that apply to the highlighted row. On the tabs with
- * sub-tabs the hints lead with the t toggle that switches to the next
- * sub-tab.
- */
 function hintsFor(
   modal: Modal,
   editing: boolean,
@@ -253,10 +198,6 @@ function hintsFor(
     return `↑/↓ select · enter open · ${toggle}←/→ tabs · o options · S settings · r reload · R refetch · q quit`;
   }
 
-  /**
-   * The x hint only shows while the open stats view has a capped card to
-   * expand, and it flips to collapse while the cap is lifted.
-   */
   const expand = view?.expandable ? (view.expanded ? 'x collapse · ' : 'x expand · ') : '';
 
   if (scope !== null && repos.length > 0) {

@@ -19,22 +19,8 @@ const pr: ReviewPr = {
   createdAt: new Date('2026-07-01T00:00:00Z'),
 };
 
-/**
- * One canned review request, a plain timestamp for a request that names
- * the user under test and an object for a request of a team by its
- * combined slug.
- */
 type Request = string | { at: string; team: string };
 
-/**
- * Builds a PrDetails timeline from request and review timestamps, all
- * attributed to the given user unless a login is passed explicitly,
- * and all approvals unless a state overrides it. The outstanding list
- * names the teams whose request is still open on the PR, and stays
- * empty by default, the way a PR without a team request looks. The size
- * stays fixed at 120 added and 30 removed lines, so every reviewed cycle
- * carries 150 lines.
- */
 function details(
   requests: Request[],
   reviews: (string | { at: string; login?: string; state?: string })[],
@@ -237,23 +223,16 @@ test('an open request of one of your teams classifies as team-pending while the 
     { kind: 'team-pending', pr, requestedAt: new Date('2026-07-01T09:00:00Z'), team: 'acme/backend' },
   ]);
 
-  // the team set compares case-insensitively, the way GitHub treats slugs
   expect(classifyPr(pr, details([request], [], ['acme/backend']), 'me', undefined, new Set(['ACME/Backend']))).toEqual([
     { kind: 'team-pending', pr, requestedAt: new Date('2026-07-01T09:00:00Z'), team: 'acme/backend' },
   ]);
 
-  // a team you are not on never counts, so the PR classifies as before the lookup existed
   expect(classifyPr(pr, details([request], [], ['acme/backend']), 'me', undefined, new Set(['acme/other']))).toEqual([
     { kind: 'inaccessible', pr },
   ]);
 
   expect(classifyPr(pr, details([request], [], ['acme/backend']), 'me')).toEqual([{ kind: 'inaccessible', pr }]);
 
-  /**
-   * A team request that no longer sits among the outstanding review
-   * requests was answered by a teammate, so nothing waits for you and the
-   * PR drops out, or keeps your unasked review for the reviewing queue.
-   */
   expect(classifyPr(pr, details([request], []), 'me', undefined, teams)).toEqual([{ kind: 'inaccessible', pr }]);
 
   expect(classifyPr(pr, details([request], ['2026-06-30T09:00:00Z']), 'me', undefined, teams)).toEqual([
@@ -276,11 +255,6 @@ test('your review after a request of your team closes the cycle as team-reviewed
     },
   ]);
 
-  /**
-   * Two teams of yours asked before the review date the cycle from the
-   * earliest request, and a team request after the review opens a new
-   * cycle that stays pending while its team is requested.
-   */
   const twoTeams = details(
     [
       { at: '2026-07-01T09:00:00Z', team: 'acme/oncall' },
@@ -306,11 +280,6 @@ test('your review after a request of your team closes the cycle as team-reviewed
 });
 
 test('a direct request dominates a team request within one cycle', () => {
-  /**
-   * A team request while a direct request is open changes nothing, and
-   * one review closes both, so the PR classifies exactly as without the
-   * team request.
-   */
   const teamDuringDirect = details(
     ['2026-07-01T09:00:00Z', { at: '2026-07-01T10:00:00Z', team: 'acme/backend' }],
     ['2026-07-01T15:00:00Z'],
@@ -327,7 +296,6 @@ test('a direct request dominates a team request within one cycle', () => {
     },
   ]);
 
-  // a direct request during an open team cycle takes the cycle over and is what stays pending
   const directDuringTeam = details(
     [{ at: '2026-07-01T09:00:00Z', team: 'acme/backend' }, '2026-07-01T10:00:00Z'],
     [],
@@ -338,7 +306,6 @@ test('a direct request dominates a team request within one cycle', () => {
     { kind: 'pending', pr, requestedAt: new Date('2026-07-01T10:00:00Z') },
   ]);
 
-  // a team request after a completed direct cycle opens a team cycle of its own
   const teamAfterDirect = details(
     ['2026-07-01T09:00:00Z', { at: '2026-07-02T09:00:00Z', team: 'acme/backend' }],
     ['2026-07-01T15:00:00Z'],
@@ -359,11 +326,6 @@ test('a direct request dominates a team request within one cycle', () => {
 });
 
 test('a pending team cycle dates from the latest request of each team still requested', () => {
-  /**
-   * The oncall team asked first and a teammate answered, which cleared
-   * its request, so the cycle waits on the backend team alone and dates
-   * from that request.
-   */
   const twoTeams: Request[] = [
     { at: '2026-07-01T09:00:00Z', team: 'acme/oncall' },
     { at: '2026-07-02T09:00:00Z', team: 'acme/backend' },
@@ -373,16 +335,10 @@ test('a pending team cycle dates from the latest request of each team still requ
     { kind: 'team-pending', pr, requestedAt: new Date('2026-07-02T09:00:00Z'), team: 'acme/backend' },
   ]);
 
-  // with both teams still requested the cycle dates from the earlier of their latest requests
   expect(classifyPr(pr, details(twoTeams, [], ['acme/backend', 'acme/oncall']), 'me', undefined, teams)).toEqual([
     { kind: 'team-pending', pr, requestedAt: new Date('2026-07-01T09:00:00Z'), team: 'acme/oncall' },
   ]);
 
-  /**
-   * The same team asked twice with a teammate's review in between, which
-   * the timeline never shows, so only the later request can be the one
-   * still outstanding and the cycle dates from it.
-   */
   const reRequestedTeam = details(
     [
       { at: '2026-07-01T09:00:00Z', team: 'acme/backend' },
@@ -397,10 +353,6 @@ test('a pending team cycle dates from the latest request of each team still requ
   ]);
 });
 
-/**
- * Builds one search item of the given repo and number, open and created
- * on the given day, the way the searches hand them to the merge.
- */
 function searchItem(repo: string, number: number, createdAt: string): SearchPrItem {
   return {
     number,
@@ -417,12 +369,6 @@ function searchItem(repo: string, number: number, createdAt: string): SearchPrIt
 test('the request search adds the PRs the windowed review search missed, each once, and marks them', () => {
   const review = [searchItem('acme/api', 1, '2026-07-01T00:00:00Z'), searchItem('acme/web', 2, '2026-07-02T00:00:00Z')];
 
-  /**
-   * The PR api#1 sits in both searches and stays a windowed PR, api#9
-   * was created before the window and only the request search returns
-   * it, and the repeated api#9 stands for a page boundary that hands an
-   * item out twice.
-   */
   const requested = [
     searchItem('acme/api', 9, '2026-05-01T00:00:00Z'),
     searchItem('acme/api', 1, '2026-07-01T00:00:00Z'),
@@ -455,12 +401,6 @@ test('a PR outside the window keeps its open requests and loses every other resu
   const old: ReviewPr = { ...pr, number: 9, createdAt: new Date('2026-05-01T00:00:00Z') };
   const outside = new Set(['acme/api#9']);
 
-  /**
-   * The old PR was reviewed once on a team request and then re-requested
-   * directly, so its classification holds a completed team cycle and a
-   * pending one. Only the pending one may reach the queue, because the
-   * completed cycle predates the window the histogram covers.
-   */
   const results = classifyPr(
     old,
     details([{ at: '2026-05-02T09:00:00Z', team: 'acme/backend' }, '2026-07-10T09:00:00Z'], ['2026-05-03T09:00:00Z']),
@@ -478,11 +418,6 @@ test('a PR outside the window keeps its open requests and loses every other resu
     { kind: 'pending', pr: old, requestedAt: new Date('2026-07-10T09:00:00Z') },
   ]);
 
-  /**
-   * An open team request survives the trim like a direct one, a reviewed
-   * or an unrequested result of an outside PR never does, and without
-   * any outside PR the results pass through as they are.
-   */
   const teamPending = classifyPr(
     old,
     details([{ at: '2026-07-10T09:00:00Z', team: 'acme/backend' }], [], ['acme/backend']),
@@ -496,13 +431,6 @@ test('a PR outside the window keeps its open requests and loses every other resu
   expect(queueResultsOnly(results, new Set())).toBe(results);
 });
 
-/**
- * One text on a PR as the mention tests describe it. The text is
- * published when it was written unless a publication time says
- * otherwise, never edited unless an edit time says otherwise, and by an
- * author other than the user under test unless a login says otherwise,
- * with null standing for a deleted account.
- */
 interface MentionText {
   id: string;
   body: string;
@@ -523,12 +451,6 @@ function mentionSource({ id, body, at, publishedAt = at, editedAt = null, login 
   };
 }
 
-/**
- * Builds the texts of one PR for the mention scan. The body is the text
- * with the id pr and counts from the given creation time, and the
- * comments and reviews default to an author other than the user under
- * test.
- */
 function mentionDetails({
   body = '',
   createdAt = '2026-07-01T00:00:00Z',
@@ -572,12 +494,10 @@ function at(iso: string): Date {
 }
 
 test('every text that mentions the user counts, wherever it sits on the PR', () => {
-  // the body alone counts from the PR's creation
   expect(findMentions(mentionDetails({ body: 'cc @me' }), 'me')).toEqual([
     { id: 'pr', at: at('2026-07-01T00:00:00Z') },
   ]);
 
-  // conversation comments, review bodies, and inline review comments count with their own times
   expect(
     findMentions(
       mentionDetails({
@@ -604,18 +524,12 @@ test('every text that mentions the user counts, wherever it sits on the PR', () 
     { id: 'r2c1', at: at('2026-07-05T00:00:00Z') },
   ]);
 
-  // logins compare case-insensitively the way GitHub treats them
   expect(findMentions(mentionDetails({ body: 'cc @Me' }), 'me')).toEqual([
     { id: 'pr', at: at('2026-07-01T00:00:00Z') },
   ]);
 });
 
 test('a text becomes visible when it is published or edited, not when it was written', () => {
-  /**
-   * A body edited to add the mention counts from the edit, and so do an
-   * edited comment and an edited review, because the edit is how the
-   * mention got there.
-   */
   expect(
     findMentions(
       mentionDetails({
@@ -632,12 +546,6 @@ test('a text becomes visible when it is published or edited, not when it was wri
     { id: 'r1', at: at('2026-07-12T00:00:00Z') },
   ]);
 
-  /**
-   * An inline comment drafted days before its review was submitted only
-   * became visible with the review, so it counts from the later of its
-   * publication and the submission. A missing publication time falls
-   * back to the submission.
-   */
   expect(
     findMentions(
       mentionDetails({
@@ -663,15 +571,8 @@ test('a text becomes visible when it is published or edited, not when it was wri
 test('texts without a mention of the user, and the user own texts, never count', () => {
   expect(findMentions(mentionDetails({ body: 'nothing here' }), 'me')).toEqual([]);
 
-  // a longer login, an email address, and a path never count as the mention
   expect(findMentions(mentionDetails({ body: '@meg @me-bot foo@me.com org/@me' }), 'me')).toEqual([]);
 
-  /**
-   * A login inside code or an HTML comment is not a mention on GitHub.
-   * This is the shape of a bot review that lists the approvers of a PR
-   * in code spans, which used to pull every PR the user approved into
-   * the inbox.
-   */
   expect(
     findMentions(
       mentionDetails({
@@ -693,12 +594,10 @@ test('texts without a mention of the user, and the user own texts, never count',
     ),
   ).toEqual([]);
 
-  // the same login outside the code still counts
   expect(findMentions(mentionDetails({ body: 'see `@bob` and @me' }), 'me')).toEqual([
     { id: 'pr', at: at('2026-07-01T00:00:00Z') },
   ]);
 
-  // your own words are not news, in the body, a comment, a review, or an inline comment
   expect(
     findMentions(
       mentionDetails({
@@ -719,7 +618,6 @@ test('texts without a mention of the user, and the user own texts, never count',
     ),
   ).toEqual([]);
 
-  // a review that was never submitted is a draft and drops out with its comments
   expect(
     findMentions(
       mentionDetails({
@@ -729,7 +627,6 @@ test('texts without a mention of the user, and the user own texts, never count',
     ),
   ).toEqual([]);
 
-  // a deleted account leaves the author null, and its mention still counts
   expect(
     findMentions(
       mentionDetails({ comments: [{ id: 'c1', body: '@me', at: '2026-07-02T00:00:00Z', login: null }] }),
@@ -739,27 +636,21 @@ test('texts without a mention of the user, and the user own texts, never count',
 });
 
 test('stripping code and comments follows how GitHub renders them', () => {
-  // inline code spans close on a backtick run of the same length, so a longer run inside stays code
   expect(stripCodeAndComments('a `x` b')).toBe('a   b');
   expect(stripCodeAndComments('a ``x ` y`` b')).toBe('a   b');
   expect(stripCodeAndComments('a `x``y` b')).toBe('a   b');
 
-  // a lone backtick opens nothing
   expect(stripCodeAndComments('a ` b @me')).toBe('a ` b @me');
 
-  // fences close on a fence of the same character at least as long, and an unclosed fence runs to the end
   expect(stripCodeAndComments('a\n```js\n@me\n```\nb')).toBe('a\n \nb');
   expect(stripCodeAndComments('a\n~~~\n@me\n~~~~\nb')).toBe('a\n \nb');
   expect(stripCodeAndComments('a\n```\n@me\n~~~\nb')).toBe('a\n ');
 
-  // a fence swallows the backticks and comment openers inside it, and a comment swallows the backticks inside it
   expect(stripCodeAndComments('```\n` <!--\n```\n@me')).toBe(' \n@me');
   expect(stripCodeAndComments('<!-- ` -->@me`')).toBe(' @me`');
 
-  // an HTML comment goes, whether it sits on one line or spans several
   expect(stripCodeAndComments('x <!-- @me --> y')).toBe('x   y');
   expect(stripCodeAndComments('x <!--\n@me\n--> y')).toBe('x   y');
 
-  // prose stays as it is
   expect(stripCodeAndComments('cc @me, thanks')).toBe('cc @me, thanks');
 });

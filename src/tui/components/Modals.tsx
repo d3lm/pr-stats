@@ -7,12 +7,6 @@ import { SettingsModal } from './SettingsModal';
 import { SnoozeModal } from './SnoozeModal';
 import { ThemeModal } from './ThemeModal';
 
-/**
- * Renders whichever dialog the ui state names as open, or nothing while
- * none is. The selection, edit, and feedback slots each dialog needs come
- * from the ui state, and the draft and submit callbacks wire the editable
- * dialogs back to the App's commit handlers.
- */
 export function Modals({
   ui,
   options,
@@ -58,10 +52,6 @@ export function Modals({
   themeState: ThemeState;
   onDraft: (value: string) => void;
   onSubmitField: () => void;
-  /**
-   * Commits the edit of the selected settings row, which the App routes
-   * to the row's own validation and save.
-   */
   onSubmitSetting: () => void;
   onSubmitThemeColor: () => void;
   onSubmitSnooze: () => void;
@@ -85,13 +75,6 @@ export function Modals({
   }
 
   if (ui.modal === 'settings') {
-    /**
-     * A notification that fails while the dialog is open, the test send
-     * or one of a background load, reports in the footer notice slot,
-     * which the dialog covers on a terminal shorter than its rows. The
-     * dialog's error line mirrors the failure, so it stays visible, and
-     * the next keypress dismisses it like the footer notice.
-     */
     return (
       <SettingsModal
         selected={ui.selectedSetting}
