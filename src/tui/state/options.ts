@@ -11,6 +11,7 @@ import {
   resolveTimezone,
   type CliValues,
 } from '../../flags';
+import { parseRepoEntries } from '../../repos';
 import { CliError } from '../../utils';
 
 export interface OptionsState {
@@ -47,7 +48,7 @@ export const FIELDS: FieldSpec[] = [
   {
     key: 'repos',
     label: 'Repositories',
-    hint: 'comma-separated owner/name, empty searches all accessible repos',
+    hint: 'comma-separated owner/name or owner/*, * matches any text like acme* or acme/web-*, empty searches all',
     kind: 'text',
     fetch: true,
   },
@@ -182,6 +183,11 @@ export function validateField(key: keyof OptionsState, value: string): void {
   switch (key) {
     case 'since': {
       parseSince(value);
+
+      break;
+    }
+    case 'repos': {
+      parseRepoEntries(value);
 
       break;
     }

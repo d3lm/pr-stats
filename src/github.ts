@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { hasWildcard, matchesGlob, repoFilter, searchQualifiers } from './repos';
 import { CliError, createLimiter, sleep } from './utils';
 
 const execFileAsync = promisify(execFile);
@@ -430,30 +431,88 @@ async function fetchDefaultOwner(): Promise<string> {
   }
 }
 
-export async function resolveRepos(repos: string[]): Promise<string[]> {
+/**
+ * Lists the authenticated user and the organizations the credential can see them belong to.
+ */
+async function fetchViewerOwners(): Promise<string[]> {
+  const owners: string[] = [];
+
+  let cursor: string | null = null;
+
+  do {
+    const data: { viewer: { login: string; organizations: Page<{ login: string }> } } = await runGraphql(`query {
+      viewer {
+        login
+        organizations(first: 100${afterArgument(cursor)}) {
+          pageInfo { hasNextPage endCursor }
+          nodes { login }
+        }
+      }
+    }`);
+
+    if (cursor === null) {
+      owners.push(data.viewer.login);
+    }
+
+    owners.push(...present(data.viewer.organizations.nodes).map((organization) => organization.login));
+
+    cursor = nextCursor(data.viewer.organizations);
+  } while (cursor !== null);
+
+  return owners;
+}
+
+/**
+ * Takes entries as parseRepoEntries returns them and replaces bare names and owner patterns with
+ * concrete owners, while a name pattern stays for the search to apply.
+ */
+export async function resolveRepos(entries: string[]): Promise<string[]> {
   let defaultOwner: string | undefined;
+  let viewerOwners: string[] | undefined;
 
-  const resolved: string[] = [];
+  const resolved = new Set<string>();
 
-  for (const repo of repos) {
-    if (repo.includes('/')) {
-      resolved.push(repo);
+  for (const entry of entries) {
+    const slash = entry.indexOf('/');
+
+    if (slash === -1) {
+      if (!defaultOwner) {
+        defaultOwner = await fetchDefaultOwner();
+
+        if (!defaultOwner) {
+          throw new CliError(`cannot resolve owner for "--repo ${entry}", use the owner/name form`);
+        }
+      }
+
+      resolved.add(`${defaultOwner}/${entry}`);
 
       continue;
     }
 
-    if (!defaultOwner) {
-      defaultOwner = await fetchDefaultOwner();
+    const owner = entry.slice(0, slash);
 
-      if (!defaultOwner) {
-        throw new CliError(`cannot resolve owner for "--repo ${repo}", use the owner/name form`);
-      }
+    if (!hasWildcard(owner)) {
+      resolved.add(entry);
+
+      continue;
     }
 
-    resolved.push(`${defaultOwner}/${repo}`);
+    viewerOwners ??= await fetchViewerOwners();
+
+    const matched = viewerOwners.filter((candidate) => matchesGlob(owner, candidate));
+
+    if (matched.length === 0) {
+      throw new CliError(
+        `neither you nor an organization you belong to matches "${owner}", spell out the owner to search another one`,
+      );
+    }
+
+    for (const match of matched) {
+      resolved.add(match + entry.slice(slash));
+    }
   }
 
-  return resolved;
+  return [...resolved];
 }
 
 interface SearchApiItem {
@@ -533,7 +592,7 @@ function buildSearchQuery({ user, repos, includeDrafts, mode }: SearchArgs, wind
   }
 
   if (repos.length > 0) {
-    terms.push(orGroup(repos.map((repo) => `repo:${repo}`)));
+    terms.push(orGroup(searchQualifiers(repos)));
   }
 
   return terms.join(' ');
@@ -682,19 +741,23 @@ export function searchPrs(args: SearchArgs): Promise<SearchResult> {
 
     await collectWindow(args, params, initialWindow(args), collected);
 
+    const inScope = repoFilter(args.repos);
+
+    const items = [...collected.items.values()].map((item): SearchPrItem => {
+      return {
+        number: item.number,
+        repository: { nameWithOwner: item.repository_url.replace(`${API_BASE}/repos/`, '') },
+        title: item.title,
+        url: item.html_url,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+        isDraft: item.draft,
+        state: item.state,
+      };
+    });
+
     return {
-      items: [...collected.items.values()].map((item) => {
-        return {
-          number: item.number,
-          repository: { nameWithOwner: item.repository_url.replace(`${API_BASE}/repos/`, '') },
-          title: item.title,
-          url: item.html_url,
-          createdAt: item.created_at,
-          updatedAt: item.updated_at,
-          isDraft: item.draft,
-          state: item.state,
-        };
-      }),
+      items: items.filter((item) => inScope(item.repository.nameWithOwner)),
       capped: collected.capped,
     };
   });

@@ -9,9 +9,11 @@ import {
   fetchPrSizes,
   onRateLimitWait,
   RateLimitError,
+  resolveRepos,
   searchPrs,
   type RateLimitWait,
 } from './github';
+import { parseRepoEntries } from './repos';
 import { loadData } from './tui/data/load';
 import { CliError, sleep } from './utils';
 
@@ -33,6 +35,8 @@ afterEach(() => {
  */
 interface FakeSpec {
   counts: { review: number; requested?: number; authored: number; mentioned: number };
+  repos?: string[];
+  owners?: string[];
   sameSecond?: boolean;
   failCalls?: number;
   failSearch?: 'review' | 'requested' | 'authored' | 'mentioned';
@@ -51,6 +55,16 @@ appendFileSync(dir + 'calls.log', JSON.stringify(args) + '\\n');
 const spec = JSON.parse(readFileSync(dir + 'spec.json', 'utf8'));
 if (args[0] === 'auth') {
   process.stdout.write('fake-token\\n');
+  process.exit(0);
+}
+const viewerQuery = args[1] === 'graphql' ? args.find((arg) => arg.startsWith('query=')) : undefined;
+if (viewerQuery?.includes('viewer')) {
+  const [login, ...organizations] = spec.owners;
+  const after = Number(/after: "(\\d+)"/.exec(viewerQuery)?.[1] ?? 0);
+  const nodes = organizations.slice(after, after + 2).map((name) => ({ login: name }));
+  const hasNextPage = after + 2 < organizations.length;
+  const pageInfo = { hasNextPage, endCursor: hasNextPage ? String(after + 2) : null };
+  process.stdout.write(JSON.stringify({ data: { viewer: { login, organizations: { pageInfo, nodes } } } }));
   process.exit(0);
 }
 if (args[1] !== 'search/issues') {
@@ -82,10 +96,18 @@ if ((page - 1) * perPage >= 1000) {
   process.exit(1);
 }
 const iso = (ms) => new Date(ms).toISOString().replace(/\\.\\d{3}Z$/, 'Z');
+const repos = spec.repos ?? ['acme/web'];
+const scopes = [...q.matchAll(/\\b(org|repo):(\\S+?)(?=[\\s)]|$)/g)].map((match) => match.slice(1));
+const inScope = (repo) =>
+  scopes.length === 0 ||
+  scopes.some(([kind, value]) => (kind === 'org' ? repo.startsWith(value + '/') : repo === value));
 const matching = [];
 for (let n = 1; n <= (spec.counts[mode] ?? 0); n++) {
   const created = Date.parse('2026-07-01T10:00:00Z') + (spec.sameSecond ? 0 : (n - 1) * 3_600_000);
-  matching.push({ n, created_at: iso(created), updated_at: iso(created + 86_400_000) });
+  const repo = repos[(n - 1) % repos.length];
+  if (inScope(repo)) {
+    matching.push({ n, repo, created_at: iso(created), updated_at: iso(created + 86_400_000) });
+  }
 }
 const bound = /(created|updated):(\\S+)/.exec(q);
 const inWindow = (item) => {
@@ -104,9 +126,9 @@ const found = matching.filter(inWindow);
 const items = found.slice((page - 1) * perPage, page * perPage).map((item) => {
   return {
     number: item.n,
-    repository_url: 'https://api.github.com/repos/acme/web',
+    repository_url: 'https://api.github.com/repos/' + item.repo,
     title: 'pr ' + item.n,
-    html_url: 'https://github.com/acme/web/pull/' + item.n,
+    html_url: 'https://github.com/' + item.repo + '/pull/' + item.n,
     created_at: item.created_at,
     updated_at: item.updated_at,
     draft: false,
@@ -217,6 +239,45 @@ test('each mode is one advanced search query with the alternatives grouped by OR
     order: 'desc',
     page: '1',
   });
+});
+
+test('an owner pattern searches every matching owner you belong to, and a name pattern narrows the results', async () => {
+  installFakeGh({
+    counts: { review: 1, authored: 8, mentioned: 1 },
+    owners: ['me', 'acme', 'stackblitz', 'globex', 'stackblitz-starters'],
+    repos: ['stackblitz/bolt', 'stackblitz/webcontainer', 'stackblitz-starters/vite', 'stackblitz/bolt-eval'],
+  });
+
+  const repos = await resolveRepos(parseRepoEntries('stackblitz*, me/tools'));
+
+  expect(repos).toEqual(['stackblitz/*', 'stackblitz-starters/*', 'me/tools']);
+
+  const owners = await searchPrs({ ...searchArgs, repos, mode: 'authored' });
+
+  expect(owners.items).toHaveLength(8);
+
+  const names = await searchPrs({ ...searchArgs, repos: ['stackblitz/bolt*'], mode: 'authored' });
+
+  expect(names.items.map((item) => item.repository.nameWithOwner)).toEqual([
+    'stackblitz/bolt',
+    'stackblitz/bolt-eval',
+    'stackblitz/bolt',
+    'stackblitz/bolt-eval',
+  ]);
+
+  expect(
+    loggedCalls()
+      .filter((call) => 'q' in call)
+      .map((call) => call.q),
+  ).toEqual([
+    'type:pr author:testuser created:>=2026-06-01 draft:false (org:stackblitz OR org:stackblitz-starters OR repo:me/tools)',
+    'type:pr author:testuser created:>=2026-06-01 draft:false org:stackblitz',
+  ]);
+
+  const failure = await resolveRepos(parseRepoEntries('initech*')).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(CliError);
+  expect((failure as CliError).message).toContain('"initech*"');
 });
 
 test('pages until the total is reached, and a total of exactly a thousand is complete', async () => {

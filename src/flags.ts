@@ -58,7 +58,7 @@ const OPTIONS: OptionSpec[] = [
     multiple: true,
     default: [],
     placeholder: '<name>',
-    help: 'Restrict the search to a repository. Repeat the flag for multiple repositories. Accepts "owner/name" or a bare name, which resolves against the owner of the repo in the current directory. Without this flag, all repositories you have access to are searched.',
+    help: 'Restrict the search to a repository. Repeat the flag for multiple repositories. Accepts "owner/name" or a bare name, which resolves against the owner of the repo in the current directory. Use "owner/*" for every repository of an owner. A "*" matches any text, so "acme/web-*" covers the web repositories of acme, and "acme*" covers every owner you belong to whose name starts with acme. Without this flag, all repositories you have access to are searched.',
   },
   {
     name: 'user',
