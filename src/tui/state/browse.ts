@@ -1,4 +1,4 @@
-import type { RepoOption } from '../views/repos';
+import type { RepoOption, RepoScope } from '../views/repos';
 
 export const TABS = ['1 Awaiting you', '2 Your PRs', '3 Stats'];
 
@@ -41,7 +41,7 @@ export function cycledSubTab<K extends string>(
 
 export type BrowseTabKey = QueueTabKey | StatsTabKey;
 
-export type PanelScope = { view: 'list' } | { view: 'detail'; repo: string | null };
+export type PanelScope = { view: 'list' } | { view: 'detail'; repo: RepoScope };
 
 export type TabScopes = Record<BrowseTabKey, PanelScope>;
 
@@ -109,7 +109,7 @@ export type BrowseAction =
   | { type: 'subTabCycled'; delta: 1 | -1 }
   | { type: 'repoCursorMoved'; tab: BrowseTabKey; delta: 1 | -1; count: number }
   | { type: 'rowCursorMoved'; tab: QueueTabKey; delta: 1 | -1; count: number }
-  | { type: 'repoOpened'; tab: BrowseTabKey; repo: string | null }
+  | { type: 'repoOpened'; tab: BrowseTabKey; repo: RepoScope }
   | { type: 'pickerReturned'; tab: BrowseTabKey }
   | { type: 'groupingToggled'; tab: QueueTabKey }
   | { type: 'expandToggled'; tab: StatsTabKey }

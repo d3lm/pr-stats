@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import type { RawData, ReviewResult } from '../data/load';
 import type { Line } from './charts/model';
 import { buildReviewRepoOptions } from './repos';
-import { buildReviewView } from './stats';
+import { buildReviewView, type StatsView } from './stats';
 
 function pr(repo: string, number: number) {
   return {
@@ -48,6 +48,10 @@ function cellText(line: Line): string {
   return line.map((span) => span.text).join('');
 }
 
+function titles(view: StatsView): string[] {
+  return view.cards.map((card) => card.title);
+}
+
 test('the review strip counts the distinct PRs apart from the review rounds they took', () => {
   const raw = rawData([
     reviewedResult('acme/api', 1, '2026-07-02T00:00:00Z'),
@@ -70,6 +74,20 @@ test('the review strip counts the distinct PRs apart from the review rounds they
       .strip.slice(0, 2)
       .map((line) => cellText(line)),
   ).toEqual(['2 PRs reviewed', '3 review rounds']);
+});
+
+test('an owner scope keeps the reviews of that owner and still compares its repos', () => {
+  const raw = rawData([
+    reviewedResult('stackblitz/bolt', 1, '2026-07-02T00:00:00Z'),
+    reviewedResult('stackblitz/webcontainer', 2, '2026-07-03T00:00:00Z'),
+    reviewedResult('acme/web', 3, '2026-07-03T00:00:00Z'),
+  ]);
+
+  const owner = buildReviewView(raw, undefined, 'stackblitz/*');
+
+  expect(cellText(owner.strip[0])).toBe('2 PRs reviewed');
+  expect(titles(owner)).toContain('Review time by repo');
+  expect(titles(buildReviewView(raw, undefined, 'stackblitz/bolt'))).not.toContain('Review time by repo');
 });
 
 test('the review tab leaves the team cycles out until the team stats setting folds them in', () => {

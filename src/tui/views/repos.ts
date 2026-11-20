@@ -3,82 +3,55 @@ import { emptyMentionReads, mentionItems, splitMentions, type MentionReads } fro
 import { splitSnoozed, type Snooze } from '../../snooze';
 import type { RawData } from '../data/load';
 
+/**
+ * Holds one repository, `owner/*` for every repository of an owner, or null for every repository.
+ */
+export type RepoScope = string | null;
+
 export interface RepoOption {
-  repo: string | null;
+  repo: RepoScope;
   label: string;
   detail: string;
 }
 
-function reviewDetail(counts: { reviewed: number; pending: number }): string {
-  return `${counts.reviewed} reviewed` + (counts.pending > 0 ? `, ${counts.pending} pending` : '');
+const OWNER_SUFFIX = '/*';
+
+export function inRepoScope(repo: string, scope: RepoScope): boolean {
+  if (scope === null) {
+    return true;
+  }
+
+  return scope.endsWith(OWNER_SUFFIX) ? repo.startsWith(scope.slice(0, -1)) : repo === scope;
 }
 
-function sizeDetail(count: number): string {
-  return `${count} authored ${count === 1 ? 'PR' : 'PRs'}`;
+export function spansRepos(scope: RepoScope): boolean {
+  return scope === null || scope.endsWith(OWNER_SUFFIX);
 }
 
-export function buildReviewRepoOptions(raw: RawData, teamReviewStats = false): RepoOption[] {
-  const countsByRepo = new Map<string, { reviewed: number; pending: number }>();
+export function scopeLabel(scope: RepoScope): string {
+  if (scope === null) {
+    return 'All repos';
+  }
 
-  for (const result of raw.reviewResults) {
-    const counts = countsByRepo.get(result.pr.repo) ?? { reviewed: 0, pending: 0 };
+  return scope.endsWith(OWNER_SUFFIX) ? `All repos in ${scope.slice(0, -OWNER_SUFFIX.length)}` : scope;
+}
 
-    if (result.kind === 'reviewed' || (teamReviewStats && result.kind === 'team-reviewed')) {
-      counts.reviewed += 1;
-    } else if (
-      (result.kind === 'pending' || (teamReviewStats && result.kind === 'team-pending')) &&
-      result.pr.state === 'open'
-    ) {
-      counts.pending += 1;
+function totalOf<T extends Record<string, number>>(list: T[], zero: () => T): T {
+  const total: Record<string, number> = zero();
+
+  for (const counts of list) {
+    for (const [key, count] of Object.entries(counts)) {
+      total[key] += count;
     }
-
-    countsByRepo.set(result.pr.repo, counts);
   }
 
-  if (countsByRepo.size < 2) {
-    return [];
-  }
-
-  const entries = [...countsByRepo.entries()].toSorted(
-    (a, b) => b[1].reviewed - a[1].reviewed || b[1].pending - a[1].pending || a[0].localeCompare(b[0]),
-  );
-
-  const totals = { reviewed: 0, pending: 0 };
-
-  for (const [, counts] of entries) {
-    totals.reviewed += counts.reviewed;
-    totals.pending += counts.pending;
-  }
-
-  return [
-    { repo: null, label: 'All repos', detail: reviewDetail(totals) },
-    ...entries.map(([repo, counts]) => {
-      return { repo, label: repo, detail: reviewDetail(counts) };
-    }),
-  ];
+  return total as T;
 }
 
-export function buildSizeRepoOptions(raw: RawData): RepoOption[] {
-  const countByRepo = new Map<string, number>();
-
-  for (const size of raw.sizes) {
-    countByRepo.set(size.pr.repo, (countByRepo.get(size.pr.repo) ?? 0) + 1);
-  }
-
-  if (countByRepo.size < 2) {
-    return [];
-  }
-
-  const entries = [...countByRepo.entries()].toSorted((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-
-  return [
-    { repo: null, label: 'All repos', detail: sizeDetail(raw.sizes.length) },
-    ...entries.map(([repo, count]) => {
-      return { repo, label: repo, detail: sizeDetail(count) };
-    }),
-  ];
-}
-
+/**
+ * Adds a row for each owner with several repositories once the data spans several owners, so a
+ * whole organization can be picked without changing the search.
+ */
 function pickerOf<T extends Record<string, number>>(
   countsByRepo: Map<string, T>,
   zero: () => T,
@@ -90,16 +63,32 @@ function pickerOf<T extends Record<string, number>>(
   }
 
   const entries = [...countsByRepo.entries()].toSorted((a, b) => order(a[1], b[1]) || a[0].localeCompare(b[0]));
-  const totals: Record<string, number> = zero();
+  const countsByOwner = new Map<string, T[]>();
 
-  for (const [, counts] of entries) {
-    for (const [key, count] of Object.entries(counts)) {
-      totals[key] += count;
-    }
+  for (const [repo, counts] of entries) {
+    const owner = repo.slice(0, repo.indexOf('/'));
+
+    countsByOwner.set(owner, [...(countsByOwner.get(owner) ?? []), counts]);
   }
 
+  const owners = countsByOwner.size < 2 ? [] : [...countsByOwner.entries()].filter(([, list]) => list.length > 1);
+
   return [
-    { repo: null, label: 'All repos', detail: detail(totals as T) },
+    {
+      repo: null,
+      label: scopeLabel(null),
+      detail: detail(
+        totalOf(
+          entries.map(([, counts]) => counts),
+          zero,
+        ),
+      ),
+    },
+    ...owners.map(([owner, list]) => {
+      const scope = owner + OWNER_SUFFIX;
+
+      return { repo: scope, label: scopeLabel(scope), detail: detail(totalOf(list, zero)) };
+    }),
     ...entries.map(([repo, counts]) => {
       return { repo, label: repo, detail: detail(counts) };
     }),
@@ -114,13 +103,77 @@ function bump<T extends Record<string, number>>(countsByRepo: Map<string, T>, re
   }
 }
 
+function countsOf<T>(countsByRepo: Map<string, T>, repo: string, zero: () => T): T {
+  let counts = countsByRepo.get(repo);
+
+  if (counts === undefined) {
+    counts = zero();
+
+    countsByRepo.set(repo, counts);
+  }
+
+  return counts;
+}
+
+interface ReviewCounts extends Record<string, number> {
+  reviewed: number;
+  pending: number;
+}
+
+function zeroReview(): ReviewCounts {
+  return { reviewed: 0, pending: 0 };
+}
+
+function reviewDetail(counts: ReviewCounts): string {
+  return `${counts.reviewed} reviewed` + (counts.pending > 0 ? `, ${counts.pending} pending` : '');
+}
+
+export function buildReviewRepoOptions(raw: RawData, teamReviewStats = false): RepoOption[] {
+  const countsByRepo = new Map<string, ReviewCounts>();
+
+  for (const result of raw.reviewResults) {
+    const counts = countsOf(countsByRepo, result.pr.repo, zeroReview);
+
+    if (result.kind === 'reviewed' || (teamReviewStats && result.kind === 'team-reviewed')) {
+      counts.reviewed += 1;
+    } else if (
+      (result.kind === 'pending' || (teamReviewStats && result.kind === 'team-pending')) &&
+      result.pr.state === 'open'
+    ) {
+      counts.pending += 1;
+    }
+  }
+
+  return pickerOf(countsByRepo, zeroReview, (a, b) => b.reviewed - a.reviewed || b.pending - a.pending, reviewDetail);
+}
+
+interface AuthoredCounts extends Record<string, number> {
+  authored: number;
+}
+
+function zeroAuthored(): AuthoredCounts {
+  return { authored: 0 };
+}
+
+function sizeDetail(counts: AuthoredCounts): string {
+  return `${counts.authored} authored ${counts.authored === 1 ? 'PR' : 'PRs'}`;
+}
+
+export function buildSizeRepoOptions(raw: RawData): RepoOption[] {
+  const countsByRepo = new Map<string, AuthoredCounts>();
+
+  for (const size of raw.sizes) {
+    countsOf(countsByRepo, size.pr.repo, zeroAuthored).authored += 1;
+  }
+
+  return pickerOf(countsByRepo, zeroAuthored, (a, b) => b.authored - a.authored, sizeDetail);
+}
+
 function reviewRepos<T>(raw: RawData, zero: () => T): Map<string, T> {
   const countsByRepo = new Map<string, T>();
 
   for (const result of raw.reviewResults) {
-    if (!countsByRepo.has(result.pr.repo)) {
-      countsByRepo.set(result.pr.repo, zero());
-    }
+    countsOf(countsByRepo, result.pr.repo, zero);
   }
 
   return countsByRepo;
@@ -242,9 +295,7 @@ export function buildMentionRepoOptions(
   const items = mentionItems(raw.mentions ?? []);
 
   for (const item of items) {
-    if (!countsByRepo.has(item.pr.repo)) {
-      countsByRepo.set(item.pr.repo, zeroMentions());
-    }
+    countsOf(countsByRepo, item.pr.repo, zeroMentions);
   }
 
   if (countsByRepo.size < 2) {
@@ -271,111 +322,79 @@ export function buildMentionRepoOptions(
   );
 }
 
-function openDetail(count: number): string {
-  return `${count} open ${count === 1 ? 'PR' : 'PRs'}`;
+interface OpenCounts extends Record<string, number> {
+  open: number;
+}
+
+function zeroOpen(): OpenCounts {
+  return { open: 0 };
+}
+
+function openDetail(counts: OpenCounts): string {
+  return `${counts.open} open ${counts.open === 1 ? 'PR' : 'PRs'}`;
 }
 
 export function buildOpenRepoOptions(raw: RawData): RepoOption[] {
-  const countByRepo = new Map<string, number>();
+  const countsByRepo = new Map<string, OpenCounts>();
 
   for (const size of raw.sizes) {
-    const open = size.pr.state === 'open' ? 1 : 0;
-
-    countByRepo.set(size.pr.repo, (countByRepo.get(size.pr.repo) ?? 0) + open);
+    countsOf(countsByRepo, size.pr.repo, zeroOpen).open += size.pr.state === 'open' ? 1 : 0;
   }
 
-  if (countByRepo.size < 2) {
-    return [];
-  }
-
-  const entries = [...countByRepo.entries()].toSorted((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const total = entries.reduce((sum, [, count]) => sum + count, 0);
-
-  return [
-    { repo: null, label: 'All repos', detail: openDetail(total) },
-    ...entries.map(([repo, count]) => {
-      return { repo, label: repo, detail: openDetail(count) };
-    }),
-  ];
+  return pickerOf(countsByRepo, zeroOpen, (a, b) => b.open - a.open, openDetail);
 }
 
-function mergedDetail(counts: { merged: number; closed: number }): string {
+interface MergedCounts extends Record<string, number> {
+  merged: number;
+  closed: number;
+}
+
+function zeroMerged(): MergedCounts {
+  return { merged: 0, closed: 0 };
+}
+
+function mergedDetail(counts: MergedCounts): string {
   return `${counts.merged} merged` + (counts.closed > 0 ? `, ${counts.closed} closed unmerged` : '');
 }
 
 export function buildMergedRepoOptions(raw: RawData): RepoOption[] {
-  const countsByRepo = new Map<string, { merged: number; closed: number }>();
+  const countsByRepo = new Map<string, MergedCounts>();
 
   for (const size of raw.sizes) {
-    const counts = countsByRepo.get(size.pr.repo) ?? { merged: 0, closed: 0 };
+    const counts = countsOf(countsByRepo, size.pr.repo, zeroMerged);
 
     if (size.mergedAt !== null) {
       counts.merged += 1;
     } else if (size.pr.state !== 'open') {
       counts.closed += 1;
     }
-
-    countsByRepo.set(size.pr.repo, counts);
   }
 
-  if (countsByRepo.size < 2) {
-    return [];
-  }
-
-  const entries = [...countsByRepo.entries()].toSorted(
-    (a, b) => b[1].merged - a[1].merged || b[1].closed - a[1].closed || a[0].localeCompare(b[0]),
-  );
-
-  const totals = { merged: 0, closed: 0 };
-
-  for (const [, counts] of entries) {
-    totals.merged += counts.merged;
-    totals.closed += counts.closed;
-  }
-
-  return [
-    { repo: null, label: 'All repos', detail: mergedDetail(totals) },
-    ...entries.map(([repo, counts]) => {
-      return { repo, label: repo, detail: mergedDetail(counts) };
-    }),
-  ];
+  return pickerOf(countsByRepo, zeroMerged, (a, b) => b.merged - a.merged || b.closed - a.closed, mergedDetail);
 }
 
-function commentDetail(comments: number, prs: number): string {
+interface CommentCounts extends Record<string, number> {
+  prs: number;
+  comments: number;
+}
+
+function zeroComments(): CommentCounts {
+  return { prs: 0, comments: 0 };
+}
+
+function commentDetail({ comments, prs }: CommentCounts): string {
   return `${comments} ${comments === 1 ? 'comment' : 'comments'} on ${prs} ${prs === 1 ? 'PR' : 'PRs'}`;
 }
 
 export function buildCommentRepoOptions(raw: RawData): RepoOption[] {
-  const countsByRepo = new Map<string, { prs: number; comments: number }>();
+  const countsByRepo = new Map<string, CommentCounts>();
 
   for (const size of raw.sizes) {
-    const counts = countsByRepo.get(size.pr.repo) ?? { prs: 0, comments: 0 };
+    const counts = countsOf(countsByRepo, size.pr.repo, zeroComments);
 
     counts.prs += 1;
     counts.comments += size.comments.total;
-
-    countsByRepo.set(size.pr.repo, counts);
   }
 
-  if (countsByRepo.size < 2) {
-    return [];
-  }
-
-  const entries = [...countsByRepo.entries()].toSorted(
-    (a, b) => b[1].comments - a[1].comments || b[1].prs - a[1].prs || a[0].localeCompare(b[0]),
-  );
-
-  const totals = { prs: 0, comments: 0 };
-
-  for (const [, counts] of entries) {
-    totals.prs += counts.prs;
-    totals.comments += counts.comments;
-  }
-
-  return [
-    { repo: null, label: 'All repos', detail: commentDetail(totals.comments, totals.prs) },
-    ...entries.map(([repo, counts]) => {
-      return { repo, label: repo, detail: commentDetail(counts.comments, counts.prs) };
-    }),
-  ];
+  return pickerOf(countsByRepo, zeroComments, (a, b) => b.comments - a.comments || b.prs - a.prs, commentDetail);
 }

@@ -622,3 +622,46 @@ test('surfaces a failed browser open in the footer and clears it on the next key
     destroyApp(setup);
   }
 }, 30_000);
+
+test('picks every repo of one owner from the list and groups it by repo', async () => {
+  process.env.PR_STATS_TEST_SECOND_OWNER = '1';
+
+  const setup = await renderApp(<App initial={initial} onQuit={() => {}} />, { width: 110, height: 44 });
+
+  try {
+    await waitForText(setup, '4 PRs awaiting your review');
+
+    const pickerFrame = setup.captureCharFrame();
+
+    expect(lineWith(pickerFrame, 'All repos in acme')).toContain('2 PRs awaiting your review');
+    expect(lineWith(pickerFrame, 'All repos in globex')).toContain('2 PRs awaiting your review');
+
+    setup.mockInput.pressArrow('down');
+    setup.mockInput.pressArrow('down');
+
+    await waitForText(setup, '▸  All repos in globex');
+
+    setup.mockInput.pressEnter();
+
+    await waitForText(setup, 'Awaiting your review (n=2)');
+
+    const ownerFrame = setup.captureCharFrame();
+
+    expect(ownerFrame).toContain('▸ All repos in globex');
+    expect(ownerFrame).toContain('globex/portal#40');
+    expect(ownerFrame).toContain('globex/billing#41');
+    expect(ownerFrame).not.toContain('acme/api#7');
+    expect(ownerFrame).toContain('g group by repo');
+
+    setup.mockInput.pressKey('g');
+
+    await waitForText(setup, 'All repos in globex · grouped by repo');
+
+    expect(setup.captureCharFrame()).toContain('globex/portal (n=1)');
+    expect(setup.captureCharFrame()).toContain('globex/billing (n=1)');
+  } finally {
+    destroyApp(setup);
+
+    delete process.env.PR_STATS_TEST_SECOND_OWNER;
+  }
+}, 30_000);

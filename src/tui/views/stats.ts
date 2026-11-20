@@ -25,6 +25,7 @@ import { buildSpreadCard } from './charts/spread';
 import { buildTrendCard } from './charts/trend';
 import { buildVolumeCard } from './charts/volume';
 import { mondayOf, WEEK_MS } from './charts/weeks';
+import { inRepoScope, spansRepos, type RepoScope } from './repos';
 import { durationLead, toPrRows, type PrList } from './rows';
 
 export interface StatsView {
@@ -174,12 +175,12 @@ function targetStatus(sorted: number[], target: ReviewTarget): Span {
 export function buildReviewView(
   raw: RawData,
   target: ReviewTarget | undefined,
-  repo: string | null = null,
+  repo: RepoScope = null,
   width = 100,
   expanded = false,
   teamReviewStats = false,
 ): StatsView {
-  const results = repo === null ? raw.reviewResults : raw.reviewResults.filter((result) => result.pr.repo === repo);
+  const results = raw.reviewResults.filter((result) => inRepoScope(result.pr.repo, repo));
 
   const stats = computeReviewStats(results, {
     targetHours: target?.hours,
@@ -294,7 +295,7 @@ export function buildReviewView(
   }
 
   const byRepoCard =
-    repo === null && stats.byRepo.length > 1
+    spansRepos(repo) && stats.byRepo.length > 1
       ? buildBarsCard({
           title: 'Review time by repo',
           subtitle: 'median review time, slowest first',
@@ -395,7 +396,7 @@ export function buildReviewView(
 export function buildSizeView(
   raw: RawData,
   sizeTarget: { lines?: number; files?: number } | undefined,
-  repo: string | null = null,
+  repo: RepoScope = null,
   width = 100,
 ): StatsView {
   const base = {
@@ -414,7 +415,7 @@ export function buildSizeView(
     return { empty: 'No authored PRs found.', ...base };
   }
 
-  const sizes = repo === null ? raw.sizes : raw.sizes.filter((size) => size.pr.repo === repo);
+  const sizes = raw.sizes.filter((size) => inRepoScope(size.pr.repo, repo));
 
   if (sizes.length === 0) {
     return { empty: 'No accessible authored PRs to analyze.', ...base };
@@ -526,7 +527,7 @@ export function buildSizeView(
   return { empty: null, ...base, strip, headline, cards, distribution, lists };
 }
 
-export function buildCommentView(raw: RawData, repo: string | null = null, width = 100): StatsView {
+export function buildCommentView(raw: RawData, repo: RepoScope = null, width = 100): StatsView {
   const base = {
     strip: [] as Line[],
     headline: null,
@@ -543,7 +544,7 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
     return { empty: 'No authored PRs found.', ...base };
   }
 
-  const sizes = repo === null ? raw.sizes : raw.sizes.filter((size) => size.pr.repo === repo);
+  const sizes = raw.sizes.filter((size) => inRepoScope(size.pr.repo, repo));
 
   if (sizes.length === 0) {
     return { empty: 'No accessible authored PRs to analyze.', ...base };
@@ -637,7 +638,7 @@ export function buildCommentView(raw: RawData, repo: string | null = null, width
   return { empty: null, ...base, strip, headline, cards, distribution, lists };
 }
 
-export function buildMergedView(raw: RawData, repo: string | null = null, width = 100, expanded = false): StatsView {
+export function buildMergedView(raw: RawData, repo: RepoScope = null, width = 100, expanded = false): StatsView {
   const base = {
     strip: [] as Line[],
     headline: null,
@@ -654,7 +655,7 @@ export function buildMergedView(raw: RawData, repo: string | null = null, width 
     return { empty: 'No authored PRs found.', ...base };
   }
 
-  const sizes = repo === null ? raw.sizes : raw.sizes.filter((size) => size.pr.repo === repo);
+  const sizes = raw.sizes.filter((size) => inRepoScope(size.pr.repo, repo));
 
   if (sizes.length === 0) {
     return { empty: 'No accessible authored PRs to analyze.', ...base };
