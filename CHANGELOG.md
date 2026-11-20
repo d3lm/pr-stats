@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.28](https://github.com/d3lm/pr-stats/releases/tag/v0.2.28) - 2026-11-20
+
+### Features
+
+- feat: fold the three stats tabs into one Stats tab with sub-tabs ([f3a5b75](https://github.com/d3lm/pr-stats/commit/f3a5b754d83fa8534841bdc0732bf0dbc8d152a5))
+- feat: accept owner/* and * patterns in the repository filter ([3def256](https://github.com/d3lm/pr-stats/commit/3def25661787ad2b09d3a60b2fb2cc38ca5c0174))
+- feat: add an all-repos row for each owner to the repository list ([5c560a3](https://github.com/d3lm/pr-stats/commit/5c560a39f32e9ca4f92a93e17d45dde173538621))
+
+### Bug Fixes
+
+- fix: keep review requests on PRs older than the window in the queue ([355508e](https://github.com/d3lm/pr-stats/commit/355508efd5b8a931828429a89c0d9b62a3afe388))
+- fix: ignore mentions inside code and HTML comments ([115c167](https://github.com/d3lm/pr-stats/commit/115c16714e0d35bf2ef19951e75eb930056d2e41))
+- fix: keep a zero-delay loading indicator up for its minimum duration ([127a316](https://github.com/d3lm/pr-stats/commit/127a316377aa81d4c37d818fa8189486a446f054))
+- fix: give every scroll input in the stats panes one owner and one step ([086f957](https://github.com/d3lm/pr-stats/commit/086f957b2474365509b442e08d33215d24a8c6fc))
+- fix: split searches past GitHub's 1000 result cap by date range ([c0c3cd8](https://github.com/d3lm/pr-stats/commit/c0c3cd8e0efcf77d8c4501976e97b71c9c89f3f5))
+
+### Documentation
+
+- docs: rewrite the README and split the details into docs/ ([5b9f1d0](https://github.com/d3lm/pr-stats/commit/5b9f1d0681ca13017d5d78dafe938a8fb22a2b2c))
+
 ## [0.2.27](https://github.com/d3lm/pr-stats/releases/tag/v0.2.27) - 2026-09-08
 
 ### Bug Fixes
